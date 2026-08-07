@@ -1,0 +1,64 @@
+import streamlit as st
+import pandas as pd
+from supabase import create_client, Client
+
+# --- 1. CONFIGURATION (DOIT ÊTRE EN PREMIER) ---
+st.set_page_config(page_title="Smart Control Béton - LPEE", layout="wide")
+
+# --- 2. SYSTÈME DE MOT DE PASSE ---
+PASSWORD_SECRET = "lpee@2026" 
+
+def check_password():
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    if st.session_state["password_correct"]:
+        return True
+
+    st.title("🔒 Accès Sécurisé - Smart Control Béton")
+    st.write("Veuillez saisir le mot de passe du laboratoire pour accéder à l'application.")
+    
+    pwd = st.text_input("Mot de passe", type="password")
+    if st.button("Se connecter"):
+        if pwd == PASSWORD_SECRET:
+            st.session_state["password_correct"] = True
+            st.rerun()
+        else:
+            st.error("❌ Mot de passe incorrect.")
+    return False
+
+# Bloc qui bloque l'accès si le mot de passe est faux
+if not check_password():
+    st.stop()
+
+# --- 3. CONNEXION SUPABASE ---
+URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
+CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1" 
+
+try:
+    supabase: Client = create_client(URL, CLE)
+    response = supabase.table("controles_beton").select("*").execute()
+    data = response.data
+except Exception as e:
+    st.error(f"Erreur de connexion : {e}")
+    data = []
+
+# --- 4. VOTRE APPLICATION ---
+st.title("🚧 Supervision Smart Control Béton - LGV Casa Sud")
+
+# --- INDICATEURS CLÉS (KPIs) ---
+if data and len(data) > 0:
+    df = pd.DataFrame(data)
+    total_coulages = len(df)
+    conformes = len(df[df["statut"].str.contains("Conforme", case=False, na=False)]) if "statut" in df.columns else 0
+    taux_conf = (conformes / total_coulages) * 100 if total_coulages > 0 else 0
+    temp_moy = df["temp_beton"].mean() if "temp_beton" in df.columns else 0
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📊 Total Coulages", total_coulages)
+    col2.metric("✅ Taux de Conformité", f"{taux_conf:.1f}%")
+    col3.metric("🌡️ Temp. Moyenne", f"{temp_moy:.1f} °C" if pd.notnull(temp_moy) else "N/A")
+    st.write("---")
+
+# --- FORMULAIRE & TABLEAU (Comme avant) ---
+# (Vous pouvez recoller ici votre partie formulaire et tableau existante)
