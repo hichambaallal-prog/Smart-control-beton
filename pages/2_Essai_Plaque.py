@@ -8,7 +8,7 @@ st.set_page_config(page_title="Essai à la Plaque - LPEE", layout="wide")
 # Connection Supabase
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
 # ⚠️ Remplacez la chaîne ci-dessous par votre vraie clé ANON Supabase (qui commence par eyJ...)
-CLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." 
+CLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxaWpzdnh5cmR5bWNucWx1aXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NDIwMjIsImV4cCI6MjEwMTUxODAyMn0.xjYXfGqea7P8kK8df9ootEJywCz-zoOzt8LESNRo2i0" 
 
 try:
     supabase: Client = create_client(URL, CLE)
