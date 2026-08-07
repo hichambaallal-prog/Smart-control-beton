@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime, date
 from supabase import create_client, Client
 
 # 1. Configuration de la page
@@ -8,12 +9,10 @@ st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide
 # =========================================================
 # 2. VALEURS FIXES & MOTS DE PASSE
 # =========================================================
-# 🔹 Données inchangeables (pré-remplies automatiquement)
 DEFAULT_PROJET = "LGV Casa Sud"
 DEFAULT_ENTREPRISE = "TGCC"
-DEFAULT_CENTRALE = "Centrale 1"
+DEFAULT_CENTRALE = "TG PREFA"
 
-# 🔹 Mots de passe
 PASSWORD_GENERAL = "lpee2026"          # Accès technicien
 PASSWORD_ADMIN = "lpee@2026"     # Code administrateur (Pour Modifier & Supprimer)
 
@@ -48,36 +47,54 @@ CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # ⚠️ REMETTEZ VOTRE 
 try:
     supabase: Client = create_client(URL, CLE)
     response = supabase.table("controles_beton").select("*").execute()
-    data = response.data
+    data_all = response.data or []
 except Exception as e:
     st.error(f"Erreur de connexion à la base de données : {e}")
-    data = []
+    data_all = []
 
 # En-tête de l'application
-st.title("🚧 Fiche de Suivi et Contrôle du Béton - LGV Casa Sud")
+st.title("🚧 Suivi Journalier de Bétonnage - LGV Casa Sud")
 st.markdown("### Laboratoire Public d'Essais et d'Études (LPEE)")
 
 # =========================================================
-# 4. GESTION PAR ONGLETS
+# 4. SÉLECTION DE LA JOURNÉE DE BÉTONNAGE
 # =========================================================
-tab_ajouter, tab_modifier, tab_supprimer = st.tabs([
-    "➕ Nouveau rapport", 
-    "✏️ Modifier un rapport (Admin)", 
-    "❌ Supprimer un rapport (Admin)"
+st.markdown("---")
+col_date1, col_date2 = st.columns([1, 2])
+
+with col_date1:
+    date_choisie = st.date_input("📅 Choisir la journée de bétonnage :", value=date.today())
+    str_date_choisie = date_choisie.strftime("%d/%m/%Y")
+
+# Filtrer les données pour la journée sélectionnée
+data_jour = [r for r in data_all if r.get("date_betonnage") == str_date_choisie]
+
+with col_date2:
+    st.info(f"📌 **Fichier du jour sélectionné : {str_date_choisie}** | Camions contrôlés aujourd'hui : **{len(data_jour)}**")
+
+# =========================================================
+# 5. GESTION PAR ONGLETS (JOURNÉE ACTUELLE)
+# =========================================================
+tab_ajouter, tab_modifier, tab_supprimer, tab_historique = st.tabs([
+    "➕ Ajouter un camion (Saisie du Jour)", 
+    "✏️ Modifier un camion (Admin)", 
+    "❌ Supprimer un camion (Admin)",
+    "📚 Historique & Tous les Fichiers"
 ])
 
 # ---------------------------------------------------------
-# --- ONGLET 1 : NOUVEAU RAPPORT (Accessible à tous) ---
+# --- ONGLET 1 : SAISIE D'UN CAMION (JOURNÉE SÉLECTIONNÉE) ---
 # ---------------------------------------------------------
 with tab_ajouter:
+    st.subheader(f"📝 Saisie pour la journée du {str_date_choisie}")
+    
     with st.form("form_controle_ajouter"):
-        st.markdown("#### 1. Identification, Traçabilité & Conditions Chantier")
         c1, c2, c3 = st.columns(3)
         
         with c1:
-            projet = st.text_input("Projet", value=DEFAULT_PROJET, disabled=True, key="add_projet")
-            entreprise = st.text_input("Entreprise", value=DEFAULT_ENTREPRISE, disabled=True, key="add_ent")
-            centrale_beton = st.text_input("Centrale béton", value=DEFAULT_CENTRALE, disabled=True, key="add_centrale")
+            projet = st.text_input("Projet", value=DEFAULT_PROJET, disabled=True)
+            entreprise = st.text_input("Entreprise", value=DEFAULT_ENTREPRISE, disabled=True)
+            centrale_beton = st.text_input("Centrale béton", value=DEFAULT_CENTRALE, disabled=True)
             
         with c2:
             num_betonnage = st.text_input("N° Bétonnage", value="25/260/IA/01", key="add_num_bet")
@@ -85,13 +102,12 @@ with tab_ajouter:
             element_betonne = st.text_input("Élément bétonné", value="Semelle C0", key="add_elem")
             
         with c3:
-            volume_beton = st.text_input("Volume béton", value="120 m³", key="add_vol")
-            num_bon_livraison = st.text_input("N° bon livraison", value="BL2548", key="add_bl")
+            num_bon_livraison = st.text_input("N° bon livraison (BL)", value="BL2548", key="add_bl")
+            volume_beton = st.text_input("Volume béton (m³)", value="8", key="add_vol")
             classe_beton = st.text_input("Classe béton", value="C30/37", key="add_classe")
-            date_betonnage = st.text_input("Date bétonnage", value="05/08/2026", key="add_date")
 
         st.markdown("---")
-        st.markdown("#### 2. Conditions & Mesures Chantier")
+        st.markdown("#### Mesures & Contrôles Chantier")
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         
         with col_m1:
@@ -109,7 +125,7 @@ with tab_ajouter:
 
         observations = st.text_area("Observations", value="RAS", key="add_obs")
 
-        submit_add = st.form_submit_button("💾 Enregistrer le rapport complet")
+        submit_add = st.form_submit_button("💾 Enregistrer le camion dans la journée")
         
         if submit_add:
             data_to_insert = {
@@ -122,7 +138,7 @@ with tab_ajouter:
                 "volume_beton": volume_beton,
                 "num_bon_livraison": num_bon_livraison,
                 "classe_beton": classe_beton,
-                "date_betonnage": date_betonnage,
+                "date_betonnage": str_date_choisie,
                 "meteo": meteo,
                 "observations": observations,
                 "heure_fin_production_cab": heure_fin_prod,
@@ -135,7 +151,7 @@ with tab_ajouter:
             }
             try:
                 supabase.table("controles_beton").insert(data_to_insert).execute()
-                st.success("Rapport enregistré avec succès dans Supabase !")
+                st.success(f"Camion {num_bon_livraison} enregistré dans la fiche du {str_date_choisie} !")
                 st.rerun()
             except Exception as e:
                 st.error(f"Erreur d'enregistrement : {e}")
@@ -156,12 +172,12 @@ with tab_modifier:
                 st.error("❌ Code Administrateur incorrect.")
     else:
         st.info("🔓 Mode Administrateur Actif")
-        if data and len(data) > 0:
+        if data_jour and len(data_jour) > 0:
             options_edit = {
-                f"ID #{row.get('id')} | N° Bétonnage : {row.get('num_betonnage')} | BL : {row.get('num_bon_livraison')} | Ouvrage : {row.get('ouvrage')}": row
-                for row in data
+                f"ID #{row.get('id')} | BL : {row.get('num_bon_livraison')} | Arrivée : {row.get('heure_arrivee_chantier')} | Ouvrage : {row.get('ouvrage')}": row
+                for row in data_jour
             }
-            choix = st.selectbox("📌 Choisissez la fiche à modifier :", list(options_edit.keys()), key="select_edit")
+            choix = st.selectbox("📌 Choisissez le camion à modifier pour cette journée :", list(options_edit.keys()), key="select_edit")
             row_selected = options_edit[choix]
 
             with st.form("form_controle_modifier"):
@@ -182,7 +198,6 @@ with tab_modifier:
                     edit_vol = st.text_input("Volume béton", value=str(row_selected.get('volume_beton') or ''))
                     edit_bl = st.text_input("N° bon livraison", value=str(row_selected.get('num_bon_livraison') or ''))
                     edit_classe = st.text_input("Classe béton", value=str(row_selected.get('classe_beton') or ''))
-                    edit_date = st.text_input("Date bétonnage", value=str(row_selected.get('date_betonnage') or ''))
 
                 st.markdown("---")
                 col_m1, col_m2, col_m3, col_m4 = st.columns(4)
@@ -207,26 +222,26 @@ with tab_modifier:
 
                 edit_obs = st.text_area("Observations", value=str(row_selected.get('observations') or ''))
 
-                submit_update = st.form_submit_button("🔄 Mettre à jour cette fiche")
+                submit_update = st.form_submit_button("🔄 Mettre à jour cette entrée")
 
                 if submit_update:
                     update_data = {
                         "projet": edit_projet, "entreprise": edit_entreprise, "centrale_beton": edit_centrale,
                         "num_betonnage": edit_num_bet, "ouvrage": edit_ouvrage, "element_betonne": edit_elem,
                         "volume_beton": edit_vol, "num_bon_livraison": edit_bl,
-                        "classe_beton": edit_classe, "date_betonnage": edit_date, "meteo": edit_meteo,
+                        "classe_beton": edit_classe, "date_betonnage": str_date_choisie, "meteo": edit_meteo,
                         "observations": edit_obs, "heure_fin_production_cab": edit_h_fin,
                         "heure_arrivee_chantier": edit_h_arr, "tbf": round(edit_tbf, 1), "ta": round(edit_ta, 1),
                         "affaissement": int(edit_aff), "prelevement": edit_prelev, "statut": edit_statut
                     }
                     try:
                         supabase.table("controles_beton").update(update_data).eq("id", row_selected["id"]).execute()
-                        st.success("Fiche mise à jour avec succès !")
+                        st.success("Mise à jour réussie !")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erreur lors de la mise à jour : {e}")
         else:
-            st.info("Aucun contrôle enregistré dans la base de données.")
+            st.info(f"Aucun camion enregistré pour le {str_date_choisie}.")
 
 # ---------------------------------------------------------
 # --- ONGLET 3 : SUPPRIMER (Réservé Admin) ---
@@ -244,46 +259,65 @@ with tab_supprimer:
                 st.error("❌ Code Administrateur incorrect.")
     else:
         st.info("🔓 Mode Administrateur Actif")
-        if data and len(data) > 0:
+        if data_jour and len(data_jour) > 0:
             options_del = {
-                f"ID #{row.get('id')} | N° Bétonnage : {row.get('num_betonnage')} | BL : {row.get('num_bon_livraison')} | Ouvrage : {row.get('ouvrage')}": row["id"]
-                for row in data
+                f"ID #{row.get('id')} | BL : {row.get('num_bon_livraison')} | Ouvrage : {row.get('ouvrage')}": row["id"]
+                for row in data_jour
             }
-            choix_del = st.selectbox("⚠️ Choisissez la fiche à supprimer définitivement :", list(options_del.keys()), key="select_del")
+            choix_del = st.selectbox("⚠️ Choisissez la ligne à supprimer :", list(options_del.keys()), key="select_del")
             id_to_delete = options_del[choix_del]
 
             if st.button("🚨 Confirmer la suppression définitive", type="primary"):
                 try:
                     supabase.table("controles_beton").delete().eq("id", id_to_delete).execute()
-                    st.success("Fiche supprimée avec succès !")
+                    st.success("Entrée supprimée avec succès !")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erreur lors de la suppression : {e}")
         else:
-            st.info("Aucun contrôle enregistré à supprimer.")
+            st.info(f"Aucun enregistrement à supprimer pour le {str_date_choisie}.")
+
+# ---------------------------------------------------------
+# --- ONGLET 4 : HISTORIQUE COMPLET ---
+# ---------------------------------------------------------
+with tab_historique:
+    st.subheader("📚 Registre Général (Toutes les journées confondues)")
+    if data_all and len(data_all) > 0:
+        df_all = pd.DataFrame(data_all)
+        st.dataframe(df_all, use_container_width=True)
+        csv_all = df_all.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Télécharger l'historique complet (Tout le chantier)",
+            data=csv_all,
+            file_name="registre_complet_beton_lgv.csv",
+            mime="text/csv",
+        )
 
 # =========================================================
-# 5. REGISTRE ET TABLEAU D'AFFICHAGE GÉNÉRAL
+# 6. TABLEAU & FICHIER DE LA JOURNÉE SÉLECTIONNÉE
 # =========================================================
 st.markdown("---")
-st.subheader("📋 Registre Général des Contrôles de Béton Frais")
+st.subheader(f"📋 Fichier et Tableau de Suivi pour le : {str_date_choisie}")
 
-if data and len(data) > 0:
-    df = pd.DataFrame(data)
+if data_jour and len(data_jour) > 0:
+    df_jour = pd.DataFrame(data_jour)
     colonnes_visibles = [
-        "id", "num_betonnage", "projet", "entreprise", "centrale_beton", 
-        "ouvrage", "element_betonne", "num_bon_livraison", "classe_beton", 
-        "heure_fin_production_cab", "heure_arrivee_chantier", "tbf", "ta", "affaissement", "prelevement", "statut"
+        "id", "num_bon_livraison", "num_betonnage", "ouvrage", "element_betonne", 
+        "volume_beton", "classe_beton", "heure_fin_production_cab", 
+        "heure_arrivee_chantier", "tbf", "ta", "affaissement", "prelevement", "statut"
     ]
-    df_affichage = df[[c for c in colonnes_visibles if c in df.columns]]
+    df_affichage = df_jour[[c for c in colonnes_visibles if c in df_jour.columns]]
     st.dataframe(df_affichage, use_container_width=True)
 
-    csv = df_affichage.to_csv(index=False).encode('utf-8')
+    # Bouton de téléchargement du fichier SPÉCIFIQUE de la journée
+    csv_jour = df_affichage.to_csv(index=False).encode('utf-8')
+    nom_fichier_jour = f"Rapport_Betonnage_{date_choisie.strftime('%Y-%m-%d')}.csv"
+    
     st.download_button(
-        label="📥 Télécharger le registre officiel (Format CSV / Excel)",
-        data=csv,
-        file_name="registre_suivi_beton_lgv_casasud.csv",
+        label=f"📥 Télécharger le fichier journalier ({nom_fichier_jour})",
+        data=csv_jour,
+        file_name=nom_fichier_jour,
         mime="text/csv",
     )
 else:
-    st.info("Aucun contrôle enregistré dans la base de données pour le moment.")
+    st.warning(f"Aucun suivi enregistré pour la journée du {str_date_choisie}. Utilisez le formulaire ci-dessus pour ajouter le premier camion !")
