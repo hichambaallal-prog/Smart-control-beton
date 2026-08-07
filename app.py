@@ -7,6 +7,40 @@ from supabase import create_client, Client
 st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide")
 
 # =========================================================
+# FONCTION DE CALCUL AUTOMATIQUE DU STATUT (Formule Excel)
+# =========================================================
+def evaluer_statut_beton(tbf, h_fin, h_arr, affaissement):
+    """
+    Formule Excel equivalente :
+    =SI(ET(TBF < 32.1; (Arrivee - FinProd) <= 2h; Affaissement >= 160; Affaissement <= 220); "Conforme"; "Non conforme")
+    """
+    try:
+        # 1. Condition TBF (< 32.1 °C)
+        cond_tbf = float(tbf) < 32.1
+
+        # 2. Condition Affaissement (entre 160 mm et 220 mm)
+        cond_aff = 160 <= int(affaissement) <= 220
+
+        # 3. Condition Délai (Arrivée - Fin Prod <= 2 heures)
+        fmt = "%H:%M"
+        t_fin = datetime.strptime(str(h_fin).strip(), fmt)
+        t_arr = datetime.strptime(str(h_arr).strip(), fmt)
+
+        diff_minutes = (t_arr - t_fin).total_seconds() / 60
+        if diff_minutes < 0:
+            diff_minutes += 24 * 60  # Gestion du passage de minuit
+
+        cond_delai = 0 <= diff_minutes <= 120
+
+        if cond_tbf and cond_aff and cond_delai:
+            return "✅ Conforme"
+        else:
+            return "⚠️ Non Conforme"
+    except Exception:
+        # En cas d'erreur dans la saisie de l'heure
+        return "⚠️ Non Conforme"
+
+# =========================================================
 # 2. VALEURS FIXES & MOTS DE PASSE
 # =========================================================
 DEFAULT_PROJET = "LGV Casa Sud"
@@ -110,8 +144,8 @@ with tab_ajouter:
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         
         with col_m1:
-            heure_fin_prod = st.text_input("Heure fin prod. CAB", value="15:28", key="add_h_fin")
-            heure_arrivee = st.text_input("Heure arrivée chantier", value="16:31", key="add_h_arr")
+            heure_fin_prod = st.text_input("Heure fin prod. CAB (HH:MM)", value="15:28", key="add_h_fin")
+            heure_arrivee = st.text_input("Heure arrivée chantier (HH:MM)", value="16:31", key="add_h_arr")
         with col_m2:
             tbf = st.number_input("TBF (°C)", value=32.0, step=0.1, format="%.1f", key="add_tbf")
             ta = st.number_input("TA (°C) - Ambiante", value=28.9, step=0.1, format="%.1f", key="add_ta")
@@ -120,13 +154,16 @@ with tab_ajouter:
             meteo = st.selectbox("Météo", ["Soleil", "Nuageux", "Pluie", "Vent"], key="add_meteo")
         with col_m4:
             prelevement = st.selectbox("Prélèvement", ["OUI", "NON"], key="add_prelev")
-            statut = st.selectbox("STATUT", ["✅ Conforme", "⚠️ Non Conforme"], key="add_statut")
+            st.info("🤖 **STATUT** : Calculé automatiquement (TBF < 32.1°C, Délai ≤ 2h, Slump 160-220 mm)")
 
         observations = st.text_area("Observations", value="RAS", key="add_obs")
 
         submit_add = st.form_submit_button("💾 Enregistrer le camion dans la journée")
         
         if submit_add:
+            # Calcul automatique du statut
+            statut_auto = evaluer_statut_beton(tbf, heure_fin_prod, heure_arrivee, affaissement)
+            
             data_to_insert = {
                 "projet": DEFAULT_PROJET,
                 "entreprise": DEFAULT_ENTREPRISE,
@@ -145,11 +182,11 @@ with tab_ajouter:
                 "ta": round(ta, 1),
                 "affaissement": int(affaissement),
                 "prelevement": prelevement,
-                "statut": statut
+                "statut": statut_auto
             }
             try:
                 supabase.table("controles_beton").insert(data_to_insert).execute()
-                st.success(f"Camion BL : {num_bon_livraison} enregistré dans la fiche du {str_date_choisie} !")
+                st.success(f"Camion BL : {num_bon_livraison} enregistré ! Statut calculé : {statut_auto}")
                 st.rerun()
             except Exception as e:
                 st.error(f"Erreur d'enregistrement : {e}")
@@ -199,8 +236,8 @@ with tab_modifier:
                 st.markdown("---")
                 col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                 with col_m1:
-                    edit_h_fin = st.text_input("Heure fin prod. CAB", value=str(row_selected.get('heure_fin_production_cab') or ''))
-                    edit_h_arr = st.text_input("Heure arrivée chantier", value=str(row_selected.get('heure_arrivee_chantier') or ''))
+                    edit_h_fin = st.text_input("Heure fin prod. CAB (HH:MM)", value=str(row_selected.get('heure_fin_production_cab') or ''))
+                    edit_h_arr = st.text_input("Heure arrivée chantier (HH:MM)", value=str(row_selected.get('heure_arrivee_chantier') or ''))
                 with col_m2:
                     edit_tbf = st.number_input("TBF (°C)", value=float(row_selected.get('tbf') or 0.0), step=0.1, format="%.1f", key="edit_tbf_input")
                     edit_ta = st.number_input("TA (°C)", value=float(row_selected.get('ta') or 0.0), step=0.1, format="%.1f", key="edit_ta_input")
@@ -213,15 +250,14 @@ with tab_modifier:
                     prelev_opts = ["OUI", "NON"]
                     p_idx = prelev_opts.index(row_selected.get('prelevement')) if row_selected.get('prelevement') in prelev_opts else 0
                     edit_prelev = st.selectbox("Prélèvement", prelev_opts, index=p_idx, key="edit_prelev_select")
-                    statut_opts = ["✅ Conforme", "⚠️ Non Conforme"]
-                    s_idx = statut_opts.index(row_selected.get('statut')) if row_selected.get('statut') in statut_opts else 0
-                    edit_statut = st.selectbox("STATUT", statut_opts, index=s_idx, key="edit_statut_select")
+                    st.info(f"Statut Actuel : **{row_selected.get('statut')}** (Sera recalculé automatiquement lors de la mise à jour)")
 
                 edit_obs = st.text_area("Observations", value=str(row_selected.get('observations') or ''))
 
                 submit_update = st.form_submit_button("🔄 Mettre à jour cette entrée")
 
                 if submit_update:
+                    statut_recalcule = evaluer_statut_beton(edit_tbf, edit_h_fin, edit_h_arr, edit_aff)
                     update_data = {
                         "projet": edit_projet, "entreprise": edit_entreprise, "centrale_beton": edit_centrale,
                         "ouvrage": edit_ouvrage, "element_betonne": edit_elem,
@@ -229,11 +265,11 @@ with tab_modifier:
                         "classe_beton": edit_classe, "date_betonnage": str_date_choisie, "meteo": edit_meteo,
                         "observations": edit_obs, "heure_fin_production_cab": edit_h_fin,
                         "heure_arrivee_chantier": edit_h_arr, "tbf": round(edit_tbf, 1), "ta": round(edit_ta, 1),
-                        "affaissement": int(edit_aff), "prelevement": edit_prelev, "statut": edit_statut
+                        "affaissement": int(edit_aff), "prelevement": edit_prelev, "statut": statut_recalcule
                     }
                     try:
                         supabase.table("controles_beton").update(update_data).eq("id", row_selected["id"]).execute()
-                        st.success("Mise à jour réussie !")
+                        st.success(f"Mise à jour réussie ! Nouveau statut : {statut_recalcule}")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erreur lors de la mise à jour : {e}")
@@ -287,7 +323,6 @@ with tab_historique:
             "heure_arrivee_chantier", "tbf", "ta", "affaissement", "prelevement", "statut"
         ]
         df_hist_vis = df_all[[c for c in colonnes_historique if c in df_all.columns]]
-        # 🔹 Début de l'indexation à 1 au lieu de 0
         df_hist_vis.index = range(1, len(df_hist_vis) + 1)
         st.dataframe(df_hist_vis, use_container_width=True)
         
@@ -313,13 +348,10 @@ if data_jour and len(data_jour) > 0:
         "heure_arrivee_chantier", "tbf", "ta", "affaissement", "prelevement", "statut"
     ]
     df_affichage = df_jour[[c for c in colonnes_visibles if c in df_jour.columns]]
-    
-    # 🔹 Début de l'indexation à 1 au lieu de 0
     df_affichage.index = range(1, len(df_affichage) + 1)
     
     st.dataframe(df_affichage, use_container_width=True)
 
-    # Bouton de téléchargement du fichier SPÉCIFIQUE de la journée
     csv_jour = df_affichage.to_csv(index=False).encode('utf-8')
     nom_fichier_jour = f"Rapport_Betonnage_{date_choisie.strftime('%Y-%m-%d')}.csv"
     
