@@ -5,37 +5,39 @@ from supabase import create_client, Client
 # 1. Configuration de la page
 st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide")
 
-# 2. Système de mot de passe sécurisé
+# =========================================================
+# 2. BLOCAGE STRICT PAR MOT DE PASSE
+# =========================================================
 PASSWORD_SECRET = "lpee2026"
 
-def check_password():
-    def password_entered():
-        if st.session_state["password"] == PASSWORD_SECRET:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]
+# Initialisation de la mémoire de connexion
+if "authentifie" not in st.session_state:
+    st.session_state["authentifie"] = False
+
+# Si l'utilisateur N'EST PAS authentifié, on bloque tout ici
+if not st.session_state["authentifie"]:
+    st.title("🔒 Accès Sécurisé - LPEE")
+    st.warning("Veuillez saisir le mot de passe du laboratoire pour accéder au registre de bétonnage.")
+    
+    pwd = st.text_input("Mot de passe", type="password")
+    
+    if st.button("Valider l'accès"):
+        if pwd == PASSWORD_SECRET:
+            st.session_state["authentifie"] = True
+            st.rerun() # Rafraîchit la page pour débloquer la suite
         else:
-            st.session_state["password_correct"] = False
-
-    if "password_correct" not in st.session_state:
-        st.title("🔒 Accès Sécurisé - Smart Control Béton")
-        st.write("Veuillez saisir le mot de passe du laboratoire pour accéder à l'application.")
-        st.text_input("Mot de passe", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.title("🔒 Accès Sécurisé - Smart Control Béton")
-        st.write("Veuillez saisir le mot de passe du laboratoire pour accéder à l'application.")
-        st.text_input("Mot de passe", type="password", on_change=password_entered, key="password")
-        st.error("❌ Mot de passe incorrect.")
-        return False
-    else:
-        return True
-
-if not check_password():
+            st.error("❌ Mot de passe incorrect.")
+    
+    # CETTE COMMANDE ARRÊTE LA LECTURE DU FICHIER. RIEN EN DESSOUS NE SERA AFFICHÉ.
     st.stop()
 
-# 3. Connexion à Supabase
+# =========================================================
+# 3. LA SUITE DE L'APPLICATION (Visible uniquement si connecté)
+# =========================================================
+
+# Connexion à Supabase
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
-CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # Mettez votre clé secrète Supabase
+CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # N'OUBLIEZ PAS DE REMETTRE VOTRE CLÉ ICI
 
 try:
     supabase: Client = create_client(URL, CLE)
@@ -45,15 +47,14 @@ except Exception as e:
     st.error(f"Erreur de connexion : {e}")
     data = []
 
-# 4. En-tête de l'application
+# En-tête de l'application
 st.title("🚧 Fiche de Suivi et Contrôle du Béton - LGV Casa Sud")
 st.markdown("### Laboratoire Public d'Essais et d'Études (LPEE)")
 
-# --- FORMULAIRE DE SAISIE CONFORME AU MODÈLE ---
+# --- FORMULAIRE DE SAISIE ---
 with st.expander("➕ Saisir un nouveau rapport de bétonnage (Terrain)", expanded=True):
     with st.form("form_controle_complet"):
         
-        # --- SECTION 1 & 2 & 4 : INFORMATIONS GÉNÉRALES ---
         st.markdown("#### 1. Identification, Traçabilité & Conditions Chantier")
         c1, c2, c3 = st.columns(3)
         
@@ -76,11 +77,8 @@ with st.expander("➕ Saisir un nouveau rapport de bétonnage (Terrain)", expand
         with c3:
             meteo = st.selectbox("Météo", ["Soleil", "Nuageux", "Pluie", "Vent"])
             observations = st.text_area("Observations", value="RAS")
-            st.info("💡 Ces informations générales caractérisent le lot de bétonnage.")
 
         st.markdown("---")
-        
-        # --- SECTION 3 : CONTRÔLE DU BÉTON FRAIS ---
         st.markdown("#### 3. Contrôle du Béton Frais (Mesures Chantier)")
         
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
@@ -129,24 +127,19 @@ with st.expander("➕ Saisir un nouveau rapport de bétonnage (Terrain)", expand
             except Exception as e:
                 st.error(f"Erreur lors de l'enregistrement : {e}")
 
-# --- TABLEAU DE SUIVI ET EXPLOITATION ---
+# --- TABLEAU DE SUIVI ---
 st.subheader("📋 Registre des Contrôles de Béton Frais")
 
 if data and len(data) > 0:
     df = pd.DataFrame(data)
-    
-    # Sélection et renommage des colonnes pour affichage
     colonnes_visibles = [
         "num_betonnage", "ouvrage", "element_betonne", "centrale_beton", 
         "num_bon_livraison", "camion_toupie", "classe_beton", 
         "heure_fin_production_cab", "heure_arrivee_chantier", "tbf", "ta", "affaissement", "prelevement", "statut"
     ]
-    
     df_affichage = df[[c for c in colonnes_visibles if c in df.columns]]
-    
     st.dataframe(df_affichage, use_container_width=True)
 
-    # Bouton de téléchargement Excel / CSV
     csv = df_affichage.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Télécharger le registre officiel (Format CSV / Excel)",
