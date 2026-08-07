@@ -2,42 +2,41 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
-# 1. Configuration de la page
 st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide")
 
 # =========================================================
-# 2. BLOCAGE STRICT PAR MOT DE PASSE
+# 1. MOTS DE PASSE (GÉNÉRAL ET ADMINISTRATEUR)
 # =========================================================
-PASSWORD_SECRET = "lpee2026"
+PASSWORD_GENERAL = "lpee2026"          # Pour les techniciens / consultation & ajout
+PASSWORD_ADMIN = "lpee@2026"  # ⚠️ VOTE CODE SECRET POUR MODIFIER/SUPPRIMER
 
-# Initialisation de la mémoire de connexion
+# Connexion générale
 if "authentifie" not in st.session_state:
     st.session_state["authentifie"] = False
 
-# Si l'utilisateur N'EST PAS authentifié, on bloque tout ici
+if "is_admin" not in st.session_state:
+    st.session_state["is_admin"] = False
+
 if not st.session_state["authentifie"]:
     st.title("🔒 Accès Sécurisé - LPEE")
-    st.warning("Veuillez saisir le mot de passe du laboratoire pour accéder au registre de bétonnage.")
+    st.warning("Veuillez saisir le mot de passe du laboratoire pour accéder à l'application.")
     
     pwd = st.text_input("Mot de passe", type="password")
-    
     if st.button("Valider l'accès"):
-        if pwd == PASSWORD_SECRET:
+        if pwd == PASSWORD_GENERAL or pwd == PASSWORD_ADMIN:
             st.session_state["authentifie"] = True
-            st.rerun() # Rafraîchit la page pour débloquer la suite
+            if pwd == PASSWORD_ADMIN:
+                st.session_state["is_admin"] = True
+            st.rerun()
         else:
             st.error("❌ Mot de passe incorrect.")
-    
-    # CETTE COMMANDE ARRÊTE LA LECTURE DU FICHIER. RIEN EN DESSOUS NE SERA AFFICHÉ.
     st.stop()
 
 # =========================================================
-# 3. LA SUITE DE L'APPLICATION (Visible uniquement si connecté)
+# 2. CONNEXION SUPABASE
 # =========================================================
-
-# Connexion à Supabase
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
-CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # N'OUBLIEZ PAS DE REMETTRE VOTRE CLÉ ICI
+CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"
 
 try:
     supabase: Client = create_client(URL, CLE)
@@ -47,105 +46,48 @@ except Exception as e:
     st.error(f"Erreur de connexion : {e}")
     data = []
 
-# En-tête de l'application
-st.title("🚧 Fiche de Suivi et Contrôle du Béton - LGV Casa Sud")
-st.markdown("### Laboratoire Public d'Essais et d'Études (LPEE)")
+# =========================================================
+# 3. ONGLETS AVEC VERROUILLAGE ADMIN
+# =========================================================
+tab_ajouter, tab_modifier, tab_supprimer = st.tabs([
+    "➕ Nouveau rapport", 
+    "✏️ Modifier un rapport (Admin)", 
+    "❌ Supprimer un rapport (Admin)"
+])
 
-# --- FORMULAIRE DE SAISIE ---
-with st.expander("➕ Saisir un nouveau rapport de bétonnage (Terrain)", expanded=True):
-    with st.form("form_controle_complet"):
-        
-        st.markdown("#### 1. Identification, Traçabilité & Conditions Chantier")
-        c1, c2, c3 = st.columns(3)
-        
-        with c1:
-            num_betonnage = st.text_input("N° Bétonnage", value="25/260/IA/01")
-            projet = st.text_input("Projet", value="LGV Casa Sud")
-            ouvrage = st.text_input("Ouvrage", value="PRO745 OA1")
-            element_betonne = st.text_input("Élément bétonné", value="Semelle C0")
-            entreprise = st.text_input("Entreprise", value="TGCC")
-            volume_beton = st.text_input("Volume béton", value="120 m³")
-            
-        with c2:
-            centrale_beton = st.text_input("Centrale béton", value="Centrale X")
-            heure_malaxage = st.text_input("Heure malaxage", value="08:30")
-            num_bon_livraison = st.text_input("N° bon livraison", value="BL2548")
-            camion_toupie = st.text_input("Camion toupie", value="T12")
-            classe_beton = st.text_input("Classe béton", value="C30/37")
-            date_betonnage = st.text_input("Date bétonnage", value="05/08/2026")
-            
-        with c3:
-            meteo = st.selectbox("Météo", ["Soleil", "Nuageux", "Pluie", "Vent"])
-            observations = st.text_area("Observations", value="RAS")
+# --- ONGLET 1 : AJOUTER (Accessible à tous) ---
+with tab_ajouter:
+    st.subheader("Saisie d'un nouveau rapport")
+    # ... (Gardez le formulaire d'ajout habituel) ...
 
-        st.markdown("---")
-        st.markdown("#### 3. Contrôle du Béton Frais (Mesures Chantier)")
-        
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        with col_m1:
-            heure_fin_prod = st.text_input("Heure fin prod. CAB", value="15:28")
-            heure_arrivee = st.text_input("Heure arrivée chantier", value="16:31")
-        with col_m2:
-            tbf = st.number_input("TBF (°C)", value=32.0)
-            ta = st.number_input("TA (°C) - Ambiante", value=28.9)
-        with col_m3:
-            affaissement = st.number_input("Affaissement (mm)", value=170.0)
-            prelevement = st.selectbox("Prélèvement", ["OUI", "NON"])
-        with col_m4:
-            statut = st.selectbox("STATUT", ["✅ Conforme", "⚠️ Non Conforme"])
-
-        submit_button = st.form_submit_button("💾 Enregistrer le rapport complet")
-        
-        if submit_button:
-            data_to_insert = {
-                "num_betonnage": num_betonnage,
-                "projet": projet,
-                "ouvrage": ouvrage,
-                "element_betonne": element_betonne,
-                "entreprise": entreprise,
-                "volume_beton": volume_beton,
-                "centrale_beton": centrale_beton,
-                "heure_malaxage": heure_malaxage,
-                "num_bon_livraison": num_bon_livraison,
-                "camion_toupie": camion_toupie,
-                "classe_beton": classe_beton,
-                "date_betonnage": date_betonnage,
-                "meteo": meteo,
-                "observations": observations,
-                "heure_fin_production_cab": heure_fin_prod,
-                "heure_arrivee_chantier": heure_arrivee,
-                "tbf": tbf,
-                "ta": ta,
-                "affaissement": affaissement,
-                "prelevement": prelevement,
-                "statut": statut
-            }
-            try:
-                supabase.table("controles_beton").insert(data_to_insert).execute()
-                st.success("Rapport enregistré avec succès dans la base de données !")
+# --- ONGLET 2 : MODIFIER (Réservé à l'Admin) ---
+with tab_modifier:
+    if not st.session_state["is_admin"]:
+        st.warning("🔒 Cet espace est réservé à l'administrateur du laboratoire.")
+        admin_key = st.text_input("Saisissez le code Administrateur pour débloquer :", type="password", key="pwd_mod")
+        if st.button("Débloquer la modification"):
+            if admin_key == PASSWORD_ADMIN:
+                st.session_state["is_admin"] = True
+                st.success("Accès Administrateur activé !")
                 st.rerun()
-            except Exception as e:
-                st.error(f"Erreur lors de l'enregistrement : {e}")
+            else:
+                st.error("Code Administrateur incorrect.")
+    else:
+        st.success("🔓 Mode Administrateur Actif")
+        # ... (Placer ici le formulaire de modification) ...
 
-# --- TABLEAU DE SUIVI ---
-st.subheader("📋 Registre des Contrôles de Béton Frais")
-
-if data and len(data) > 0:
-    df = pd.DataFrame(data)
-    colonnes_visibles = [
-        "num_betonnage", "ouvrage", "element_betonne", "centrale_beton", 
-        "num_bon_livraison", "camion_toupie", "classe_beton", 
-        "heure_fin_production_cab", "heure_arrivee_chantier", "tbf", "ta", "affaissement", "prelevement", "statut"
-    ]
-    df_affichage = df[[c for c in colonnes_visibles if c in df.columns]]
-    st.dataframe(df_affichage, use_container_width=True)
-
-    csv = df_affichage.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Télécharger le registre officiel (Format CSV / Excel)",
-        data=csv,
-        file_name="registre_suivi_beton_lgv_casasud.csv",
-        mime="text/csv",
-    )
-else:
-    st.info("Aucun contrôle enregistré pour le moment.")
+# --- ONGLET 3 : SUPPRIMER (Réservé à l'Admin) ---
+with tab_supprimer:
+    if not st.session_state["is_admin"]:
+        st.warning("🔒 Cet espace est réservé à l'administrateur du laboratoire.")
+        admin_key = st.text_input("Saisissez le code Administrateur pour débloquer :", type="password", key="pwd_del")
+        if st.button("Débloquer la suppression"):
+            if admin_key == PASSWORD_ADMIN:
+                st.session_state["is_admin"] = True
+                st.success("Accès Administrateur activé !")
+                st.rerun()
+            else:
+                st.error("Code Administrateur incorrect.")
+    else:
+        st.success("🔓 Mode Administrateur Actif")
+        # ... (Placer ici l'option de suppression) ...
