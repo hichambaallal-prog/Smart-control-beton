@@ -35,7 +35,7 @@ if not check_password():
 
 # 3. Connexion à Supabase
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
-CLE = "VOTRE_CLE_ANON_ICI"  # Mettez votre clé secrète Supabase
+CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # Mettez votre clé secrète Supabase
 
 try:
     supabase: Client = create_client(URL, CLE)
