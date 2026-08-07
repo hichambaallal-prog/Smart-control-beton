@@ -6,7 +6,7 @@ from supabase import create_client, Client
 st.set_page_config(page_title="Essai à la Plaque - LPEE", layout="wide")
 
 # Connection Supabase
-URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
+URL = "https://yqijsvxyrdymcnqluipa.supabase.co/rest/v1/"
 CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # ⚠️ Remettez votre vraie clé Supabase
 
 try:
