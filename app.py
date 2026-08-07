@@ -11,7 +11,7 @@ st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide
 # 🔹 Données inchangeables (pré-remplies automatiquement)
 DEFAULT_PROJET = "LGV Casa Sud"
 DEFAULT_ENTREPRISE = "TGCC"
-DEFAULT_CENTRALE = "TG PREFA"
+DEFAULT_CENTRALE = "Centrale 1"
 
 # 🔹 Mots de passe
 PASSWORD_GENERAL = "lpee2026"          # Accès technicien
@@ -75,7 +75,6 @@ with tab_ajouter:
         c1, c2, c3 = st.columns(3)
         
         with c1:
-            # Champs fixes (verrouillés)
             projet = st.text_input("Projet", value=DEFAULT_PROJET, disabled=True, key="add_projet")
             entreprise = st.text_input("Entreprise", value=DEFAULT_ENTREPRISE, disabled=True, key="add_ent")
             centrale_beton = st.text_input("Centrale béton", value=DEFAULT_CENTRALE, disabled=True, key="add_centrale")
@@ -84,13 +83,12 @@ with tab_ajouter:
             num_betonnage = st.text_input("N° Bétonnage", value="25/260/IA/01", key="add_num_bet")
             ouvrage = st.text_input("Ouvrage", value="PRO745 OA1", key="add_ouvrage")
             element_betonne = st.text_input("Élément bétonné", value="Semelle C0", key="add_elem")
-            volume_beton = st.text_input("Volume béton", value="120 m³", key="add_vol")
             
         with c3:
+            volume_beton = st.text_input("Volume béton", value="120 m³", key="add_vol")
             num_bon_livraison = st.text_input("N° bon livraison", value="BL2548", key="add_bl")
             classe_beton = st.text_input("Classe béton", value="C30/37", key="add_classe")
             date_betonnage = st.text_input("Date bétonnage", value="05/08/2026", key="add_date")
-            heure_malaxage = st.text_input("Heure malaxage", value="08:30", key="add_h_mal")
 
         st.markdown("---")
         st.markdown("#### 2. Conditions & Mesures Chantier")
@@ -100,10 +98,10 @@ with tab_ajouter:
             heure_fin_prod = st.text_input("Heure fin prod. CAB", value="15:28", key="add_h_fin")
             heure_arrivee = st.text_input("Heure arrivée chantier", value="16:31", key="add_h_arr")
         with col_m2:
-            tbf = st.number_input("TBF (°C)", value=32.0, key="add_tbf")
-            ta = st.number_input("TA (°C) - Ambiante", value=28.9, key="add_ta")
+            tbf = st.number_input("TBF (°C)", value=32.0, step=0.1, format="%.1f", key="add_tbf")
+            ta = st.number_input("TA (°C) - Ambiante", value=28.9, step=0.1, format="%.1f", key="add_ta")
         with col_m3:
-            affaissement = st.number_input("Affaissement (mm)", value=170.0, key="add_aff")
+            affaissement = st.number_input("Affaissement (mm)", value=170, step=1, format="%d", key="add_aff")
             meteo = st.selectbox("Météo", ["Soleil", "Nuageux", "Pluie", "Vent"], key="add_meteo")
         with col_m4:
             prelevement = st.selectbox("Prélèvement", ["OUI", "NON"], key="add_prelev")
@@ -122,7 +120,6 @@ with tab_ajouter:
                 "ouvrage": ouvrage,
                 "element_betonne": element_betonne,
                 "volume_beton": volume_beton,
-                "heure_malaxage": heure_malaxage,
                 "num_bon_livraison": num_bon_livraison,
                 "classe_beton": classe_beton,
                 "date_betonnage": date_betonnage,
@@ -130,9 +127,9 @@ with tab_ajouter:
                 "observations": observations,
                 "heure_fin_production_cab": heure_fin_prod,
                 "heure_arrivee_chantier": heure_arrivee,
-                "tbf": tbf,
-                "ta": ta,
-                "affaissement": affaissement,
+                "tbf": round(tbf, 1),
+                "ta": round(ta, 1),
+                "affaissement": int(affaissement),
                 "prelevement": prelevement,
                 "statut": statut
             }
@@ -180,10 +177,9 @@ with tab_modifier:
                     edit_num_bet = st.text_input("N° Bétonnage", value=str(row_selected.get('num_betonnage') or ''))
                     edit_ouvrage = st.text_input("Ouvrage", value=str(row_selected.get('ouvrage') or ''))
                     edit_elem = st.text_input("Élément bétonné", value=str(row_selected.get('element_betonne') or ''))
-                    edit_vol = st.text_input("Volume béton", value=str(row_selected.get('volume_beton') or ''))
                     
                 with c3:
-                    edit_heure_mal = st.text_input("Heure malaxage", value=str(row_selected.get('heure_malaxage') or ''))
+                    edit_vol = st.text_input("Volume béton", value=str(row_selected.get('volume_beton') or ''))
                     edit_bl = st.text_input("N° bon livraison", value=str(row_selected.get('num_bon_livraison') or ''))
                     edit_classe = st.text_input("Classe béton", value=str(row_selected.get('classe_beton') or ''))
                     edit_date = st.text_input("Date bétonnage", value=str(row_selected.get('date_betonnage') or ''))
@@ -194,10 +190,10 @@ with tab_modifier:
                     edit_h_fin = st.text_input("Heure fin prod. CAB", value=str(row_selected.get('heure_fin_production_cab') or ''))
                     edit_h_arr = st.text_input("Heure arrivée chantier", value=str(row_selected.get('heure_arrivee_chantier') or ''))
                 with col_m2:
-                    edit_tbf = st.number_input("TBF (°C)", value=float(row_selected.get('tbf') or 0.0), key="edit_tbf_input")
-                    edit_ta = st.number_input("TA (°C)", value=float(row_selected.get('ta') or 0.0), key="edit_ta_input")
+                    edit_tbf = st.number_input("TBF (°C)", value=float(row_selected.get('tbf') or 0.0), step=0.1, format="%.1f", key="edit_tbf_input")
+                    edit_ta = st.number_input("TA (°C)", value=float(row_selected.get('ta') or 0.0), step=0.1, format="%.1f", key="edit_ta_input")
                 with col_m3:
-                    edit_aff = st.number_input("Affaissement (mm)", value=float(row_selected.get('affaissement') or 0.0), key="edit_aff_input")
+                    edit_aff = st.number_input("Affaissement (mm)", value=int(row_selected.get('affaissement') or 0), step=1, format="%d", key="edit_aff_input")
                     meteo_opts = ["Soleil", "Nuageux", "Pluie", "Vent"]
                     m_idx = meteo_opts.index(row_selected.get('meteo')) if row_selected.get('meteo') in meteo_opts else 0
                     edit_meteo = st.selectbox("Météo", meteo_opts, index=m_idx, key="edit_meteo_select")
@@ -217,11 +213,11 @@ with tab_modifier:
                     update_data = {
                         "projet": edit_projet, "entreprise": edit_entreprise, "centrale_beton": edit_centrale,
                         "num_betonnage": edit_num_bet, "ouvrage": edit_ouvrage, "element_betonne": edit_elem,
-                        "volume_beton": edit_vol, "heure_malaxage": edit_heure_mal, "num_bon_livraison": edit_bl,
+                        "volume_beton": edit_vol, "num_bon_livraison": edit_bl,
                         "classe_beton": edit_classe, "date_betonnage": edit_date, "meteo": edit_meteo,
                         "observations": edit_obs, "heure_fin_production_cab": edit_h_fin,
-                        "heure_arrivee_chantier": edit_h_arr, "tbf": edit_tbf, "ta": edit_ta,
-                        "affaissement": edit_aff, "prelevement": edit_prelev, "statut": edit_statut
+                        "heure_arrivee_chantier": edit_h_arr, "tbf": round(edit_tbf, 1), "ta": round(edit_ta, 1),
+                        "affaissement": int(edit_aff), "prelevement": edit_prelev, "statut": edit_statut
                     }
                     try:
                         supabase.table("controles_beton").update(update_data).eq("id", row_selected["id"]).execute()
