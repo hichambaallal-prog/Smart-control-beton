@@ -7,7 +7,7 @@ st.set_page_config(page_title="Essai à la Plaque - LPEE", layout="wide")
 
 # Connection Supabase
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
-CLE = "VOTRE_CLE_ANON_ICI"  # ⚠️ Remettez votre vraie clé Supabase
+CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # ⚠️ Remettez votre vraie clé Supabase
 
 try:
     supabase: Client = create_client(URL, CLE)
