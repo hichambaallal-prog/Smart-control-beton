@@ -7,7 +7,8 @@ st.set_page_config(page_title="Essai à la Plaque - LPEE", layout="wide")
 
 # Connection Supabase
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
-CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # ⚠️ Remettez votre vraie clé Supabase
+# ⚠️ Remplacez la chaîne ci-dessous par votre vraie clé ANON Supabase (qui commence par eyJ...)
+CLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." 
 
 try:
     supabase: Client = create_client(URL, CLE)
@@ -29,17 +30,21 @@ except Exception as e:
 date_choisie_p = st.date_input("📅 Date de l'essai :", value=date.today())
 str_date_p = date_choisie_p.strftime("%d/%m/%Y")
 
+# Formulaire de Saisie
 with st.form("form_plaque"):
     st.subheader(f"📝 Saisie Essai à la Plaque ({str_date_p})")
     c1, c2, c3 = st.columns(3)
+    
     with c1:
         pk_emp = st.text_input("Emplacement / PK", value="PK 14+250 - Voie 1")
         couche_elem = st.selectbox("Couche / Support", ["PFT3 (Couche de Forme)", "PST (Arase)", "Couche d'Assise", "Remblai"])
+        
     with c2:
         ev1 = st.number_input("Module EV1 (MPa)", value=38.5, step=0.1)
         ev2 = st.number_input("Module EV2 (MPa)", value=88.0, step=0.1)
+        
     with c3:
-        rapport_calc = round(ev2 / ev1, 2) if ev1 > 0 else 0
+        rapport_calc = round(ev2 / ev1, 2) if ev1 > 0 else 0.0
         st.metric("Rapport k = EV2 / EV1", value=rapport_calc)
         
         is_conforme = (ev2 >= 50.0) and (rapport_calc <= 2.2)
@@ -48,7 +53,9 @@ with st.form("form_plaque"):
 
     obs_p = st.text_area("Observations", value="RAS - Sol bien compacté")
     
-    if st.form_submit_button("💾 Enregistrer l'essai à la plaque"):
+    # Bouton d'enregistrement propre au formulaire
+    submitted = st.form_submit_button("💾 Enregistrer l'essai à la plaque", type="primary")
+    if submitted:
         row_p = {
             "date_essai": str_date_p,
             "pk_emplacement": pk_emp,
@@ -59,31 +66,19 @@ with st.form("form_plaque"):
             "statut": statut_auto,
             "observations": obs_p
         }
-        supabase.table("essais_plaque").insert(row_p).execute()
-        st.success("Essai enregistré avec succès !")
-        st.rerun()
+        try:
+            supabase.table("essais_plaque").insert(row_p).execute()
+            st.success("✅ Essai enregistré avec succès !")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erreur lors de l'enregistrement : {e}")
 
 st.markdown("---")
-st.subheader(f"📋 Historique des Essais à la Plaque")
+st.subheader("📋 Historique des Essais à la Plaque")
+
 if data_all_plaque:
     df_p = pd.DataFrame(data_all_plaque)
     df_p.index = range(1, len(df_p) + 1)
     st.dataframe(df_p, use_container_width=True)
-    if st.button("💾 Enregistrer l'Essai", type="primary"):
-    nouveau_rec = {
-        "date_essai": str(date_essai),
-        "emplacement": emplacement,
-        "couche": couche,
-        "ev1": ev1,
-        "ev2": ev2,
-        "k_ev2_ev1": round(k_ratio, 2),
-        "statut": statut,
-        "observations": obs
-    }
-    
-    try:
-        supabase.table("essais_plaque").insert(nouveau_rec).execute()
-        st.success("✅ Essai enregistré avec succès !")
-        st.rerun()
-    except Exception as e:
-        st.error(f"Erreur lors de l'enregistrement : {e}")
+else:
+    st.info("Aucun essai à la plaque enregistré pour le moment.")
