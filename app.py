@@ -2,33 +2,146 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from supabase import create_client, Client
+import io
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # 1. Configuration de la page
 st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide")
 
 # =========================================================
+# FONCTION DE MISE EN FORME EXCEL PROFESSIONNELLE (LPEE)
+# =========================================================
+def generer_excel_lpee(df, date_rapport="", est_historique=False):
+    """
+    Génère un fichier Excel (.xlsx) stylisé aux normes LPEE avec en-tête, 
+    bordures, couleurs sur le statut et ajustement des colonnes.
+    """
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Rapport Bétonnage"
+
+    # Afficher le quadrillage dans Excel
+    ws.views.sheetView[0].showGridLines = True
+
+    # Définition des Styles LPEE
+    font_titre = Font(name="Calibri", size=14, bold=True, color="1F4E78")
+    font_sub = Font(name="Calibri", size=11, italic=True, color="595959")
+    font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    
+    fill_header = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    fill_conforme = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    font_conforme = Font(name="Calibri", size=11, bold=True, color="006100")
+    
+    fill_non_conforme = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+    font_non_conforme = Font(name="Calibri", size=11, bold=True, color="9C0006")
+
+    thin_border = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
+    )
+    
+    align_center = Alignment(horizontal='center', vertical='center')
+    align_left = Alignment(horizontal='left', vertical='center')
+
+    # 1. En-tête du document
+    ws['A1'] = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - SMART CONTROL BÉTON"
+    ws['A1'].font = font_titre
+    ws['A1'].alignment = align_left
+
+    if est_historique:
+        ws['A2'] = "PROJET : LGV CASA SUD | Registre Général et Historique Complet du Chantier"
+    else:
+        ws['A2'] = f"PROJET : LGV CASA SUD | Rapport Journalier de Bétonnage - Date : {date_rapport}"
+    ws['A2'].font = font_sub
+    ws['A2'].alignment = align_left
+
+    # Mapping des noms de colonnes pour l'affichage Excel
+    col_mapping = {
+        "N°": "N°",
+        "num_bon_livraison": "N° Bon Livraison",
+        "ouvrage": "Ouvrage",
+        "element_betonne": "Élément Bétonné",
+        "volume_beton": "Volume (m³)",
+        "classe_beton": "Classe Béton",
+        "date_betonnage": "Date Bétonnage",
+        "heure_fin_production_cab": "Fin Prod. CAB",
+        "heure_arrivee_chantier": "Arrivée Chantier",
+        "tbf": "TBF (°C)",
+        "ta": "TA (°C)",
+        "affaissement": "Slump (mm)",
+        "prelevement": "Prélèvement",
+        "statut": "STATUT"
+    }
+
+    # Préparation du DataFrame
+    df_export = df.copy()
+    df_export.insert(0, 'N°', range(1, len(df_export) + 1))
+    
+    cols_presentes = [c for c in list(col_mapping.keys()) if c in df_export.columns]
+
+    start_row = 4
+    # En-têtes du tableau (Ligne 4)
+    for col_idx, col_key in enumerate(cols_presentes, start=1):
+        cell = ws.cell(row=start_row, column=col_idx)
+        cell.value = col_mapping[col_key]
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = align_center
+        cell.border = thin_border
+
+    # Remplissage des données (Lignes 5+)
+    for row_idx, row_data in enumerate(df_export[cols_presentes].values, start=start_row + 1):
+        for col_idx, val in enumerate(row_data, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            cell.value = val
+            cell.border = thin_border
+            cell.alignment = align_center
+
+            # Style spécial sur la colonne STATUT
+            col_key = cols_presentes[col_idx - 1]
+            if col_key == "statut":
+                val_str = str(val)
+                if "Conforme" in val_str and "Non" not in val_str:
+                    cell.fill = fill_conforme
+                    cell.font = font_conforme
+                else:
+                    cell.fill = fill_non_conforme
+                    cell.font = font_non_conforme
+
+    # Ajustement automatique de la largeur des colonnes
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            if cell.row < start_row:
+                continue
+            if cell.value is not None:
+                max_len = max(max_len, len(str(cell.value)))
+        ws.column_dimensions[col_letter].width = max(max_len + 5, 12)
+
+    wb.save(output)
+    return output.getvalue()
+
+# =========================================================
 # FONCTION DE CALCUL AUTOMATIQUE DU STATUT (Formule Excel)
 # =========================================================
 def evaluer_statut_beton(tbf, h_fin, h_arr, affaissement):
-    """
-    Formule Excel equivalente :
-    =SI(ET(TBF < 32.1; (Arrivee - FinProd) <= 2h; Affaissement >= 160; Affaissement <= 220); "Conforme"; "Non conforme")
-    """
     try:
-        # 1. Condition TBF (< 32.1 °C)
         cond_tbf = float(tbf) < 32.1
-
-        # 2. Condition Affaissement (entre 160 mm et 220 mm)
         cond_aff = 160 <= int(affaissement) <= 220
 
-        # 3. Condition Délai (Arrivée - Fin Prod <= 2 heures)
         fmt = "%H:%M"
         t_fin = datetime.strptime(str(h_fin).strip(), fmt)
         t_arr = datetime.strptime(str(h_arr).strip(), fmt)
 
         diff_minutes = (t_arr - t_fin).total_seconds() / 60
         if diff_minutes < 0:
-            diff_minutes += 24 * 60  # Gestion du passage de minuit
+            diff_minutes += 24 * 60
 
         cond_delai = 0 <= diff_minutes <= 120
 
@@ -37,7 +150,6 @@ def evaluer_statut_beton(tbf, h_fin, h_arr, affaissement):
         else:
             return "⚠️ Non Conforme"
     except Exception:
-        # En cas d'erreur dans la saisie de l'heure
         return "⚠️ Non Conforme"
 
 # =========================================================
@@ -161,7 +273,6 @@ with tab_ajouter:
         submit_add = st.form_submit_button("💾 Enregistrer le camion dans la journée")
         
         if submit_add:
-            # Calcul automatique du statut
             statut_auto = evaluer_statut_beton(tbf, heure_fin_prod, heure_arrivee, affaissement)
             
             data_to_insert = {
@@ -326,12 +437,13 @@ with tab_historique:
         df_hist_vis.index = range(1, len(df_hist_vis) + 1)
         st.dataframe(df_hist_vis, use_container_width=True)
         
-        csv_all = df_hist_vis.to_csv(index=False).encode('utf-8')
+        # 🟢 Téléchargement EXCEL Formaté de tout le registre
+        excel_all_bytes = generer_excel_lpee(df_hist_vis, est_historique=True)
         st.download_button(
-            label="📥 Télécharger l'historique complet (Tout le chantier)",
-            data=csv_all,
-            file_name="registre_complet_beton_lgv.csv",
-            mime="text/csv",
+            label="📊 Télécharger l'historique complet en Excel (.xlsx)",
+            data=excel_all_bytes,
+            file_name="Registre_Complet_Beton_LGV.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
 # =========================================================
@@ -352,14 +464,15 @@ if data_jour and len(data_jour) > 0:
     
     st.dataframe(df_affichage, use_container_width=True)
 
-    csv_jour = df_affichage.to_csv(index=False).encode('utf-8')
-    nom_fichier_jour = f"Rapport_Betonnage_{date_choisie.strftime('%Y-%m-%d')}.csv"
+    # 🟢 Téléchargement EXCEL Formaté du jour
+    excel_jour_bytes = generer_excel_lpee(df_affichage, date_rapport=str_date_choisie)
+    nom_excel_jour = f"Rapport_Betonnage_{date_choisie.strftime('%Y-%m-%d')}.xlsx"
     
     st.download_button(
-        label=f"📥 Télécharger le fichier journalier ({nom_fichier_jour})",
-        data=csv_jour,
-        file_name=nom_fichier_jour,
-        mime="text/csv",
+        label=f"📊 Télécharger le rapport Excel stylisé ({nom_excel_jour})",
+        data=excel_jour_bytes,
+        file_name=nom_excel_jour,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 else:
     st.warning(f"Aucun suivi enregistré pour la journée du {str_date_choisie}. Utilisez le formulaire ci-dessus pour ajouter le premier camion !")
