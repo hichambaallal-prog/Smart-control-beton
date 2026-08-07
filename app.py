@@ -287,7 +287,10 @@ with tab_historique:
             "heure_arrivee_chantier", "tbf", "ta", "affaissement", "prelevement", "statut"
         ]
         df_hist_vis = df_all[[c for c in colonnes_historique if c in df_all.columns]]
+        # 🔹 Début de l'indexation à 1 au lieu de 0
+        df_hist_vis.index = range(1, len(df_hist_vis) + 1)
         st.dataframe(df_hist_vis, use_container_width=True)
+        
         csv_all = df_hist_vis.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Télécharger l'historique complet (Tout le chantier)",
@@ -310,6 +313,10 @@ if data_jour and len(data_jour) > 0:
         "heure_arrivee_chantier", "tbf", "ta", "affaissement", "prelevement", "statut"
     ]
     df_affichage = df_jour[[c for c in colonnes_visibles if c in df_jour.columns]]
+    
+    # 🔹 Début de l'indexation à 1 au lieu de 0
+    df_affichage.index = range(1, len(df_affichage) + 1)
+    
     st.dataframe(df_affichage, use_container_width=True)
 
     # Bouton de téléchargement du fichier SPÉCIFIQUE de la journée
