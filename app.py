@@ -2,90 +2,150 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
-# Configuration de la page
-st.set_page_config(page_title="Smart Control Béton - LPEE", layout="wide")
-st.title("🚧 Supervision Smart Control Béton - LGV Casa Sud")
+# 1. Configuration de la page
+st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide")
+
+# =========================================================
+# 2. BLOCAGE STRICT PAR MOT DE PASSE
+# =========================================================
+PASSWORD_SECRET = "lpee2026"
+
+# Initialisation de la mémoire de connexion
+if "authentifie" not in st.session_state:
+    st.session_state["authentifie"] = False
+
+# Si l'utilisateur N'EST PAS authentifié, on bloque tout ici
+if not st.session_state["authentifie"]:
+    st.title("🔒 Accès Sécurisé - LPEE")
+    st.warning("Veuillez saisir le mot de passe du laboratoire pour accéder au registre de bétonnage.")
+    
+    pwd = st.text_input("Mot de passe", type="password")
+    
+    if st.button("Valider l'accès"):
+        if pwd == PASSWORD_SECRET:
+            st.session_state["authentifie"] = True
+            st.rerun() # Rafraîchit la page pour débloquer la suite
+        else:
+            st.error("❌ Mot de passe incorrect.")
+    
+    # CETTE COMMANDE ARRÊTE LA LECTURE DU FICHIER. RIEN EN DESSOUS NE SERA AFFICHÉ.
+    st.stop()
+
+# =========================================================
+# 3. LA SUITE DE L'APPLICATION (Visible uniquement si connecté)
+# =========================================================
 
 # Connexion à Supabase
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
-CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # Gardez bien votre clé ici
+CLE = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"  # N'OUBLIEZ PAS DE REMETTRE VOTRE CLÉ ICI
 
 try:
     supabase: Client = create_client(URL, CLE)
-except Exception as e:
-    st.error(f"Erreur de connexion : {e}")
-
-# Récupération des données de la base
-try:
     response = supabase.table("controles_beton").select("*").execute()
     data = response.data
 except Exception as e:
+    st.error(f"Erreur de connexion : {e}")
     data = []
 
-# --- SECTION 0 : INDICATEURS CLÉS (KPIs MÉTIER) ---
-if data and len(data) > 0:
-    df = pd.DataFrame(data)
-    
-    total_coulages = len(df)
-    conformes = len(df[df["statut"].str.contains("Conforme", case=False, na=False)]) if "statut" in df.columns else 0
-    taux_conf = (conformes / total_coulages) * 100 if total_coulages > 0 else 0
-    temp_moy = df["temp_beton"].mean() if "temp_beton" in df.columns else 0
+# En-tête de l'application
+st.title("🚧 Fiche de Suivi et Contrôle du Béton - LGV Casa Sud")
+st.markdown("### Laboratoire Public d'Essais et d'Études (LPEE)")
 
-    col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-    col_kpi1.metric("📊 Total Coulages Contrôlés", total_coulages)
-    col_kpi2.metric("✅ Taux de Conformité", f"{taux_conf:.1f}%")
-    col_kpi3.metric("🌡️ Température Moyenne", f"{temp_moy:.1f} °C" if pd.notnull(temp_moy) else "N/A")
-    st.write("---")
-
-# --- SECTION 1 : FORMULAIRE DE SAISIE TERRAIN ---
-with st.expander("➕ Saisir un nouveau contrôle béton (Terrain)", expanded=False):
-    with st.form("form_controle"):
-        col1, col2 = st.columns(2)
-        with col1:
-            ouvrage = st.text_input("Ouvrage / Élément (ex: Barrette B-05)")
-            heure_malaxage = st.text_input("Heure de Malaxage (ex: 08:30)")
-            heure_arrivee = st.text_input("Heure d'Arrivée (ex: 09:15)")
-        with col2:
-            temp_beton = st.number_input("Température du Béton (°C)", value=25.0)
-            temps_trajet = st.number_input("Temps de Trajet (minutes)", value=30.0)
-            statut = st.selectbox("Statut du Contrôle", ["✅ Conforme", "⚠️ Non Conforme"])
+# --- FORMULAIRE DE SAISIE ---
+with st.expander("➕ Saisir un nouveau rapport de bétonnage (Terrain)", expanded=True):
+    with st.form("form_controle_complet"):
         
-        submit_button = st.form_submit_button("Envoyer le rapport")
+        st.markdown("#### 1. Identification, Traçabilité & Conditions Chantier")
+        c1, c2, c3 = st.columns(3)
+        
+        with c1:
+            num_betonnage = st.text_input("N° Bétonnage", value="25/260/IA/01")
+            projet = st.text_input("Projet", value="LGV Casa Sud")
+            ouvrage = st.text_input("Ouvrage", value="PRO745 OA1")
+            element_betonne = st.text_input("Élément bétonné", value="Semelle C0")
+            entreprise = st.text_input("Entreprise", value="TGCC")
+            volume_beton = st.text_input("Volume béton", value="120 m³")
+            
+        with c2:
+            centrale_beton = st.text_input("Centrale béton", value="Centrale X")
+            heure_malaxage = st.text_input("Heure malaxage", value="08:30")
+            num_bon_livraison = st.text_input("N° bon livraison", value="BL2548")
+            camion_toupie = st.text_input("Camion toupie", value="T12")
+            classe_beton = st.text_input("Classe béton", value="C30/37")
+            date_betonnage = st.text_input("Date bétonnage", value="05/08/2026")
+            
+        with c3:
+            meteo = st.selectbox("Météo", ["Soleil", "Nuageux", "Pluie", "Vent"])
+            observations = st.text_area("Observations", value="RAS")
+
+        st.markdown("---")
+        st.markdown("#### 3. Contrôle du Béton Frais (Mesures Chantier)")
+        
+        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+        with col_m1:
+            heure_fin_prod = st.text_input("Heure fin prod. CAB", value="15:28")
+            heure_arrivee = st.text_input("Heure arrivée chantier", value="16:31")
+        with col_m2:
+            tbf = st.number_input("TBF (°C)", value=32.0)
+            ta = st.number_input("TA (°C) - Ambiante", value=28.9)
+        with col_m3:
+            affaissement = st.number_input("Affaissement (mm)", value=170.0)
+            prelevement = st.selectbox("Prélèvement", ["OUI", "NON"])
+        with col_m4:
+            statut = st.selectbox("STATUT", ["✅ Conforme", "⚠️ Non Conforme"])
+
+        submit_button = st.form_submit_button("💾 Enregistrer le rapport complet")
         
         if submit_button:
-            if ouvrage:
-                data_to_insert = {
-                    "ouvrage": ouvrage,
-                    "heure_malaxage": heure_malaxage,
-                    "heure_arrivee": heure_arrivee,
-                    "temp_beton": temp_beton,
-                    "temps_trajet": temps_trajet,
-                    "statut": statut
-                }
+            data_to_insert = {
+                "num_betonnage": num_betonnage,
+                "projet": projet,
+                "ouvrage": ouvrage,
+                "element_betonne": element_betonne,
+                "entreprise": entreprise,
+                "volume_beton": volume_beton,
+                "centrale_beton": centrale_beton,
+                "heure_malaxage": heure_malaxage,
+                "num_bon_livraison": num_bon_livraison,
+                "camion_toupie": camion_toupie,
+                "classe_beton": classe_beton,
+                "date_betonnage": date_betonnage,
+                "meteo": meteo,
+                "observations": observations,
+                "heure_fin_production_cab": heure_fin_prod,
+                "heure_arrivee_chantier": heure_arrivee,
+                "tbf": tbf,
+                "ta": ta,
+                "affaissement": affaissement,
+                "prelevement": prelevement,
+                "statut": statut
+            }
+            try:
                 supabase.table("controles_beton").insert(data_to_insert).execute()
-                st.success("Rapport enregistré avec succès !")
+                st.success("Rapport enregistré avec succès dans la base de données !")
                 st.rerun()
-            else:
-                st.warning("Veuillez renseigner le nom de l'ouvrage.")
+            except Exception as e:
+                st.error(f"Erreur lors de l'enregistrement : {e}")
 
-# --- SECTION 2 : REGISTRE NUMÉRIQUE & EXPLOITATION ---
-st.subheader("📋 Registre Numérique de Réception du Béton")
+# --- TABLEAU DE SUIVI ---
+st.subheader("📋 Registre des Contrôles de Béton Frais")
 
 if data and len(data) > 0:
-    colonnes = ["ouvrage", "heure_malaxage", "heure_arrivee", "temp_beton", "temps_trajet", "statut"]
-    df_affichage = df[[c for c in colonnes if c in df.columns]]
-    df_affichage.columns = ["Ouvrage / Élément", "Heure Malaxage", "Heure Arrivée", "Température (°C)", "Temps Trajet (min)", "Statut"][:len(df_affichage.columns)]
-    
-    # Affichage du tableau principal
+    df = pd.DataFrame(data)
+    colonnes_visibles = [
+        "num_betonnage", "ouvrage", "element_betonne", "centrale_beton", 
+        "num_bon_livraison", "camion_toupie", "classe_beton", 
+        "heure_fin_production_cab", "heure_arrivee_chantier", "tbf", "ta", "affaissement", "prelevement", "statut"
+    ]
+    df_affichage = df[[c for c in colonnes_visibles if c in df.columns]]
     st.dataframe(df_affichage, use_container_width=True)
 
-    # Bouton d'export pour exploitation externe (Excel / Rapport LPEE)
     csv = df_affichage.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Télécharger le registre officiel (Format CSV / Excel)",
         data=csv,
-        file_name="registre_controle_beton_lgv_casasud.csv",
+        file_name="registre_suivi_beton_lgv_casasud.csv",
         mime="text/csv",
     )
 else:
-    st.info("La base de données est vide pour le moment.")
+    st.info("Aucun contrôle enregistré pour le moment.")
