@@ -69,3 +69,21 @@ if data_all_plaque:
     df_p = pd.DataFrame(data_all_plaque)
     df_p.index = range(1, len(df_p) + 1)
     st.dataframe(df_p, use_container_width=True)
+    if st.button("💾 Enregistrer l'Essai", type="primary"):
+    nouveau_rec = {
+        "date_essai": str(date_essai),
+        "emplacement": emplacement,
+        "couche": couche,
+        "ev1": ev1,
+        "ev2": ev2,
+        "k_ev2_ev1": round(k_ratio, 2),
+        "statut": statut,
+        "observations": obs
+    }
+    
+    try:
+        supabase.table("essais_plaque").insert(nouveau_rec).execute()
+        st.success("✅ Essai enregistré avec succès !")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Erreur lors de l'enregistrement : {e}")
