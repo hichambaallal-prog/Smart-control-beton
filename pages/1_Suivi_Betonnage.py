@@ -75,7 +75,7 @@ def generer_excel_lpee(df, date_rapport="", est_historique=False):
         "ta": "TA (°C)",
         "affaissement": "Slump (mm)",
         "prelevement": "Prélèvement",
-        "technicien": "Technicien",  # 🟢 Ajouté à l'export Excel
+        "technicien": "Technicien",
         "statut": "STATUT"
     }
 
@@ -220,13 +220,14 @@ with col_date2:
     st.info(f"📌 **Fichier du jour sélectionné : {str_date_choisie}** | Camions contrôlés aujourd'hui : **{len(data_jour)}**")
 
 # =========================================================
-# 5. GESTION PAR ONGLETS (JOURNÉE ACTUELLE)
+# 5. GESTION PAR ONGLETS
 # =========================================================
-tab_ajouter, tab_modifier, tab_supprimer, tab_historique = st.tabs([
+tab_ajouter, tab_modifier, tab_supprimer, tab_historique, tab_recap_mensuel = st.tabs([
     "➕ Ajouter un camion (Saisie du Jour)", 
     "✏️ Modifier un camion (Admin)", 
     "❌ Supprimer un camion (Admin)",
-    "📚 Historique & Tous les Fichiers"
+    "📚 Historique & Tous les Fichiers",
+    "📊 Récap Mensuel"
 ])
 
 # ---------------------------------------------------------
@@ -267,7 +268,6 @@ with tab_ajouter:
             meteo = st.selectbox("Météo", ["Soleil", "Nuageux", "Pluie", "Vent"], key="add_meteo")
         with col_m4:
             prelevement = st.selectbox("Prélèvement", ["OUI", "NON"], key="add_prelev")
-            # 🟢 CHAMP TECHNICIEN
             technicien = st.text_input("Technicien Contrôleur", value="Ismail / Mohamed", key="add_tech")
 
         observations = st.text_area("Observations", value="RAS", key="add_obs")
@@ -295,7 +295,7 @@ with tab_ajouter:
                 "ta": round(ta, 1),
                 "affaissement": int(affaissement),
                 "prelevement": prelevement,
-                "technicien": technicien,  # 🟢 Enregistré
+                "technicien": technicien,
                 "statut": statut_auto
             }
             try:
@@ -441,7 +441,7 @@ with tab_historique:
         df_hist_vis.index = range(1, len(df_hist_vis) + 1)
         st.dataframe(df_hist_vis, use_container_width=True)
         
-        # 🟢 Téléchargement EXCEL Formaté de tout le registre
+        # Téléchargement EXCEL Formaté de tout le registre
         excel_all_bytes = generer_excel_lpee(df_hist_vis, est_historique=True)
         st.download_button(
             label="📊 Télécharger l'historique complet en Excel (.xlsx)",
@@ -449,6 +449,72 @@ with tab_historique:
             file_name="Registre_Complet_Beton_LGV.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+# ---------------------------------------------------------
+# --- ONGLET 5 : RÉCAPITULATIF MENSUEL ---
+# ---------------------------------------------------------
+with tab_recap_mensuel:
+    st.subheader("📊 Récapitulatif Mensuel par Date et Ouvrage")
+    if data_all and len(data_all) > 0:
+        df_recap_raw = pd.DataFrame(data_all)
+        
+        # Conversion de la colonne date pour traitement chronologique
+        df_recap_raw["dt"] = pd.to_datetime(df_recap_raw["date_betonnage"], format="%d/%m/%Y", errors="coerce")
+        df_valid = df_recap_raw.dropna(subset=["dt"]).copy()
+        
+        if not df_valid.empty:
+            # Extraction des mois disponibles (Format MM/YYYY)
+            df_valid["mois_annee"] = df_valid["dt"].dt.strftime("%m/%Y")
+            liste_mois = sorted(df_valid["mois_annee"].unique(), reverse=True)
+            
+            mois_selectionne = st.selectbox("📅 Sélectionner le mois :", liste_mois, key="select_mois_recap")
+            
+            # Filtrage sur le mois sélectionné
+            df_mois = df_valid[df_valid["mois_annee"] == mois_selectionne].copy()
+            
+            # Conversion numérique des valeurs pour min/max
+            df_mois["affaissement"] = pd.to_numeric(df_mois["affaissement"], errors="coerce")
+            df_mois["tbf"] = pd.to_numeric(df_mois["tbf"], errors="coerce")
+            
+            # Groupement par Date et Ouvrage pour calculer min et max
+            df_recap = df_mois.groupby(["dt", "date_betonnage", "ouvrage"]).agg(
+                aff_min=("affaissement", "min"),
+                aff_max=("affaissement", "max"),
+                tbf_min=("tbf", "min"),
+                tbf_max=("tbf", "max")
+            ).reset_index().sort_values("dt")
+            
+            # Structuration du tableau final
+            df_recap_final = df_recap[["date_betonnage", "ouvrage", "aff_min", "aff_max", "tbf_min", "tbf_max"]].rename(columns={
+                "date_betonnage": "Date",
+                "ouvrage": "Ouvrage",
+                "aff_min": "Affaissement Min (mm)",
+                "aff_max": "Affaissement Max (mm)",
+                "tbf_min": "TBF Min (°C)",
+                "tbf_max": "TBF Max (°C)"
+            })
+            
+            df_recap_final.index = range(1, len(df_recap_final) + 1)
+            
+            st.markdown(f"#### Synthèse du mois de **{mois_selectionne}**")
+            st.dataframe(df_recap_final, use_container_width=True)
+            
+            # Export Excel du Récapitulatif Mensuel
+            output_recap = io.BytesIO()
+            with pd.ExcelWriter(output_recap, engine='openpyxl') as writer:
+                df_recap_final.to_excel(writer, index=False, sheet_name="Recap_Mensuel")
+            
+            nom_fichier_recap = f"Recap_Mensuel_Beton_{mois_selectionne.replace('/', '_')}.xlsx"
+            st.download_button(
+                label=f"📊 Télécharger le récapitulatif ({nom_fichier_recap})",
+                data=output_recap.getvalue(),
+                file_name=nom_fichier_recap,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        else:
+            st.warning("Aucune donnée avec une date valide pour générer le récapitulatif.")
+    else:
+        st.info("Aucune donnée enregistrée pour le moment.")
 
 # =========================================================
 # 6. TABLEAU & FICHIER DE LA JOURNÉE SÉLECTIONNÉE (+ RÉCAP QUANTITÉ)
@@ -459,7 +525,7 @@ st.subheader(f"📋 Fichier et Tableau de Suivi pour le : {str_date_choisie}")
 if data_jour and len(data_jour) > 0:
     df_jour = pd.DataFrame(data_jour)
     
-    # 🟢 CALCULS DU RÉCAPITULATIF JOURNALIER
+    # CALCULS DU RÉCAPITULATIF JOURNALIER
     df_jour["vol_num"] = pd.to_numeric(df_jour["volume_beton"], errors="coerce").fillna(0)
     vol_tot_jour = df_jour["vol_num"].sum()
     nb_camions_jour = len(df_jour)
@@ -492,7 +558,7 @@ if data_jour and len(data_jour) > 0:
     
     st.dataframe(df_affichage, use_container_width=True)
 
-    # 🟢 Téléchargement EXCEL Formaté du jour
+    # Téléchargement EXCEL Formaté du jour
     excel_jour_bytes = generer_excel_lpee(df_affichage, date_rapport=str_date_choisie)
     nom_excel_jour = f"Rapport_Betonnage_{date_choisie.strftime('%Y-%m-%d')}.xlsx"
     
