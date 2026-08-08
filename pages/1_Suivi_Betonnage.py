@@ -451,10 +451,10 @@ with tab_historique:
         )
 
 # ---------------------------------------------------------
-# --- ONGLET 5 : RÉCAPITULATIF MENSUEL ---
+# --- ONGLET 5 : RÉCAPITULATIF MENSUEL (ADAPTÉ) ---
 # ---------------------------------------------------------
 with tab_recap_mensuel:
-    st.subheader("📊 Récapitulatif Mensuel par Date et Ouvrage")
+    st.subheader("📊 Récapitulatif Mensuel par Date et Ouvrage / Élément Bétonné")
     if data_all and len(data_all) > 0:
         df_recap_raw = pd.DataFrame(data_all)
         
@@ -472,22 +472,41 @@ with tab_recap_mensuel:
             # Filtrage sur le mois sélectionné
             df_mois = df_valid[df_valid["mois_annee"] == mois_selectionne].copy()
             
-            # Conversion numérique des valeurs pour min/max
+            # Combinaison de Ouvrage + Élément bétonné dans une seule colonne
+            df_mois["ouvrage_clean"] = df_mois["ouvrage"].fillna("").astype(str).str.strip()
+            df_mois["element_clean"] = df_mois["element_betonne"].fillna("").astype(str).str.strip()
+            
+            def combiner_ouvrage_element(row):
+                o = row["ouvrage_clean"]
+                e = row["element_clean"]
+                if o and e:
+                    return f"{o} - {e}"
+                elif o:
+                    return o
+                elif e:
+                    return e
+                else:
+                    return "Non spécifié"
+            
+            df_mois["ouvrage_element"] = df_mois.apply(combiner_ouvrage_element, axis=1)
+            
+            # Conversion numérique des valeurs pour calcul des Min/Max
             df_mois["affaissement"] = pd.to_numeric(df_mois["affaissement"], errors="coerce")
             df_mois["tbf"] = pd.to_numeric(df_mois["tbf"], errors="coerce")
             
-            # Groupement par Date et Ouvrage pour calculer min et max
-            df_recap = df_mois.groupby(["dt", "date_betonnage", "ouvrage"]).agg(
+            # Groupement par Date et par Ouvrage/Élément
+            # Si un élément a été bétonné à deux dates différentes, cela génère automatiquement 2 lignes
+            df_recap = df_mois.groupby(["dt", "date_betonnage", "ouvrage_element"]).agg(
                 aff_min=("affaissement", "min"),
                 aff_max=("affaissement", "max"),
                 tbf_min=("tbf", "min"),
                 tbf_max=("tbf", "max")
-            ).reset_index().sort_values("dt")
+            ).reset_index().sort_values(["dt", "ouvrage_element"])
             
             # Structuration du tableau final
-            df_recap_final = df_recap[["date_betonnage", "ouvrage", "aff_min", "aff_max", "tbf_min", "tbf_max"]].rename(columns={
+            df_recap_final = df_recap[["date_betonnage", "ouvrage_element", "aff_min", "aff_max", "tbf_min", "tbf_max"]].rename(columns={
                 "date_betonnage": "Date",
-                "ouvrage": "Ouvrage",
+                "ouvrage_element": "Ouvrage / Élément Bétonné",
                 "aff_min": "Affaissement Min (mm)",
                 "aff_max": "Affaissement Max (mm)",
                 "tbf_min": "TBF Min (°C)",
