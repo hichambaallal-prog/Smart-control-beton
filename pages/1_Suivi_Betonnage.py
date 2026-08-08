@@ -11,12 +11,11 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide")
 
 # =========================================================
-# FONCTION DE MISE EN FORME EXCEL PROFESSIONNELLE (LPEE)
+# FONCTION 1 : EXCEL DASHBOARD JOURNALIER & HISTORIQUE (LPEE)
 # =========================================================
 def generer_excel_lpee(df, date_rapport="", est_historique=False):
     """
-    Génère un fichier Excel (.xlsx) stylisé aux normes LPEE avec en-tête, 
-    bordures, couleurs sur le statut et ajustement des colonnes.
+    Génère un fichier Excel (.xlsx) stylisé aux normes LPEE pour le journalier / historique.
     """
     output = io.BytesIO()
     wb = openpyxl.Workbook()
@@ -48,19 +47,19 @@ def generer_excel_lpee(df, date_rapport="", est_historique=False):
     align_center = Alignment(horizontal='center', vertical='center')
     align_left = Alignment(horizontal='left', vertical='center')
 
-    # 1. En-tête du document
+    # En-tête du document
     ws['A1'] = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - SMART CONTROL BÉTON"
     ws['A1'].font = font_titre
     ws['A1'].alignment = align_left
 
     if est_historique:
-        ws['A2'] = "PROJET : LGV CASA SUD | Registre Général et Historique Complet du Chantier"
+        ws['A2'] = "PROJET : LGV CASA SUD | CLIENT : TGCC | Registre Général et Historique Complet"
     else:
-        ws['A2'] = f"PROJET : LGV CASA SUD | Rapport Journalier de Bétonnage - Date : {date_rapport}"
+        ws['A2'] = f"PROJET : LGV CASA SUD | CLIENT : TGCC | Rapport Journalier du {date_rapport}"
     ws['A2'].font = font_sub
     ws['A2'].alignment = align_left
 
-    # Mapping des noms de colonnes pour l'affichage Excel
+    # Mapping des noms de colonnes
     col_mapping = {
         "N°": "N°",
         "num_bon_livraison": "N° Bon Livraison",
@@ -79,14 +78,13 @@ def generer_excel_lpee(df, date_rapport="", est_historique=False):
         "statut": "STATUT"
     }
 
-    # Préparation du DataFrame
     df_export = df.copy()
     df_export.insert(0, 'N°', range(1, len(df_export) + 1))
     
     cols_presentes = [c for c in list(col_mapping.keys()) if c in df_export.columns]
 
     start_row = 4
-    # En-têtes du tableau (Ligne 4)
+    # En-têtes (Ligne 4)
     for col_idx, col_key in enumerate(cols_presentes, start=1):
         cell = ws.cell(row=start_row, column=col_idx)
         cell.value = col_mapping[col_key]
@@ -94,16 +92,17 @@ def generer_excel_lpee(df, date_rapport="", est_historique=False):
         cell.fill = fill_header
         cell.alignment = align_center
         cell.border = thin_border
+        ws.row_dimensions[start_row].height = 24
 
-    # Remplissage des données (Lignes 5+)
+    # Données (Lignes 5+)
     for row_idx, row_data in enumerate(df_export[cols_presentes].values, start=start_row + 1):
+        ws.row_dimensions[row_idx].height = 20
         for col_idx, val in enumerate(row_data, start=1):
             cell = ws.cell(row=row_idx, column=col_idx)
             cell.value = val
             cell.border = thin_border
             cell.alignment = align_center
 
-            # Style spécial sur la colonne STATUT
             col_key = cols_presentes[col_idx - 1]
             if col_key == "statut":
                 val_str = str(val)
@@ -123,7 +122,177 @@ def generer_excel_lpee(df, date_rapport="", est_historique=False):
                 continue
             if cell.value is not None:
                 max_len = max(max_len, len(str(cell.value)))
-        ws.column_dimensions[col_letter].width = max(max_len + 5, 12)
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+    wb.save(output)
+    return output.getvalue()
+
+# =========================================================
+# FONCTION 2 : EXCEL RÉCAPITULATIF MENSUEL STYLISÉ (LPEE & TGCC)
+# =========================================================
+def generer_excel_recap_mensuel_lpee(df_recap, mois):
+    """
+    Génère un rapport mensuel haute qualité en format Excel avec en-tête LPEE, 
+    informations projet/client (TGCC) et totaux généraux.
+    """
+    output = io.BytesIO()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"Synthèse {mois.replace('/', '-')}"
+
+    # Afficher le quadrillage
+    ws.views.sheetView[0].showGridLines = True
+
+    # Styles
+    font_titre = Font(name="Calibri", size=15, bold=True, color="1F4E78")
+    font_sub_titre = Font(name="Calibri", size=12, bold=True, color="1F4E78")
+    font_card_label = Font(name="Calibri", size=10, bold=True, color="595959")
+    font_card_val = Font(name="Calibri", size=11, bold=True, color="1F4E78")
+    
+    font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    font_total = Font(name="Calibri", size=11, bold=True, color="1F4E78")
+    
+    fill_header = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    fill_card = PatternFill(start_color="F2F5F9", end_color="F2F5F9", fill_type="solid")
+    fill_total = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+
+    thin_border = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
+    )
+    
+    card_border = Border(
+        left=Side(style='medium', color='1F4E78'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
+    )
+
+    total_border = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='medium', color='1F4E78'),
+        bottom=Side(style='double', color='1F4E78')
+    )
+    
+    align_center = Alignment(horizontal='center', vertical='center')
+    align_left = Alignment(horizontal='left', vertical='center')
+
+    # --- 1. CARTOUCHE D'EN-TÊTE LPEE ---
+    ws['A1'] = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE)"
+    ws['A1'].font = font_titre
+
+    ws['A2'] = f"SYNTHÈSE MENSUELLE DU SUIVI DE BÉTONNAGE — {mois}"
+    ws['A2'].font = font_sub_titre
+
+    # --- 2. BLOC INFOS PROJET & CLIENT ---
+    # Ligne 4 : Projet & Client
+    ws['A4'] = "PROJET :"
+    ws['A4'].font = font_card_label
+    ws['B4'] = "LGV CASA SUD"
+    ws['B4'].font = font_card_val
+
+    ws['D4'] = "CLIENT / ENTREPRISE :"
+    ws['D4'].font = font_card_label
+    ws['E4'] = "TGCC"
+    ws['E4'].font = font_card_val
+
+    # Ligne 5 : Organisme & Période
+    ws['A5'] = "ORGANISME DE CONTRÔLE :"
+    ws['A5'].font = font_card_label
+    ws['B5'] = "LPEE - Laboratoire LGV Casa Sud"
+    ws['B5'].font = font_card_val
+
+    ws['D5'] = "PÉRIODE DE SYNTHÈSE :"
+    ws['D5'].font = font_card_label
+    ws['E5'] = mois
+    ws['E5'].font = font_card_val
+
+    # Application du style de carte d'informations (lignes 4 et 5)
+    for r in range(4, 6):
+        for c in range(1, 8):
+            cell = ws.cell(row=r, column=c)
+            cell.fill = fill_card
+            cell.border = thin_border
+
+    # --- 3. EN-TÊTES DU TABLEAU (Ligne 7) ---
+    headers = list(df_recap.columns)
+    start_row = 7
+    ws.row_dimensions[start_row].height = 26
+
+    for col_idx, h_name in enumerate(headers, start=1):
+        cell = ws.cell(row=start_row, column=col_idx)
+        cell.value = h_name
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = align_center
+        cell.border = thin_border
+
+    # --- 4. REMPLISSAGE DES DONNÉES (Ligne 8+) ---
+    current_row = start_row + 1
+    for row_data in df_recap.values:
+        ws.row_dimensions[current_row].height = 21
+        for col_idx, val in enumerate(row_data, start=1):
+            cell = ws.cell(row=current_row, column=col_idx)
+            cell.value = val
+            cell.border = thin_border
+            
+            # Alignement selon le type de colonne
+            if col_idx in [1, 3, 4, 5, 6, 7]:
+                cell.alignment = align_center
+            else:
+                cell.alignment = align_left
+        current_row += 1
+
+    # --- 5. LIGNE DE SYNTHÈSE ET TOTAL MENSUEL ---
+    if len(df_recap) > 0:
+        ws.row_dimensions[current_row].height = 24
+        
+        # Titre Synthèse
+        c_tot_label = ws.cell(row=current_row, column=1, value="TOTAL / SYNTHÈSE MOIS")
+        c_tot_label.font = font_total
+        c_tot_label.alignment = align_center
+        c_tot_label.fill = fill_total
+        c_tot_label.border = total_border
+
+        c_blank = ws.cell(row=current_row, column=2, value="—")
+        c_blank.alignment = align_center
+        c_blank.font = font_total
+        c_blank.fill = fill_total
+        c_blank.border = total_border
+
+        # Somme du nombre de contrôles (camions)
+        tot_ctrl = int(df_recap["Nombre de contrôles"].sum())
+        c_ctrl = ws.cell(row=current_row, column=3, value=tot_ctrl)
+        c_ctrl.font = font_total
+        c_ctrl.alignment = align_center
+        c_ctrl.fill = fill_total
+        c_ctrl.border = total_border
+
+        # Valeurs extrêmes du mois (Min/Max Slump et TBF)
+        c_aff_min = ws.cell(row=current_row, column=4, value=df_recap["Affaissement Min (mm)"].min())
+        c_aff_max = ws.cell(row=current_row, column=5, value=df_recap["Affaissement Max (mm)"].max())
+        c_tbf_min = ws.cell(row=current_row, column=6, value=df_recap["TBF Min (°C)"].min())
+        c_tbf_max = ws.cell(row=current_row, column=7, value=df_recap["TBF Max (°C)"].max())
+
+        for c in [c_aff_min, c_aff_max, c_tbf_min, c_tbf_max]:
+            c.font = font_total
+            c.alignment = align_center
+            c.fill = fill_total
+            c.border = total_border
+
+    # --- 6. AJUSTEMENT DE LA LARGEUR DES COLONNES ---
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            if cell.row < start_row:
+                continue
+            if cell.value is not None:
+                max_len = max(max_len, len(str(cell.value)))
+        ws.column_dimensions[col_letter].width = max(max_len + 5, 15)
 
     wb.save(output)
     return output.getvalue()
@@ -161,7 +330,7 @@ DEFAULT_ENTREPRISE = "TGCC"
 DEFAULT_CENTRALE = "TG PREFA"
 
 PASSWORD_GENERAL = "lpee2026"          # Accès technicien
-PASSWORD_ADMIN = "lpee_admin_2026"     # Code administrateur (Pour Modifier & Supprimer)
+PASSWORD_ADMIN = "lpee_admin_2026"     # Code administrateur
 
 if "authentifie" not in st.session_state:
     st.session_state["authentifie"] = False
@@ -201,7 +370,7 @@ except Exception as e:
 
 # En-tête de l'application
 st.title("🚧 Suivi Journalier de Bétonnage - LGV Casa Sud")
-st.markdown("### Laboratoire Public d'Essais et d'Études (LPEE)")
+st.markdown("### Laboratoire Public d'Essais et d'Études (LPEE) | Client : TGCC")
 
 # =========================================================
 # 4. SÉLECTION DE LA JOURNÉE DE BÉTONNAGE
@@ -241,7 +410,7 @@ with tab_ajouter:
         
         with c1:
             projet = st.text_input("Projet", value=DEFAULT_PROJET, disabled=True)
-            entreprise = st.text_input("Entreprise", value=DEFAULT_ENTREPRISE, disabled=True)
+            entreprise = st.text_input("Entreprise / Client", value=DEFAULT_ENTREPRISE, disabled=True)
             centrale_beton = st.text_input("Centrale béton", value=DEFAULT_CENTRALE, disabled=True)
             
         with c2:
@@ -335,7 +504,7 @@ with tab_modifier:
                 
                 with c1:
                     edit_projet = st.text_input("Projet", value=str(row_selected.get('projet') or DEFAULT_PROJET))
-                    edit_entreprise = st.text_input("Entreprise", value=str(row_selected.get('entreprise') or DEFAULT_ENTREPRISE))
+                    edit_entreprise = st.text_input("Entreprise / Client", value=str(row_selected.get('entreprise') or DEFAULT_ENTREPRISE))
                     edit_centrale = st.text_input("Centrale béton", value=str(row_selected.get('centrale_beton') or DEFAULT_CENTRALE))
                     
                 with c2:
@@ -451,28 +620,26 @@ with tab_historique:
         )
 
 # ---------------------------------------------------------
-# --- ONGLET 5 : RÉCAPITULATIF MENSUEL ---
+# --- ONGLET 5 : RÉCAPITULATIF MENSUEL (STYLISÉ LPEE / TGCC) ---
 # ---------------------------------------------------------
 with tab_recap_mensuel:
     st.subheader("📊 Récapitulatif Mensuel par Date et Ouvrage / Élément Bétonné")
     if data_all and len(data_all) > 0:
         df_recap_raw = pd.DataFrame(data_all)
         
-        # Conversion de la colonne date pour traitement chronologique
+        # Conversion de la colonne date
         df_recap_raw["dt"] = pd.to_datetime(df_recap_raw["date_betonnage"], format="%d/%m/%Y", errors="coerce")
         df_valid = df_recap_raw.dropna(subset=["dt"]).copy()
         
         if not df_valid.empty:
-            # Extraction des mois disponibles (Format MM/YYYY)
             df_valid["mois_annee"] = df_valid["dt"].dt.strftime("%m/%Y")
             liste_mois = sorted(df_valid["mois_annee"].unique(), reverse=True)
             
             mois_selectionne = st.selectbox("📅 Sélectionner le mois :", liste_mois, key="select_mois_recap")
             
-            # Filtrage sur le mois sélectionné
+            # Filtrage du mois
             df_mois = df_valid[df_valid["mois_annee"] == mois_selectionne].copy()
             
-            # Combinaison de Ouvrage + Élément bétonné dans une seule colonne
             df_mois["ouvrage_clean"] = df_mois["ouvrage"].fillna("").astype(str).str.strip()
             df_mois["element_clean"] = df_mois["element_betonne"].fillna("").astype(str).str.strip()
             
@@ -490,11 +657,10 @@ with tab_recap_mensuel:
             
             df_mois["ouvrage_element"] = df_mois.apply(combiner_ouvrage_element, axis=1)
             
-            # Conversion numérique des valeurs pour calcul des Min/Max
             df_mois["affaissement"] = pd.to_numeric(df_mois["affaissement"], errors="coerce")
             df_mois["tbf"] = pd.to_numeric(df_mois["tbf"], errors="coerce")
             
-            # Groupement par Date et par Ouvrage/Élément avec décompte des contrôles (nombre de camions)
+            # Groupement par Date et Ouvrage/Élément avec décompte des contrôles
             df_recap = df_mois.groupby(["dt", "date_betonnage", "ouvrage_element"]).agg(
                 nb_controles=("ouvrage_element", "count"),
                 aff_min=("affaissement", "min"),
@@ -503,7 +669,6 @@ with tab_recap_mensuel:
                 tbf_max=("tbf", "max")
             ).reset_index().sort_values(["dt", "ouvrage_element"])
             
-            # Structuration du tableau final
             df_recap_final = df_recap[["date_betonnage", "ouvrage_element", "nb_controles", "aff_min", "aff_max", "tbf_min", "tbf_max"]].rename(columns={
                 "date_betonnage": "Date",
                 "ouvrage_element": "Ouvrage / Élément Bétonné",
@@ -516,18 +681,16 @@ with tab_recap_mensuel:
             
             df_recap_final.index = range(1, len(df_recap_final) + 1)
             
-            st.markdown(f"#### Synthèse du mois de **{mois_selectionne}**")
+            st.markdown(f"#### Synthèse du mois de **{mois_selectionne}** — Projet : **LGV CASA SUD** | Client : **TGCC**")
             st.dataframe(df_recap_final, use_container_width=True)
             
-            # Export Excel du Récapitulatif Mensuel
-            output_recap = io.BytesIO()
-            with pd.ExcelWriter(output_recap, engine='openpyxl') as writer:
-                df_recap_final.to_excel(writer, index=False, sheet_name="Recap_Mensuel")
+            # Génération du fichier Excel Stylisé LPEE
+            excel_recap_bytes = generer_excel_recap_mensuel_lpee(df_recap_final, mois_selectionne)
+            nom_fichier_recap = f"Recap_Mensuel_Beton_LPEE_{mois_selectionne.replace('/', '_')}.xlsx"
             
-            nom_fichier_recap = f"Recap_Mensuel_Beton_{mois_selectionne.replace('/', '_')}.xlsx"
             st.download_button(
-                label=f"📊 Télécharger le récapitulatif ({nom_fichier_recap})",
-                data=output_recap.getvalue(),
+                label=f"📊 Télécharger le Récapitulatif Mensuel Officiel LPEE (.xlsx)",
+                data=excel_recap_bytes,
                 file_name=nom_fichier_recap,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
@@ -537,7 +700,7 @@ with tab_recap_mensuel:
         st.info("Aucune donnée enregistrée pour le moment.")
 
 # =========================================================
-# 6. TABLEAU & FICHIER DE LA JOURNÉE SÉLECTIONNÉE (+ RÉCAP QUANTITÉ)
+# 6. TABLEAU & FICHIER DE LA JOURNÉE SÉLECTIONNÉE
 # =========================================================
 st.markdown("---")
 st.subheader(f"📋 Fichier et Tableau de Suivi pour le : {str_date_choisie}")
@@ -550,14 +713,12 @@ if data_jour and len(data_jour) > 0:
     vol_tot_jour = df_jour["vol_num"].sum()
     nb_camions_jour = len(df_jour)
     
-    # Total cumulé global
     vol_tot_global = 0.0
     if data_all:
         df_g = pd.DataFrame(data_all)
         if "volume_beton" in df_g.columns:
             vol_tot_global = pd.to_numeric(df_g["volume_beton"], errors="coerce").fillna(0).sum()
 
-    # Affichage des métriques de synthèse
     m1, m2, m3 = st.columns(3)
     with m1:
         st.metric("🏗️ Quantité Totale Béton du Jour", f"{vol_tot_jour:.2f} m³")
@@ -583,7 +744,7 @@ if data_jour and len(data_jour) > 0:
     nom_excel_jour = f"Rapport_Betonnage_{date_choisie.strftime('%Y-%m-%d')}.xlsx"
     
     st.download_button(
-        label=f"📊 Télécharger le rapport Excel stylisé ({nom_excel_jour})",
+        label=f"📊 Télécharger le rapport Excel stylisé LPEE ({nom_excel_jour})",
         data=excel_jour_bytes,
         file_name=nom_excel_jour,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
