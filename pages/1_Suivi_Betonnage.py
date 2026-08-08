@@ -7,35 +7,36 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# 1. Configuration de la page
+# 1. Configuration de la page Streamlit
 st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide")
 
 # =========================================================
-# FONCTION 1 : EXCEL RAPPORT JOURNALIER PAR CLASSE BÉTON & HISTORIQUE (LPEE)
+# FONCTION 1 : EXCEL RAPPORT JOURNALIER AVEC MISE EN PAGE IMPRESSION A4 PAYSAGE
 # =========================================================
 def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
     """
     Génère un fichier Excel (.xlsx) stylisé aux normes LPEE.
     Chaque Classe béton possède sa propre feuille (onglet) séparée dans le fichier journalier.
-    Incorpore l'en-tête officiel LPEE CTR-CSB et le pied de page avec cases de signatures.
+    Incorpore l'en-tête officiel, le pied de page avec cases de signatures et une mise en page d'impression optimisée A4 Paysage.
     """
     output = io.BytesIO()
     wb = openpyxl.Workbook()
     wb.remove(wb.active)  # Supprimer la feuille par défaut
 
     # Définition des Styles LPEE
-    font_titre = Font(name="Calibri", size=13, bold=True, color="1F4E78")
-    font_sub_ctr = Font(name="Calibri", size=11, bold=True, color="1F4E78")
-    font_info = Font(name="Calibri", size=10, italic=True, color="333333")
-    font_header = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-    font_sig_title = Font(name="Calibri", size=10, bold=True, color="1F4E78")
+    font_titre = Font(name="Calibri", size=12, bold=True, color="1F4E78")
+    font_sub_ctr = Font(name="Calibri", size=10, bold=True, color="1F4E78")
+    font_info = Font(name="Calibri", size=9, italic=True, color="333333")
+    font_header = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
+    font_data = Font(name="Calibri", size=9, color="000000")
+    font_sig_title = Font(name="Calibri", size=9, bold=True, color="1F4E78")
     
     fill_header = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     fill_conforme = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-    font_conforme = Font(name="Calibri", size=10, bold=True, color="006100")
+    font_conforme = Font(name="Calibri", size=9, bold=True, color="006100")
     
     fill_non_conforme = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-    font_non_conforme = Font(name="Calibri", size=10, bold=True, color="9C0006")
+    font_non_conforme = Font(name="Calibri", size=9, bold=True, color="9C0006")
 
     thin_border = Border(
         left=Side(style='thin', color='D9D9D9'),
@@ -46,6 +47,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
     
     align_center = Alignment(horizontal='center', vertical='center')
     align_left = Alignment(horizontal='left', vertical='center')
+    align_header = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
     # Identification des classes de béton présentes
     if df_jour.empty:
@@ -58,10 +60,26 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
             classes = ["Général"]
 
     for cls in classes:
-        # Nom de l'onglet Excel (max 30 caractères sans caractères interdits)
         sheet_name = str(cls).replace("/", "-").replace("\\", "-")[:30]
         ws = wb.create_sheet(title=sheet_name)
         ws.views.sheetView[0].showGridLines = True
+
+        # --- 🖨️ CONFIGURATION IMPRESSION EXCEL (A4 PAYSAGE / FIT 1 PAGE LARGE) ---
+        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+        ws.page_setup.paperSize = ws.PAPERSIZE_A4
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0  # Ajuste sur 1 page en largeur, illimité en hauteur
+        ws.page_setup.horizontalCentered = True
+
+        # Marges minimes pour maximiser la largeur d'impression
+        ws.page_margins.left = 0.25
+        ws.page_margins.right = 0.25
+        ws.page_margins.top = 0.4
+        ws.page_margins.bottom = 0.4
+
+        # Répéter la ligne d'en-tête (Ligne 5) sur toutes les pages imprimées
+        ws.print_title_rows = '5:5'
 
         if est_historique or cls in ["Registre Général", "Rapport Béton"]:
             df_cls = df_jour.copy()
@@ -84,22 +102,22 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
         ws['A3'].font = font_info
         ws['A3'].alignment = align_left
 
-        # Mapping des noms de colonnes
+        # Mapping optimisé et compact des colonnes pour l'impression
         col_mapping = {
             "N°": "N°",
-            "num_bon_livraison": "N° Bon Livraison",
+            "num_bon_livraison": "N° BL",
             "ouvrage": "Ouvrage",
             "element_betonne": "Élément Bétonné",
-            "volume_beton": "Volume (m³)",
+            "volume_beton": "Vol. (m³)",
             "classe_beton": "Classe béton",
-            "heure_fin_production_cab": "Fin Prod. CAB",
+            "heure_fin_production_cab": "Fin Prod.",
             "heure_arrivee_chantier": "Arrivée Chantier",
             "tbf": "TBF (°C)",
             "ta": "TA (°C)",
             "affaissement": "Slump (mm)",
-            "prelevement": "Prélèvement",
+            "prelevement": "Prélév.",
             "technicien": "Technicien",
-            "statut": "STATUT"
+            "statut": "Statut"
         }
 
         df_export = df_cls.copy()
@@ -107,23 +125,24 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
         cols_presentes = [c for c in list(col_mapping.keys()) if c in df_export.columns]
 
         start_row = 5
-        # En-têtes (Ligne 5)
-        ws.row_dimensions[start_row].height = 24
+        # En-têtes (Ligne 5 avec hauteur adaptée au retour ligne)
+        ws.row_dimensions[start_row].height = 28
         for col_idx, col_key in enumerate(cols_presentes, start=1):
             cell = ws.cell(row=start_row, column=col_idx)
             cell.value = col_mapping[col_key]
             cell.font = font_header
             cell.fill = fill_header
-            cell.alignment = align_center
+            cell.alignment = align_header
             cell.border = thin_border
 
         # Remplissage des données
         current_row = start_row + 1
         for row_data in df_export[cols_presentes].values:
-            ws.row_dimensions[current_row].height = 20
+            ws.row_dimensions[current_row].height = 18
             for col_idx, val in enumerate(row_data, start=1):
                 cell = ws.cell(row=current_row, column=col_idx)
                 cell.value = val
+                cell.font = font_data
                 cell.border = thin_border
                 cell.alignment = align_center
 
@@ -138,9 +157,9 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
                         cell.font = font_non_conforme
             current_row += 1
 
-        # --- 2. PIED DE PAGE : CASES DE SIGNATURES ---
+        # --- 2. PIED DE PAGE : CASES DE SIGNATURES (Responsable d'essai / Chef du laboratoire) ---
         sig_row = current_row + 2
-        ws.row_dimensions[sig_row].height = 20
+        ws.row_dimensions[sig_row].height = 18
 
         # Case 1 : Responsable d'essai (Colonnes B à D)
         ws.merge_cells(start_row=sig_row, start_column=2, end_row=sig_row, end_column=4)
@@ -157,7 +176,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
                 right = Side(style='thin', color='1F4E78') if c == 4 else None
                 cell.border = Border(top=top, bottom=bottom, left=left, right=right)
 
-        # Case 2 : Chef du laboratoire (Colonnes F à H ou fin du tableau)
+        # Case 2 : Chef du laboratoire (Colonnes F à H)
         col_chef_start = min(8, max(5, len(cols_presentes) - 2))
         col_chef_end = col_chef_start + 2
 
@@ -175,7 +194,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
                 right = Side(style='thin', color='1F4E78') if c == col_chef_end else None
                 cell.border = Border(top=top, bottom=bottom, left=left, right=right)
 
-        # Ajustement des largeurs de colonnes
+        # Ajustement intelligent et compact des largeurs de colonnes
         for col in ws.columns:
             max_len = 0
             col_letter = get_column_letter(col[0].column)
@@ -184,13 +203,14 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
                     continue
                 if cell.value is not None:
                     max_len = max(max_len, len(str(cell.value)))
-            ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
+            # Taille ajustée au millimètre pour l'impression
+            ws.column_dimensions[col_letter].width = max(max_len + 3, 10)
 
     wb.save(output)
     return output.getvalue()
 
 # =========================================================
-# FONCTION 2 : EXCEL RÉCAPITULATIF MENSUEL STYLISÉ
+# FONCTION 2 : EXCEL RÉCAPITULATIF MENSUEL (IMPRESSION OPTIMISÉE)
 # =========================================================
 def generer_excel_recap_mensuel_lpee(df_recap, mois):
     output = io.BytesIO()
@@ -199,12 +219,22 @@ def generer_excel_recap_mensuel_lpee(df_recap, mois):
     ws.title = f"Synthèse {mois.replace('/', '-')}"
     ws.views.sheetView[0].showGridLines = True
 
-    font_titre = Font(name="Calibri", size=14, bold=True, color="1F4E78")
-    font_sub_ctr = Font(name="Calibri", size=11, bold=True, color="1F4E78")
-    font_card_label = Font(name="Calibri", size=10, bold=True, color="595959")
-    font_card_val = Font(name="Calibri", size=11, bold=True, color="1F4E78")
-    font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    font_total = Font(name="Calibri", size=11, bold=True, color="1F4E78")
+    # Configuration Impression A4 Paysage
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.page_setup.horizontalCentered = True
+    ws.page_margins.left = 0.3
+    ws.page_margins.right = 0.3
+
+    font_titre = Font(name="Calibri", size=13, bold=True, color="1F4E78")
+    font_sub_ctr = Font(name="Calibri", size=10, bold=True, color="1F4E78")
+    font_card_label = Font(name="Calibri", size=9, bold=True, color="595959")
+    font_card_val = Font(name="Calibri", size=10, bold=True, color="1F4E78")
+    font_header = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+    font_total = Font(name="Calibri", size=10, bold=True, color="1F4E78")
     
     fill_header = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     fill_card = PatternFill(start_color="F2F5F9", end_color="F2F5F9", fill_type="solid")
@@ -259,7 +289,7 @@ def generer_excel_recap_mensuel_lpee(df_recap, mois):
     # Tableau
     headers = list(df_recap.columns)
     start_row = 7
-    ws.row_dimensions[start_row].height = 26
+    ws.row_dimensions[start_row].height = 24
 
     for col_idx, h_name in enumerate(headers, start=1):
         cell = ws.cell(row=start_row, column=col_idx)
@@ -271,7 +301,7 @@ def generer_excel_recap_mensuel_lpee(df_recap, mois):
 
     current_row = start_row + 1
     for row_data in df_recap.values:
-        ws.row_dimensions[current_row].height = 21
+        ws.row_dimensions[current_row].height = 19
         for col_idx, val in enumerate(row_data, start=1):
             cell = ws.cell(row=current_row, column=col_idx)
             cell.value = val
@@ -281,7 +311,7 @@ def generer_excel_recap_mensuel_lpee(df_recap, mois):
 
     # Totaux
     if len(df_recap) > 0:
-        ws.row_dimensions[current_row].height = 24
+        ws.row_dimensions[current_row].height = 22
         c_tot = ws.cell(row=current_row, column=1, value="TOTAL / SYNTHÈSE MOIS")
         c_tot.font = font_total; c_tot.alignment = align_center; c_tot.fill = fill_total; c_tot.border = total_border
         
@@ -304,7 +334,7 @@ def generer_excel_recap_mensuel_lpee(df_recap, mois):
         for cell in col:
             if cell.row < start_row: continue
             if cell.value is not None: max_len = max(max_len, len(str(cell.value)))
-        ws.column_dimensions[col_letter].width = max(max_len + 5, 15)
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
 
     wb.save(output)
     return output.getvalue()
@@ -555,8 +585,6 @@ st.subheader(f"📋 Rapport Journalier de Bétonnage — Date : {str_date_choisi
 
 if data_jour:
     df_jour = pd.DataFrame(data_jour)
-    
-    # Obtenir la liste des classes de béton de la journée
     classes_du_jour = df_jour["classe_beton"].unique().tolist()
     
     # Métriques globales du jour
@@ -591,7 +619,7 @@ if data_jour:
     nom_excel_jour = f"Rapport_Betonnage_LPEE_{date_choisie.strftime('%Y-%m-%d')}.xlsx"
 
     st.download_button(
-        label=f"📥 Télécharger le Rapport Journalier Officiel LPEE (.xlsx) — Onglet séparé par Classe béton",
+        label=f"📥 Télécharger le Rapport Journalier Officiel LPEE (.xlsx) — Prêt pour impression A4",
         data=excel_jour_bytes,
         file_name=nom_excel_jour,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
