@@ -11,12 +11,12 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide")
 
 # =========================================================
-# FONCTION 1 : EXCEL RAPPORT JOURNALIER PAR CLASSE DE BÉTON & HISTORIQUE (LPEE)
+# FONCTION 1 : EXCEL RAPPORT JOURNALIER PAR CLASSE BÉTON & HISTORIQUE (LPEE)
 # =========================================================
 def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
     """
     Génère un fichier Excel (.xlsx) stylisé aux normes LPEE.
-    Chaque classe/type de béton possède sa propre feuille (onglet) séparée dans le fichier journalier.
+    Chaque Classe béton possède sa propre feuille (onglet) séparée dans le fichier journalier.
     Incorpore l'en-tête officiel LPEE CTR-CSB et le pied de page avec cases de signatures.
     """
     output = io.BytesIO()
@@ -80,7 +80,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
         if est_historique:
             ws['A3'] = "Projet : LGV CASA SUD | Client : TGCC | Registre Général et Historique Complet"
         else:
-            ws['A3'] = f"Projet : LGV CASA SUD | Client : TGCC | Classe de Béton : {cls} | Date : {date_rapport}"
+            ws['A3'] = f"Projet : LGV CASA SUD | Client : TGCC | Classe béton : {cls} | Date : {date_rapport}"
         ws['A3'].font = font_info
         ws['A3'].alignment = align_left
 
@@ -91,7 +91,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
             "ouvrage": "Ouvrage",
             "element_betonne": "Élément Bétonné",
             "volume_beton": "Volume (m³)",
-            "classe_beton": "Classe Béton",
+            "classe_beton": "Classe béton",
             "heure_fin_production_cab": "Fin Prod. CAB",
             "heure_arrivee_chantier": "Arrivée Chantier",
             "tbf": "TBF (°C)",
@@ -138,7 +138,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
                         cell.font = font_non_conforme
             current_row += 1
 
-        # --- 2. PIED DE PAGE : CASES DE SIGNATURES (Responsable d'essai / Chef du laboratoire) ---
+        # --- 2. PIED DE PAGE : CASES DE SIGNATURES ---
         sig_row = current_row + 2
         ws.row_dimensions[sig_row].height = 20
 
@@ -439,7 +439,7 @@ with tab_ajouter:
             }
             try:
                 supabase.table("controles_beton").insert(data_to_insert).execute()
-                st.success(f"Camion BL : {num_bon_livraison} (Classe : {classe_beton}) enregistré pour le {str_date_saisie} !")
+                st.success(f"Camion BL : {num_bon_livraison} (Classe béton : {classe_beton}) enregistré pour le {str_date_saisie} !")
                 st.rerun()
             except Exception as e:
                 st.error(f"Erreur d'enregistrement : {e}")
@@ -454,7 +454,7 @@ with tab_modifier:
             else: st.error("❌ Code incorrect")
     else:
         if data_jour:
-            options_edit = {f"BL: {r.get('num_bon_livraison')} | Classe: {r.get('classe_beton')} | Ouvrage: {r.get('ouvrage')}": r for r in data_jour}
+            options_edit = {f"BL: {r.get('num_bon_livraison')} | Classe béton: {r.get('classe_beton')} | Ouvrage: {r.get('ouvrage')}": r for r in data_jour}
             choix = st.selectbox("Sélectionner le camion :", list(options_edit.keys()))
             row_s = options_edit[choix]
             with st.form("form_edit"):
@@ -503,7 +503,7 @@ with tab_modifier:
 # --- ONGLET 3 : SUPPRIMER ---
 with tab_supprimer:
     if st.session_state["is_admin"] and data_jour:
-        options_del = {f"BL: {r.get('num_bon_livraison')} | Classe: {r.get('classe_beton')}": r["id"] for r in data_jour}
+        options_del = {f"BL: {r.get('num_bon_livraison')} | Classe béton: {r.get('classe_beton')}": r["id"] for r in data_jour}
         c_del = st.selectbox("Supprimer la ligne :", list(options_del.keys()))
         if st.button("🚨 Supprimer définitivement", type="primary"):
             supabase.table("controles_beton").delete().eq("id", options_del[c_del]).execute()
@@ -548,7 +548,7 @@ with tab_recap_mensuel:
             st.download_button("📊 Télécharger le Récap Mensuel Officiel (.xlsx)", data=excel_m, file_name=f"Recap_Mensuel_LPEE_{mois_sel.replace('/', '_')}.xlsx")
 
 # =========================================================
-# 6. TABLEAUX ET FICHIER EXCEL SÉPARÉS PAR TYPE DE BÉTON
+# 6. TABLEAUX ET FICHIER EXCEL SÉPARÉS PAR CLASSE BÉTON
 # =========================================================
 st.markdown("---")
 st.subheader(f"📋 Rapport Journalier de Bétonnage — Date : {str_date_choisie}")
@@ -556,7 +556,7 @@ st.subheader(f"📋 Rapport Journalier de Bétonnage — Date : {str_date_choisi
 if data_jour:
     df_jour = pd.DataFrame(data_jour)
     
-    # Obtenir la liste des types de béton de la journée
+    # Obtenir la liste des classes de béton de la journée
     classes_du_jour = df_jour["classe_beton"].unique().tolist()
     
     # Métriques globales du jour
@@ -564,18 +564,18 @@ if data_jour:
     m1, m2, m3 = st.columns(3)
     with m1: st.metric("🏗️ Volume Total du Jour", f"{vol_tot_j:.2f} m³")
     with m2: st.metric("🚛 Total Camions (Jour)", f"{len(df_jour)}")
-    with m3: st.metric("🏷️ Types de Béton Livrés", f"{len(classes_du_jour)} type(s)")
+    with m3: st.metric("🏷️ Classes de Béton", f"{len(classes_du_jour)} classe(s)")
 
     st.markdown("---")
     
-    # Sélecteur de type de béton pour l'affichage à l'écran
+    # Sélecteur de Classe béton pour l'affichage à l'écran
     cls_selectionnee = st.selectbox(
-        "🔎 Filtrer l'affichage par type/classe de béton :", 
-        ["TOUS LES TYPES"] + classes_du_jour, 
+        "🔎 Filtrer l'affichage par Classe béton :", 
+        ["TOUTES LES CLASSES"] + classes_du_jour, 
         key="select_classe_view"
     )
 
-    if cls_selectionnee == "TOUS LES TYPES":
+    if cls_selectionnee == "TOUTES LES CLASSES":
         df_visu = df_jour.copy()
     else:
         df_visu = df_jour[df_jour["classe_beton"] == cls_selectionnee].copy()
@@ -587,12 +587,11 @@ if data_jour:
     st.dataframe(df_visu_display, use_container_width=True)
 
     # Téléchargement du fichier Excel officiel
-    # Remarque : Le fichier Excel téléchargé contiendra 1 ONGLET SÉPARÉ par type de béton !
     excel_jour_bytes = generer_excel_lpee(df_jour, date_rapport=str_date_choisie)
     nom_excel_jour = f"Rapport_Betonnage_LPEE_{date_choisie.strftime('%Y-%m-%d')}.xlsx"
 
     st.download_button(
-        label=f"📥 Télécharger le Rapport Journalier Officiel LPEE (.xlsx) — Feuille séparée par type de béton",
+        label=f"📥 Télécharger le Rapport Journalier Officiel LPEE (.xlsx) — Onglet séparé par Classe béton",
         data=excel_jour_bytes,
         file_name=nom_excel_jour,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
