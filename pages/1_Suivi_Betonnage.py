@@ -482,7 +482,7 @@ def generer_excel_recap_mensuel_lpee(df_recap, mois):
 
 
 # =========================================================
-# CALCUL STATUT BÉTON
+# CALCUL STATUT BÉTON (AUTOMATIQUE)
 # =========================================================
 def evaluer_statut_beton(tbf, h_fin, h_arr, affaissement):
   try:
@@ -602,12 +602,22 @@ with tab_ajouter:
       element_betonne = st.text_input(
           "Élément bétonné", value="Semelle C0", key="add_elem"
       )
-      volume_beton = st.text_input("Volume béton (m³)", value="8", key="add_vol")
+      
+      # MODIFICATION ICI : Séparation en 2 sous-colonnes pour placer Statut à côté du Volume
+      col_vol1, col_vol2 = st.columns(2)
+      with col_vol1:
+        volume_beton = st.text_input("Volume béton (m³)", value="8", key="add_vol")
+      with col_vol2:
+        statut = st.selectbox(
+            "Statut",
+            ["✅ Conforme", "⚠️ Non Conforme"],
+            index=0,
+            key="add_statut"
+        )
     with c3:
       num_bon_livraison = st.text_input(
           "N° bon livraison (BL)", value="BL2548", key="add_bl"
       )
-      # MODIFICATION ICI : Sélecteur déroulant pour la classe de béton
       classe_beton = st.selectbox(
           "Classe béton",
           options=CLASSES_BETON_LISTE,
@@ -654,9 +664,6 @@ with tab_ajouter:
     submit_add = st.form_submit_button("💾 Enregistrer le camion")
 
     if submit_add:
-      statut_auto = evaluer_statut_beton(
-          tbf, heure_fin_prod, heure_arrivee, affaissement
-      )
       str_date_saisie = date_betonnage_saisie.strftime("%d/%m/%Y")
       data_to_insert = {
           "projet": DEFAULT_PROJET,
@@ -677,12 +684,12 @@ with tab_ajouter:
           "affaissement": int(affaissement),
           "prelevement": prelevement,
           "technicien": technicien,
-          "statut": statut_auto,
+          "statut": statut,  # Enregistrement du statut choisi
       }
       try:
         supabase.table("controles_beton").insert(data_to_insert).execute()
         st.success(
-            f"Camion BL : {num_bon_livraison} (Classe béton : {classe_beton})"
+            f"Camion BL : {num_bon_livraison} (Statut : {statut})"
             f" enregistré pour le {str_date_saisie} !"
         )
         st.rerun()
@@ -730,15 +737,29 @@ with tab_modifier:
           e_elem = st.text_input(
               "Élément", value=str(row_s.get("element_betonne") or "")
           )
-          e_vol = st.text_input(
-              "Volume", value=str(row_s.get("volume_beton") or "")
-          )
+          
+          # MODIFICATION ICI : Volume et Statut côte à côte dans l'édition
+          col_evol1, col_evol2 = st.columns(2)
+          with col_evol1:
+            e_vol = st.text_input(
+                "Volume", value=str(row_s.get("volume_beton") or "")
+            )
+          with col_evol2:
+            statuts_possibles = ["✅ Conforme", "⚠️ Non Conforme"]
+            curr_statut = str(row_s.get("statut") or "✅ Conforme")
+            idx_statut = (
+                statuts_possibles.index(curr_statut)
+                if curr_statut in statuts_possibles
+                else 0
+            )
+            e_statut = st.selectbox(
+                "Statut", options=statuts_possibles, index=idx_statut, key="mod_statut"
+            )
         with c3:
           e_bl = st.text_input(
               "BL", value=str(row_s.get("num_bon_livraison") or "")
           )
 
-          # MODIFICATION ICI : Pré-sélection sécurisée dans la liste déroulante lors de l'édition
           curr_classe = str(row_s.get("classe_beton") or "C30/37")
           idx_classe = (
               CLASSES_BETON_LISTE.index(curr_classe)
@@ -801,7 +822,6 @@ with tab_modifier:
             "Observations", value=str(row_s.get("observations") or "")
         )
         if st.form_submit_button("🔄 Mettre à jour"):
-          statut_up = evaluer_statut_beton(e_tbf, e_h_fin, e_h_arr, e_aff)
           up_data = {
               "projet": e_proj,
               "entreprise": e_ent,
@@ -821,7 +841,7 @@ with tab_modifier:
               "affaissement": int(e_aff),
               "prelevement": e_prelev,
               "technicien": e_tech,
-              "statut": statut_up,
+              "statut": e_statut,
           }
           try:
             supabase.table("controles_beton").update(up_data).eq(
@@ -884,6 +904,7 @@ with tab_historique:
         "date_betonnage",
         "tbf",
         "affaissement",
+        "statut",
     ]
     df_h_v = df_all[[c for c in cols_h if c in df_all.columns]]
     st.dataframe(df_h_v, use_container_width=True)
@@ -995,7 +1016,7 @@ if data_jour:
   else:
     df_visu = df_jour[df_jour["classe_beton"] == cls_selectionnee].copy()
 
-  # Colonnes affichées (sans technicien ni statut)
+  # Colonnes affichées (sans technicien ni statut dans l'aperçu journalier)
   cols_vis = [
       "num_bon_livraison",
       "ouvrage",
