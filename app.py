@@ -180,7 +180,7 @@ elif page == "🪨 Essai à la Plaque":
 
     ev1 = 112.5 / (z1 * 2) if z1 > 0 else 0.0
     ev2 = 90.0 / (z2 * 2) if z2 > 0 else 0.0
-    k_val = (ev2 / ev1) if ev1 > 0 else 0.0
+    K_val = (ev2 / ev1) if ev1 > 0 else 0.0
 
     st.markdown("---")
     st.markdown("#### 📊 Résultats Calculés")
@@ -378,7 +378,7 @@ elif page == "📈 Synthèse Essai à la Plaque":
             "z2": "Z2 (mm)",
             "ev1": "EV1 (MPa)",
             "ev2": "EV2 (MPa)",
-            "k": "Coefficient k",
+            "K": "Coefficient K",
             "observations": "Observations"
         }
         
