@@ -40,10 +40,32 @@ if not st.session_state["connecte"]:
 # -----------------------------------------------------------------------------
 
 else:
-    # Déclaration des pages de vos modules
-    page_suivi = st.Page("views/suivi_betonnage.py", title="Suivi de Bétonnage", icon="🏗️")
-    page_controle = st.Page("views/controle_beton.py", title="Contrôle de Béton", icon="🧪")
-    page_plaque = st.Page("views/essai_plaque.py", title="Essai à la Plaque", icon="🪨")
+# -----------------------------------------------------------------------------
+    # 3. ESPACE CONNECTÉ (Fichiers existants dans le dossier 'pages')
+    # -----------------------------------------------------------------------------
+    
+    # On pointe directement vers vos fichiers actuels sur GitHub :
+    page_suivi = st.Page("pages/1_Suivi_Betonnage.py", title="Suivi de Bétonnage", icon="🏗️")
+    page_plaque = st.Page("pages/2_Essai_Plaque.py", title="Essai à la Plaque", icon="🪨")
+
+    # En-tête de la barre latérale
+    st.sidebar.title("🏢 LPEE - CTR-CSB")
+    st.sidebar.caption("Projet : LGV CASA SUD | Client : TGCC")
+    st.sidebar.divider()
+
+    # Navigation unifiée
+    pg = st.navigation({
+        "Mon Projet": [page_suivi, page_plaque]
+    })
+
+    # Bouton de déconnexion
+    st.sidebar.divider()
+    if st.sidebar.button("🚪 Déconnexion"):
+        st.session_state["connecte"] = False
+        st.rerun()
+
+    # Exécution
+    pg.run()
 
     # En-tête de la barre latérale
     st.sidebar.title("🏢 LPEE - CTR-CSB")
