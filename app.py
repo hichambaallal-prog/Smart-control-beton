@@ -239,8 +239,8 @@ elif page == "🏗️ Suivi de Bétonnage":
         quantite_m3 = st.number_input("Quantité (m³)", value=8.0, step=0.5)
 
     with c_b2:
-        t_arrivee = st.time_input("🕒 Heure arrivée", value=datetime.strptime("08:30", "%H:%M").time())
-        t_fin = st.time_input("🏁 Heure fin", value=datetime.strptime("09:15", "%H:%M").time())
+        t_prod_fin = st.time_input("🕒 Heure de fin de production", value=datetime.strptime("08:30", "%H:%M").time())
+        t_chantier = st.time_input("🏁 Heure d'arrivée au chantier", value=datetime.strptime("09:15", "%H:%M").time())
         classe_b = st.selectbox("Classe", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
 
     with c_b3:
@@ -263,8 +263,8 @@ elif page == "🏗️ Suivi de Bétonnage":
             "centrale_beton": centrale_b,
             "bl_num": bl_num, 
             "ouvrage": ouvrage, 
-            "heure_arrivee": t_arrivee.strftime("%H h %M min"), 
-            "heure_fin_coulage": t_fin.strftime("%H h %M min"),
+            "heure_arrivee": t_prod_fin.strftime("%H h %M min"), 
+            "heure_fin_coulage": t_chantier.strftime("%H h %M min"),
             "quantite_m3": float(quantite_m3), 
             "classe_beton": classe_b, 
             "meteo": meteo, 
