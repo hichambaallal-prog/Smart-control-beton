@@ -210,7 +210,7 @@ elif page == "🪨 Essai à la Plaque":
     st.title("🪨 Contrôle de Portance - Essai à la Plaque")
     
     try:
-        resp_plaque = supabase.table("essai_plaque").select("*").execute()
+        resp_plaque = supabase.table("essais_plaque").select("*").execute()
         data_all_plaque = resp_plaque.data or []
     except Exception:
         data_all_plaque = []
@@ -269,7 +269,7 @@ elif page == "🪨 Essai à la Plaque":
             "observations": obs_p
         }
         try:
-            supabase.table("essai_plaque").insert(row_p).execute()
+            supabase.table("essais_plaque").insert(row_p).execute()
             st.success("✅ Essai à la plaque enregistré avec succès !")
             st.rerun()
         except Exception as e:
@@ -438,7 +438,7 @@ elif page == "📈 Synthèse Essai à la Plaque":
     st.title("📈 Récapitulatif et Synthèse - Essai à la Plaque")
     
     try:
-        resp_plaque = supabase.table("essai_plaque").select("*").execute()
+        resp_plaque = supabase.table("essais_plaque").select("*").execute()
         data_all_plaque = resp_plaque.data or []
     except Exception as e:
         st.error(f"Erreur de chargement : {e}")
