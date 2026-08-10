@@ -5,7 +5,7 @@ from supabase import create_client, Client
 
 st.set_page_config(page_title="Essai à la Plaque - LPEE CTR-CSB", layout="wide")
 
-# Connection Supabase
+# Connexion Supabase
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
 # ⚠️ Remplacez la chaîne ci-dessous par votre clé ANON Supabase
 CLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxaWpzdnh5cmR5bWNucWx1aXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NDIwMjIsImV4cCI6MjEwMTUxODAyMn0.xjYXfGqea7P8kK8df9ootEJywCz-zoOzt8LESNRo2i0"
@@ -35,12 +35,12 @@ str_date_p = date_choisie_p.strftime("%d/%m/%Y")
 with st.form("form_plaque"):
     st.markdown(f"### 📝 Saisie Essai à la Plaque ({str_date_p})")
     
-    # Champs d'en-tête du projet
+    # Champs d'en-tête du projet VERROUILLÉS (non modifiables)
     col_proj1, col_proj2 = st.columns(2)
     with col_proj1:
-        projet = st.text_input("Projet", value="LGV CASA SUD")
+        projet = st.text_input("Projet", value="LGV CASA SUD", disabled=True)
     with col_proj2:
-        client = st.text_input("Entreprise / Client", value="TGCC")
+        client = st.text_input("Entreprise / Client", value="TGCC", disabled=True)
         
     st.markdown("---")
     
@@ -82,6 +82,8 @@ with st.form("form_plaque"):
             "client": client,
             "pk_emplacement": pk_emp,
             "couche_element": couche_elem,
+            "z1": float(z1),
+            "z2": float(z2),
             "ev1": float(ev1),
             "ev2": float(ev2),
             "rapport_ev2_ev1": float(rapport_calc),
@@ -94,26 +96,23 @@ with st.form("form_plaque"):
             st.success("✅ Essai enregistré avec succès !")
             st.rerun()
         except Exception as e:
-            # Sécurité si les colonnes 'projet' et 'client' ne existent pas encore dans Supabase
-            if "Could not find" in str(e):
-                row_p_fallback = {
-                    "date_essai": str_date_p,
-                    "pk_emplacement": pk_emp,
-                    "couche_element": couche_elem,
-                    "ev1": float(ev1),
-                    "ev2": float(ev2),
-                    "rapport_ev2_ev1": float(rapport_calc),
-                    "statut": statut_auto,
-                    "observations": obs_p
-                }
-                try:
-                    supabase.table("essais_plaque").insert(row_p_fallback).execute()
-                    st.success("✅ Essai enregistré avec succès !")
-                    st.rerun()
-                except Exception as e2:
-                    st.error(f"Erreur lors de l'enregistrement : {e2}")
-            else:
-                st.error(f"Erreur lors de l'enregistrement : {e}")
+            # Sécurité de secours si les colonnes 'projet', 'client', 'z1' ou 'z2' ne sont pas encore créées dans Supabase
+            row_p_fallback = {
+                "date_essai": str_date_p,
+                "pk_emplacement": pk_emp,
+                "couche_element": couche_elem,
+                "ev1": float(ev1),
+                "ev2": float(ev2),
+                "rapport_ev2_ev1": float(rapport_calc),
+                "statut": statut_auto,
+                "observations": obs_p
+            }
+            try:
+                supabase.table("essais_plaque").insert(row_p_fallback).execute()
+                st.success("✅ Essai enregistré avec succès !")
+                st.rerun()
+            except Exception as e2:
+                st.error(f"Erreur lors de l'enregistrement : {e2}")
 
 st.markdown("---")
 st.subheader("📋 Historique des Essais à la Plaque")
