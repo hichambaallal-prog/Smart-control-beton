@@ -19,6 +19,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
     """
     Génère un fichier Excel (.xlsx) stylisé aux normes LPEE en format PORTRAIT.
     Sans les colonnes Technicien et Statut.
+    Contient la référence à la norme NF EN 12350-2 pour l'affaissement.
     """
     output = io.BytesIO()
     wb = openpyxl.Workbook()
@@ -59,7 +60,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
         ws = wb.create_sheet(title=sheet_name)
         ws.views.sheetView[0].showGridLines = True
 
-        # Mapping des colonnes (SANS Technicien ni Statut)
+        # Mapping des colonnes (avec mention de la norme NF EN 12350-2)
         col_mapping = {
             "N°": "N°",
             "num_bon_livraison": "N° BL",
@@ -71,7 +72,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
             "heure_arrivee_chantier": "Arrivée Chantier",
             "tbf": "TBF (°C)",
             "ta": "TA (°C)",
-            "affaissement": "Slump (mm)",
+            "affaissement": "Slump (mm)\nNF EN 12350-2",
             "prelevement": "Prélév."
         }
 
@@ -98,12 +99,11 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
         ws.page_margins.bottom = 0.3
         ws.print_title_rows = '5:5'
 
-        # --- 1. EN-TÊTE ET LOGO LPEE (COUVRANT 100% DES COLONNES) ---
+        # --- 1. EN-TÊTE ET LOGO LPEE ---
         ws.row_dimensions[1].height = 18
         ws.row_dimensions[2].height = 16
         ws.row_dimensions[3].height = 16
 
-        # Insertion du Logo si présent
         if os.path.exists("logo.png"):
             try:
                 img = Image("logo.png")
@@ -115,19 +115,16 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
 
         start_text_col = 2 if nb_cols > 2 else 1
 
-        # Titre principal LPEE
         ws.merge_cells(start_row=1, start_column=start_text_col, end_row=1, end_column=nb_cols)
         c1 = ws.cell(row=1, column=start_text_col, value="LPEE - LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES")
         c1.font = font_titre
         c1.alignment = align_center
 
-        # Sous-titre Centre Technique
         ws.merge_cells(start_row=2, start_column=start_text_col, end_row=2, end_column=nb_cols)
         c2 = ws.cell(row=2, column=start_text_col, value="CENTRE TECHNIQUE RÉGIONAL DE CASABLANCA-SETTAT-BÉNI MELLAL (CTR-CSB)")
         c2.font = font_sub_ctr
         c2.alignment = align_center
 
-        # Détails du Projet
         ws.merge_cells(start_row=3, start_column=start_text_col, end_row=3, end_column=nb_cols)
         if est_historique:
             txt_info = "Projet : LGV CASA SUD | Client : TGCC | Registre Général"
@@ -139,7 +136,7 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
 
         # --- 2. TABLEAU DE DONNÉES ---
         start_row = 5
-        ws.row_dimensions[start_row].height = 26
+        ws.row_dimensions[start_row].height = 28
         for col_idx, col_key in enumerate(cols_presentes, start=1):
             cell = ws.cell(row=start_row, column=col_idx)
             cell.value = col_mapping[col_key]
@@ -159,13 +156,12 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
                 cell.alignment = align_center
             current_row += 1
 
-        # --- 3. PIED DE PAGE : SIGNATURES SUR LA LARGEUR TOTALE DU TABLEAU ---
+        # --- 3. PIED DE PAGE : SIGNATURES ---
         sig_row = current_row + 2
         ws.row_dimensions[sig_row].height = 16
 
         mid_col = nb_cols // 2
 
-        # Bloc 1 : Responsable d'essai (de la col 1 à mid_col)
         ws.merge_cells(start_row=sig_row, start_column=1, end_row=sig_row, end_column=mid_col)
         c_resp = ws.cell(row=sig_row, column=1, value="Responsable d'essai")
         c_resp.font = font_sig_title
@@ -180,7 +176,6 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
                 right = Side(style='thin', color='1F4E78') if c == mid_col else None
                 cell.border = Border(top=top, bottom=bottom, left=left, right=right)
 
-        # Bloc 2 : Chef du laboratoire (de mid_col + 1 à nb_cols)
         ws.merge_cells(start_row=sig_row, start_column=mid_col + 1, end_row=sig_row, end_column=nb_cols)
         c_chef = ws.cell(row=sig_row, column=mid_col + 1, value="Chef du laboratoire")
         c_chef.font = font_sig_title
@@ -221,7 +216,6 @@ def generer_excel_recap_mensuel_lpee(df_recap, mois):
 
     nb_cols = len(df_recap.columns)
 
-    # Configuration Impression A4 Paysage pour le récap mensuel
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -449,7 +443,8 @@ with tab_ajouter:
             tbf = st.number_input("TBF (°C)", value=32.0, step=0.1, format="%.1f", key="add_tbf")
             ta = st.number_input("TA (°C)", value=28.9, step=0.1, format="%.1f", key="add_ta")
         with col_m3:
-            affaissement = st.number_input("Affaissement (mm)", value=170, step=1, format="%d", key="add_aff")
+            # Saisir l'affaissement par tranches de 10 mm (Norme NF EN 12350-2)
+            affaissement = st.number_input("Affaissement (mm) [NF EN 12350-2]", value=170, step=10, format="%d", key="add_aff")
             meteo = st.selectbox("Météo", ["Soleil", "Nuageux", "Pluie", "Vent"], key="add_meteo")
         with col_m4:
             prelevement = st.selectbox("Prélèvement", ["OUI", "NON"], key="add_prelev")
@@ -513,7 +508,8 @@ with tab_modifier:
                     e_tbf = st.number_input("TBF", value=float(row_s.get('tbf') or 0.0), step=0.1)
                     e_ta = st.number_input("TA", value=float(row_s.get('ta') or 0.0), step=0.1)
                 with col_m3:
-                    e_aff = st.number_input("Affaissement", value=int(row_s.get('affaissement') or 0), step=1)
+                    # Modification affaissement par tranches de 10 mm
+                    e_aff = st.number_input("Affaissement (mm) [NF EN 12350-2]", value=int(row_s.get('affaissement') or 170), step=10, format="%d")
                     e_meteo = st.selectbox("Météo", ["Soleil", "Nuageux", "Pluie", "Vent"], index=0)
                 with col_m4:
                     e_prelev = st.selectbox("Prélèvement", ["OUI", "NON"], index=0)
