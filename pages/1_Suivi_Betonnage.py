@@ -14,6 +14,16 @@ st.set_page_config(
     page_title="Suivi Béton - LGV Casa Sud (LPEE)", layout="wide"
 )
 
+# Liste prédéfinie des classes de béton
+CLASSES_BETON_LISTE = [
+    "C20/25",
+    "C25/30",
+    "C30/37",
+    "C35/45",
+    "C 40/50",
+    "C45/55",
+]
+
 
 # --- FONCTIONS UTILITAIRES DE CONVERSION SÉCURISÉE ---
 def safe_float(val, default=0.0):
@@ -597,8 +607,12 @@ with tab_ajouter:
       num_bon_livraison = st.text_input(
           "N° bon livraison (BL)", value="BL2548", key="add_bl"
       )
-      classe_beton = st.text_input(
-          "Classe béton (ex: C30/37)", value="C30/37", key="add_classe"
+      # MODIFICATION ICI : Sélecteur déroulant pour la classe de béton
+      classe_beton = st.selectbox(
+          "Classe béton",
+          options=CLASSES_BETON_LISTE,
+          index=2,  # C30/37 sélectionné par défaut
+          key="add_classe",
       )
 
     st.markdown("---")
@@ -723,8 +737,16 @@ with tab_modifier:
           e_bl = st.text_input(
               "BL", value=str(row_s.get("num_bon_livraison") or "")
           )
-          e_classe = st.text_input(
-              "Classe béton", value=str(row_s.get("classe_beton") or "")
+
+          # MODIFICATION ICI : Pré-sélection sécurisée dans la liste déroulante lors de l'édition
+          curr_classe = str(row_s.get("classe_beton") or "C30/37")
+          idx_classe = (
+              CLASSES_BETON_LISTE.index(curr_classe)
+              if curr_classe in CLASSES_BETON_LISTE
+              else 0
+          )
+          e_classe = st.selectbox(
+              "Classe béton", options=CLASSES_BETON_LISTE, index=idx_classe
           )
 
         st.markdown("---")
