@@ -9,34 +9,28 @@ st.set_page_config(page_title="LPEE CTR-CSB - LGV CASA SUD", layout="wide")
 # ==============================================================================
 # 🔐 1. GESTION DU MOT DE PASSE ET AUTHENTIFICATION
 # ==============================================================================
-MOT_DE_PASSE_ACCES = "LPEE2026"  # 👈 Mot de passe d'accès
+MOT_DE_PASSE_ACCES = "lpee2026"  # 👈 Mot de passe d'accès
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
-# --- ÉCRAN DE CONNEXION (PAGE D'ACCUEIL SÉCURISÉE) ---
+# --- ÉCRAN DE CONNEXION AVEC PHOTO AL BORAQ ---
 if not st.session_state["authenticated"]:
     col_g, col_c, col_d = st.columns([1, 2, 1])
     
     with col_c:
-        # 📸 PHOTO DE PAGE DE GARDE (Al Boraq - LGV)
-        # Placez le fichier 'Al-boraq-get-on-board-scaled.jpg' dans le même dossier que ce fichier Python
-        try:
-            st.image(
-                "Al-boraq-get-on-board-scaled.jpg", 
-                caption="Projet LGV CASA SUD - LPEE CTR-CSB",
-                use_container_width=True
-            )
-        except Exception:
-            # Image de secours au cas où le fichier local n'est pas encore trouvé
-            st.image(
-                "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b3?q=80&w=1000", 
-                caption="Projet LGV CASA SUD - LPEE CTR-CSB",
-                use_container_width=True
-            )
+        # 📸 Photo directe du TGV Al Boraq via un lien Web (Wikimedia Commons)
+        url_image_al_boraq = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/ONCF_Al_boraq.jpeg/1280px-ONCF_Al_boraq.jpeg"
+        
+        st.image(
+            url_image_al_boraq, 
+            caption="Projet LGV CASA SUD - LPEE CTR-CSB",
+            use_container_width=True
+        )
         
         st.title("🔒 Connexion au Portail Laboratoire")
-        st.markdown("##### **LPEE - CTR-CSB** | Client : **TGCC**")
+        st.markdown("##### **LPEE - CTR-CSB** | Projet : **LGV CASA SUD** | Client : **TGCC**")
+        st.markdown("---")
         
         pwd_input = st.text_input("Veuillez saisir le mot de passe :", type="password")
         
