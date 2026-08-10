@@ -224,9 +224,9 @@ elif page == "🪨 Essai à la Plaque":
         client_p = st.text_input("🏢 Client", value="TGCC", disabled=True, key="client_p")
     with col_p2:
         localisation = st.text_input("📍 Localisation / PK / Ouvrage", value="Zone de plateforme PK 0+000", key="loc_p")
-        abscisse = st.text_input("Offset / Emplacement", value="Axe", key="offset_p")
+        projet_lgv = st.text_input("Projet", value="LGV - CASA SUD", disabled=True, key="projet_lgv_input")
     with col_p3:
-        type_plaque = st.selectbox("Type de Plaque", ["Plaque Ø 300 mm", "Plaque Ø 600 mm"], key="type_plq")
+        type_plateforme = st.selectbox("Sélectionner type de plateforme", ["Arase", "Remblai", "PST", "Couche de forme"], key="type_plt_sel")
 
     st.markdown("---")
     st.markdown("#### ⚙️ Paramètres de Chargement & Déformations")
@@ -257,8 +257,8 @@ elif page == "🪨 Essai à la Plaque":
             "technicien": technicien_p,
             "client": client_p,
             "localisation": localisation,
-            "emplacement": abscisse,
-            "type_plaque": type_plaque,
+            "projet": projet_lgv,
+            "type_plateforme": type_plateforme,
             "z1": float(z1),
             "z2": float(z2),
             "ev1": float(ev1),
