@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 from supabase import create_client, Client
 
 # ==============================================================================
@@ -15,23 +15,18 @@ st.set_page_config(
 # ==============================================================================
 # 🔐 2. GESTION DU MOT DE PASSE ET AUTHENTIFICATION
 # ==============================================================================
-MOT_DE_PASSE_ACCES = "lpee2026"  # 👈 Votre mot de passe d'accès
+MOT_DE_PASSE_ACCES = "lpee2026"  # 👈 Mot de passe d'accès
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
-# --- ÉCRAN DE CONNEXION AVEC PHOTO AL BORAQ ---
+# --- ÉCRAN DE CONNEXION ---
 if not st.session_state["authenticated"]:
     col_g, col_c, col_d = st.columns([1, 2, 1])
     
     with col_c:
         url_image_al_boraq = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/ONCF_Al_boraq.jpeg/1280px-ONCF_Al_boraq.jpeg"
-        
-        st.image(
-            url_image_al_boraq, 
-            caption="Projet LGV CASA SUD - LPEE CTR-CSB",
-            use_container_width=True
-        )
+        st.image(url_image_al_boraq, caption="Projet LGV CASA SUD - LPEE CTR-CSB", use_container_width=True)
         
         st.title("🔒 Connexion au Portail Laboratoire")
         st.markdown("##### **LPEE - CTR-CSB** | Projet : **LGV CASA SUD** | Client : **TGCC**")
@@ -47,7 +42,7 @@ if not st.session_state["authenticated"]:
             else:
                 st.error("❌ Mot de passe incorrect.")
                 
-    st.stop()  # Bloque l'exécution tant que l'utilisateur n'est pas connecté
+    st.stop()
 
 # ==============================================================================
 # ⚙️ 3. CONNEXION SUPABASE
@@ -62,20 +57,18 @@ except Exception as e:
     st.stop()
 
 # ==============================================================================
-# 📌 4. BARRE LATÉRALE DE NAVIGATION (Sans re-demander le mot de passe)
+# 📌 4. BARRE LATÉRALE DE NAVIGATION
 # ==============================================================================
 with st.sidebar:
     st.title("🏢 LPEE - CTR-CSB")
     st.caption("Projet : **LGV CASA SUD** | Client : **TGCC**")
     st.write("---")
     
-    # Menu principal comprenant les 3 modules du projet
     page = st.radio(
         "📌 Menu Principal",
         [
             "🏠 Accueil", 
             "🏗️ Suivi de Bétonnage", 
-            "🧪 Contrôle de Béton", 
             "🪨 Essai à la Plaque"
         ]
     )
@@ -90,7 +83,7 @@ with st.sidebar:
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# PAGE : ACCUEIL
+# PAGE 1 : ACCUEIL
 # ------------------------------------------------------------------------------
 if page == "🏠 Accueil":
     st.title("👋 Bienvenue sur le Portail de Contrôle Qualité")
@@ -101,9 +94,8 @@ if page == "🏠 Accueil":
         st.markdown("""
         Ce portail rassemble la gestion et le suivi des essais de contrôle qualité sur site :
         
-        * **🏗️ Suivi de Bétonnage :** Enregistrement des bons de livraison, heures de coulage et volumes.
-        * **🧪 Contrôle de Béton :** Mesures de consistance (slump), températures et confection des éprouvettes (NF EN 12390-2).
-        * **🪨 Essai à la Plaque :** Calcul des modules EV1, EV2 et du rapport k (NF P94-117-1).
+        * **🏗️ Suivi de Bétonnage :** Enregistrement des bons de livraison (BL), calculs des volumes journaliers et mensuels.
+        * **🪨 Essai à la Plaque :** Saisie des enfoncements Z1 et Z2, calculs des modules EV1, EV2 et du rapport k.
         """)
     with col2:
         st.info("""
@@ -114,59 +106,133 @@ if page == "🏠 Accueil":
         """)
 
 # ------------------------------------------------------------------------------
-# PAGE : SUIVI DE BÉTONNAGE
+# PAGE 2 : SUIVI DE BÉTONNAGE (Avec Récapitulatifs & Connexion Supabase)
 # ------------------------------------------------------------------------------
 elif page == "🏗️ Suivi de Bétonnage":
-    st.title("🏗️ Suivi de Bétonnage")
-    st.info("Saisie des livraisons et suivi des plannings de bétonnage.")
+    st.title("🏗️ Suivi et Contrôle Qualité Béton")
     
-    with st.form("form_suivi_beton"):
-        st.subheader("Nouveau suivi de coulage")
-        c1, c2 = st.columns(2)
-        with c1:
-            date_s = st.date_input("Date de bétonnage", value=date.today())
-            bl_num = st.text_input("N° Bon de Livraison (BL)", value="BL-2026-001")
-            element = st.text_input("Élément d'ouvrage", value="Pile P2 - Semelle")
-        with c2:
-            volume = st.number_input("Volume béton (m³)", value=8.0, step=0.5)
-            centrale = st.text_input("Centrale à béton", value="Centrale BTP TGCC")
-            
-        submit_s = st.form_submit_button("Enregistrer le suivi", type="primary")
-        if submit_s:
-            st.success("✅ Suivi de bétonnage enregistré !")
+    # --- A. Chargement des données Supabase ---
+    try:
+        resp_b = supabase.table("suivi_betonnage").select("*").execute()
+        data_beton = resp_b.data or []
+    except Exception:
+        try:
+            # Fallback si le nom de la table dans votre Supabase est 'beton'
+            resp_b = supabase.table("beton").select("*").execute()
+            data_beton = resp_b.data or []
+        except Exception:
+            data_beton = []
 
-# ------------------------------------------------------------------------------
-# PAGE : CONTRÔLE DE BÉTON
-# ------------------------------------------------------------------------------
-elif page == "🧪 Contrôle de Béton":
-    st.title("🧪 Contrôle de Béton Frais (NF EN 12390-2)")
-    st.info("Contrôle de la consistance, température et prélèvements d'éprouvettes.")
+    df_beton = pd.DataFrame(data_beton)
+
+    # Convertir la colonne date si elle existe
+    if not df_beton.empty and "date_livraison" in df_beton.columns:
+        df_beton["date_parsed"] = pd.to_datetime(df_beton["date_livraison"], errors="coerce")
+    else:
+        df_beton["date_parsed"] = pd.NaT
+
+    # --- B. Section Récapitulatifs (Journalier & Mensuel) ---
+    st.subheader("📊 Récapitulatifs des Coulages")
     
-    with st.form("form_controle_beton"):
-        st.subheader("Saisie d'un contrôle béton frais")
-        col1, col2 = st.columns(2)
+    col_filtre_date, col_m1, col_m2, col_m3 = st.columns([1.5, 1, 1, 1])
+    
+    with col_filtre_date:
+        date_recap = st.date_input("📅 Sélectionner la date :", value=date(2026, 8, 1))
+        str_date_recap = date_recap.strftime("%Y-%m-%d")
+
+    # Calculs Journaliers
+    if not df_beton.empty and "volume" in df_beton.columns:
+        df_jour = df_beton[df_beton["date_parsed"].dt.strftime("%Y-%m-%d") == str_date_recap]
+        vol_jour = df_jour["volume"].astype(float).sum() if not df_jour.empty else 0.0
+        nb_bl_jour = len(df_jour)
+
+        # Calculs Mensuels (basés sur le mois sélectionné)
+        mois_sel = date_recap.month
+        annee_sel = date_recap.year
+        df_mois = df_beton[
+            (df_beton["date_parsed"].dt.month == mois_sel) & 
+            (df_beton["date_parsed"].dt.year == annee_sel)
+        ]
+        vol_mois = df_mois["volume"].astype(float).sum() if not df_mois.empty else 0.0
+        nb_bl_mois = len(df_mois)
+    else:
+        vol_jour, nb_bl_jour, vol_mois, nb_bl_mois = 0.0, 0, 0.0, 0
+
+    with col_m1:
+        st.metric("Volume du Jour", f"{vol_jour:.1f} m³", delta=f"{nb_bl_jour} Bon(s) BL")
+    with col_m2:
+        st.metric(f"Volume Mensuel ({date_recap.strftime('%m/%Y')})", f"{vol_mois:.1f} m³", delta=f"{nb_bl_mois} Bon(s) BL")
+    with col_m3:
+        st.metric("Total Général Cumulé", f"{df_beton['volume'].astype(float).sum() if not df_beton.empty and 'volume' in df_beton.columns else 0.0:.1f} m³")
+
+    st.markdown("---")
+
+    # --- C. Formulaire de Saisie d'un nouveau bétonnage ---
+    with st.form("form_beton"):
+        st.subheader("📝 Nouvel enregistrement de bétonnage")
+        c1, c2, c3 = st.columns(3)
         
-        with col1:
-            date_b = st.date_input("Date de contrôle", value=date.today())
-            classe_b = st.selectbox("Classe de résistance", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
-            temp = st.number_input("Température du béton (°C)", value=20.0, step=0.5)
+        with c1:
+            date_b = st.date_input("Date de livraison", value=date_recap)
+            bl_num = st.text_input("N° Bon de Livraison (BL)", value="BL-2026-001")
+            classe_b = st.selectbox("Classe de béton", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
             
-        with col2:
-            affaisse = st.number_input("Affaissement / Slump (cm)", value=15.0, step=0.5)
-            prelev = st.selectbox("Prélèvement conforme", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
-            nb_ep = st.number_input("Nombre d'éprouvettes prélevées", min_value=0, max_value=12, value=6)
+        with c2:
+            element = st.text_input("Élément d'ouvrage / PK", value="Semelle P1 - PK 14+200")
+            volume_b = st.number_input("Volume (m³)", value=8.0, step=0.5, min_value=0.1)
+            temp_b = st.number_input("Température (°C)", value=21.0, step=0.5)
 
-        submit_b = st.form_submit_button("Enregistrer le contrôle", type="primary")
+        with c3:
+            slump_b = st.number_input("Affaissement / Slump (cm)", value=16.0, step=0.5)
+            prelev_b = st.selectbox("Prélèvement (NF EN 12390-2)", ["OUI - Conforme", "NON", "Sans objet"])
+            nb_ep_b = st.number_input("Nombre d'éprouvettes", min_value=0, max_value=12, value=6)
+
+        submit_b = st.form_submit_button("💾 Enregistrer dans Supabase", type="primary")
+        
         if submit_b:
-            st.success("✅ Contrôle de béton enregistré avec succès !")
+            nouvel_essai = {
+                "date_livraison": date_b.strftime("%Y-%m-%d"),
+                "bl_numero": bl_num,
+                "classe_beton": classe_b,
+                "element_ouvrage": element,
+                "volume": float(volume_b),
+                "temperature": float(temp_b),
+                "slump": float(slump_b),
+                "prelevement": prelev_b,
+                "nb_eprouvettes": int(nb_ep_b)
+            }
+            try:
+                supabase.table("suivi_betonnage").insert(nouvel_essai).execute()
+                st.success("✅ Bétonnage enregistré avec succès dans la base de données !")
+                st.rerun()
+            except Exception as e:
+                try:
+                    # Tente d'insérer dans la table alternative 'beton'
+                    supabase.table("beton").insert(nouvel_essai).execute()
+                    st.success("✅ Bétonnage enregistré avec succès !")
+                    st.rerun()
+                except Exception as e2:
+                    st.error(f"Erreur d'enregistrement Supabase : {e2}")
+
+    # --- D. Historique et Données enregistrées ---
+    st.markdown("---")
+    st.subheader("📋 Historique complet des bétonnages")
+    
+    if not df_beton.empty:
+        # Nettoyage de l'affichage des colonnes
+        cols_to_show = [c for c in ["date_livraison", "bl_numero", "classe_beton", "element_ouvrage", "volume", "slump", "prelevement", "nb_eprouvettes"] if c in df_beton.columns]
+        df_display = df_beton[cols_to_show] if cols_to_show else df_beton
+        df_display.index = range(1, len(df_display) + 1)
+        st.dataframe(df_display, use_container_width=True)
+    else:
+        st.info("Aucune donnée enregistrée pour le moment dans Supabase.")
 
 # ------------------------------------------------------------------------------
-# PAGE : ESSAI À LA PLAQUE
+# PAGE 3 : ESSAI À LA PLAQUE
 # ------------------------------------------------------------------------------
 elif page == "🪨 Essai à la Plaque":
     st.title("🪨 Contrôle de Portance - Essai à la Plaque (NF P94-117-1)")
     
-    # Chargement des données Supabase
     try:
         resp = supabase.table("essais_plaque").select("*").execute()
         data_all_plaque = resp.data or []
