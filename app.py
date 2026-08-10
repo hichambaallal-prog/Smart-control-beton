@@ -169,7 +169,11 @@ elif page == "🏗️ Suivi de Bétonnage":
 
     with c_b3:
         meteo = st.selectbox("Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
-        temp = st.number_input("Temp (°C)", value=20.0)
+        
+        # Ajout des deux champs distincts de température
+        temp_beton = st.number_input("🌡️ Température du béton (°C)", value=20.0, step=0.5)
+        temp_ambiante = st.number_input("🌤️ Température ambiante (°C)", value=25.0, step=0.5)
+        
         affaisse = st.number_input("Affaissement (cm)", value=15.0)
         
         prelev = st.selectbox("Prélèvement", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
@@ -180,10 +184,23 @@ elif page == "🏗️ Suivi de Bétonnage":
 
     if st.button("💾 Enregistrer", type="primary"):
         row_b = {
-            "date_livraison": str_date_b, "technicien": technicien, "client": client_b, "centrale_beton": centrale_b,
-            "bl_num": bl_num, "ouvrage": ouvrage, "heure_arrivee": t_arrivee.strftime("%H h %M min"), "heure_fin_coulage": t_fin.strftime("%H h %M min"),
-            "quantite_m3": float(quantite_m3), "classe_beton": classe_b, "meteo": meteo, "temperature": float(temp),
-            "affaissement": float(affaisse), "prelevement": prelev, "nb_eprouvettes": int(nb_ep), "observations": obs_b
+            "date_livraison": str_date_b, 
+            "technicien": technicien, 
+            "client": client_b, 
+            "centrale_beton": centrale_b,
+            "bl_num": bl_num, 
+            "ouvrage": ouvrage, 
+            "heure_arrivee": t_arrivee.strftime("%H h %M min"), 
+            "heure_fin_coulage": t_fin.strftime("%H h %M min"),
+            "quantite_m3": float(quantite_m3), 
+            "classe_beton": classe_b, 
+            "meteo": meteo, 
+            "temperature_beton": float(temp_beton),       # Enregistrement temp. béton
+            "temperature_ambiante": float(temp_ambiante), # Enregistrement temp. ambiante
+            "affaissement": float(affaisse), 
+            "prelevement": prelev, 
+            "nb_eprouvettes": int(nb_ep), 
+            "observations": obs_b
         }
         supabase.table("suivi_beton").insert(row_b).execute()
         st.success("✅ Enregistré !")
@@ -215,15 +232,19 @@ elif page == "📊 Synthèse Béton":
         
         tab_jour, tab_mois = st.tabs(["📅 Bilan Journalier", "📆 Bilan Mensuel"])
         
-        # Sélection des colonnes demandées pour le récapitulatif détaillé
+        # Sélection des colonnes avec les deux températures distinctes
         colonnes_a_afficher = {
             "date_livraison": "Date de suivi",
             "ouvrage": "Partie d'ouvrage",
             "bl_num": "N° de BL",
             "affaissement": "Affaissement (cm)",
-            "temperature": "Temp. Béton (°C)",
-            "meteo": "Météo / Temp. Ambiante"
+            "temperature_beton": "Temp. Béton (°C)",
+            "temperature_ambiante": "Temp. Ambiante (°C)",
+            "meteo": "Météo"
         }
+        
+        # Filtrage dynamique des colonnes présentes dans la base pour éviter les erreurs si l'ancienne table n'a pas les colonnes
+        colonnes_disponibles = {k: v for k, v in colonnes_a_afficher.items() if k in df.columns}
         
         # ==========================================
         # ONGLET 1 : BILAN JOURNALIER
@@ -245,7 +266,7 @@ elif page == "📊 Synthèse Béton":
                 col2.metric(label="Nombre de Toupies / BL", value=total_liv_jour)
                 
                 st.markdown("#### 📄 Détail des Coulages (Chantier)")
-                recap_j_detail = df_jour[list(colonnes_a_afficher.keys())].rename(columns=colonnes_a_afficher)
+                recap_j_detail = df_jour[list(colonnes_disponibles.keys())].rename(columns=colonnes_disponibles)
                 
                 st.dataframe(recap_j_detail, use_container_width=True, hide_index=True)
                 
@@ -288,7 +309,7 @@ elif page == "📊 Synthèse Béton":
                 col2.metric(label="Nombre de Toupies / BL", value=total_liv_mois)
                 
                 st.markdown(f"#### 📄 Synthèse Détaillée pour {mois_choisi:02d}/{annee_choisie}")
-                recap_m_detail = df_mois[list(colonnes_a_afficher.keys())].rename(columns=colonnes_a_afficher)
+                recap_m_detail = df_mois[list(colonnes_disponibles.keys())].rename(columns=colonnes_disponibles)
                 
                 st.dataframe(recap_m_detail, use_container_width=True, hide_index=True)
                 
