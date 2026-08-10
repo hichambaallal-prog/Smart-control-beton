@@ -286,7 +286,7 @@ elif page == "🪨 Essai à la Plaque":
         st.info("Aucun essai à la plaque enregistré pour le moment.")
 
 # ------------------------------------------------------------------------------
-# PAGE 3 : SUIVI DE BÉTONNAGE (CLÔTURÉ)
+# PAGE 3 : SUIVI DE BÉTONNAGE 
 # ------------------------------------------------------------------------------
 elif page == "🏗️ Suivi de Bétonnage":
     st.title("🏗️ Suivi et Contrôle Qualité Béton")
