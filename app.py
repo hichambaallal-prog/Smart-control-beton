@@ -242,7 +242,7 @@ elif page == "🪨 Essai à la Plaque":
     # Calculs automatiques
     ev1 = 112.5 / (z1 * 2) if z1 > 0 else 0.0
     ev2 = 90.0 / (z2 * 2) if z2 > 0 else 0.0
-    K_val = (ev2 / ev1) if ev1 > 0 else 0.0
+    k_val = (ev2 / ev1) if ev1 > 0 else 0.0
 
     st.markdown("---")
     st.markdown("#### 📊 Résultats Calculés")
@@ -286,60 +286,26 @@ elif page == "🪨 Essai à la Plaque":
         st.info("Aucun essai à la plaque enregistré pour le moment.")
 
 # ------------------------------------------------------------------------------
-# PAGE 3 : SUIVI DE BÉTONNAGE (DÉBLOQUÉ)
+# PAGE 3 : SUIVI DE BÉTONNAGE (CLÔTURÉ)
 # ------------------------------------------------------------------------------
 elif page == "🏗️ Suivi de Bétonnage":
-    st.title("🏗️ Saisie - Suivi et Contrôle Qualité Béton")
-
-    # --- Formulaire de saisie ---
-    with st.expander("➕ Ajouter un nouveau suivi de bétonnage", expanded=True):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            date_b = st.date_input("📅 Date de livraison", value=date.today())
-            ouvrage = st.text_input("📍 Ouvrage / Partie d'ouvrage")
-            bl_num = st.text_input("🧾 N° de BL")
-        with col2:
-            classe_beton = st.selectbox("🧱 Classe de béton", ["C25/30", "C30/37", "C35/45", "Autre"])
-            affaissement = st.number_input("💧 Affaissement (cm)", min_value=0, value=12)
-            quantite = st.number_input("🚚 Quantité (m³)", min_value=0.0, step=0.5)
-        with col3:
-            temp_b = st.number_input("🌡️ Temp. Béton (°C)", value=25.0)
-            temp_a = st.number_input("🌡️ Temp. Ambiante (°C)", value=30.0)
-            meteo = st.selectbox("☀️ Météo", ["Ensoleillé", "Nuageux", "Pluvieux"])
-
-        if st.button("💾 Enregistrer le bétonnage", type="primary"):
-            new_row = {
-                "date_livraison": date_b.strftime("%d/%m/%Y"),
-                "ouvrage": ouvrage,
-                "bl_num": bl_num,
-                "classe_beton": classe_beton,
-                "affaissement": affaissement,
-                "quantite_m3": float(quantite),
-                "temperature_beton": temp_b,
-                "temperature_ambiante": temp_a,
-                "meteo": meteo
-            }
-            try:
-                supabase.table("suivi_beton").insert(new_row).execute()
-                st.success("✅ Données enregistrées avec succès !")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erreur lors de l'enregistrement : {e}")
-
-    st.markdown("---")
-    st.subheader("📋 Historique des Saisies")
+    st.title("🏗️ Suivi et Contrôle Qualité Béton")
+    st.info("🔒 Ce module est désormais **clôturé** en saisie. Vous pouvez consulter l'historique ci-dessous ou utiliser le module **Synthèse Béton** pour les bilans.")
 
     try:
-        resp_beton = supabase.table("suivi_beton").select("*").order("id", desc=True).execute()
+        resp_beton = supabase.table("suivi_beton").select("*").execute()
         data_all_beton = resp_beton.data or []
     except Exception:
         data_all_beton = []
 
     if data_all_beton:
         df_hist = pd.DataFrame(data_all_beton)
+        if "created_at" in df_hist.columns:
+            df_hist = df_hist.drop(columns=["created_at"])
         st.dataframe(df_hist, use_container_width=True, hide_index=True)
     else:
-        st.info("Aucune donnée enregistrée.")
+        st.warning("⚠️ Aucune donnée de bétonnage enregistrée.")
+
 # ------------------------------------------------------------------------------
 # PAGE 4 : SYNTHÈSE BÉTON
 # ------------------------------------------------------------------------------
