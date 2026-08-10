@@ -11,9 +11,13 @@ st.set_page_config(page_title="LPEE CTR-CSB - LGV CASA SUD", layout="wide")
 # 🔐 1. GESTION DU MOT DE PASSE ET AUTHENTIFICATION
 # ==============================================================================
 MOT_DE_PASSE_ACCES = "lpee2026"
+MOT_DE_PASSE_ADMIN = "admin2026"  # Mot de passe administrateur pour modifier/supprimer
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
+
+if "admin_authenticated" not in st.session_state:
+    st.session_state["admin_authenticated"] = False
 
 # ==============================================================================
 # 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL (MISE EN PAGE COULEUR & A4 PORTRAIT)
@@ -173,6 +177,7 @@ with st.sidebar:
     st.write("---")
     if st.button("🚪 Déconnexion", type="secondary", use_container_width=True):
         st.session_state["authenticated"] = False
+        st.session_state["admin_authenticated"] = False
         st.rerun()
 
 # ==============================================================================
@@ -276,12 +281,80 @@ elif page == "🏗️ Suivi de Bétonnage":
 
     st.markdown("---")
     st.subheader("📋 Historique")
+    
     if data_all_beton:
         df_hist = pd.DataFrame(data_all_beton)
-        # Suppression de la colonne "created_at" si elle existe
         if "created_at" in df_hist.columns:
             df_hist = df_hist.drop(columns=["created_at"])
         st.dataframe(df_hist, use_container_width=True, hide_index=True)
+
+        st.markdown("#### 🔐 Espace Administrateur : Modifier ou Supprimer un enregistrement")
+        
+        # Vérification / Demande du mot de passe admin
+        if not st.session_state["admin_authenticated"]:
+            col_adm1, col_adm2 = st.columns([2, 1])
+            with col_adm1:
+                pwd_admin_input = st.text_input("Mot de passe Administrateur requis pour Modifier/Supprimer :", type="password", key="pwd_admin")
+            with col_adm2:
+                st.write("")
+                st.write("")
+                if st.button("Valider Admin"):
+                    if pwd_admin_input == MOT_DE_PASSE_ADMIN:
+                        st.session_state["admin_authenticated"] = True
+                        st.success("Mode administrateur activé !")
+                        st.rerun()
+                    else:
+                        st.error("❌ Mot de passe administrateur incorrect.")
+        else:
+            st.success("🔓 Mode Administrateur Actif")
+            if st.button("Verrouiller l'accès admin"):
+                st.session_state["admin_authenticated"] = False
+                st.rerun()
+
+            # Sélection de l'enregistrement via son ID
+            ids_disponibles = [item["id"] for item in data_all_beton if "id" in item]
+            id_selectionne = st.selectbox("Sélectionnez l'ID de l'enregistrement à modifier ou supprimer :", ids_disponibles)
+            
+            # Récupérer les données actuelles de l'enregistrement choisi
+            enregistrement_actuel = next((item for item in data_all_beton if item["id"] == id_selectionne), None)
+            
+            if enregistrement_actuel:
+                col_act1, col_act2 = st.columns(2)
+                
+                with col_act1:
+                    st.markdown("##### ✏️ Modifier l'enregistrement")
+                    with st.form("form_modification"):
+                        mod_date = st.text_input("Date de livraison (jj/mm/aaaa)", value=enregistrement_actuel.get("date_livraison", ""))
+                        mod_bl = st.text_input("N° BL", value=enregistrement_actuel.get("bl_num", ""))
+                        mod_ouvrage = st.text_input("Ouvrage", value=enregistrement_actuel.get("ouvrage", ""))
+                        mod_classe = st.text_input("Classe de béton", value=enregistrement_actuel.get("classe_beton", ""))
+                        mod_qte = st.number_input("Quantité (m³)", value=float(enregistrement_actuel.get("quantite_m3", 0.0)))
+                        mod_aff = st.number_input("Affaissement (mm)", value=float(enregistrement_actuel.get("affaissement", 0.0)))
+                        mod_obs = st.text_area("Observations", value=enregistrement_actuel.get("observations", ""))
+                        
+                        submit_modif = st.form_submit_button("Mettre à jour", type="primary")
+                        if submit_modif:
+                            donnees_maj = {
+                                "date_livraison": mod_date,
+                                "bl_num": mod_bl,
+                                "ouvrage": mod_ouvrage,
+                                "classe_beton": mod_classe,
+                                "quantite_m3": mod_qte,
+                                "affaissement": mod_aff,
+                                "observations": mod_obs
+                            }
+                            supabase.table("suivi_beton").update(donnees_maj).eq("id", id_selectionne).execute()
+                            st.success("✅ Enregistrement mis à jour avec succès !")
+                            st.rerun()
+
+                with col_act2:
+                    st.markdown("##### 🗑️ Supprimer l'enregistrement")
+                    st.warning(f"Attention, vous êtes sur le point de supprimer l'enregistrement ID n° **{id_selectionne}** (BL : {enregistrement_actuel.get('bl_num')}).")
+                    
+                    if st.button("🗑️ Confirmer la suppression", type="secondary"):
+                        supabase.table("suivi_beton").delete().eq("id", id_selectionne).execute()
+                        st.success("🗑️ Enregistrement supprimé avec succès !")
+                        st.rerun()
 
 # ------------------------------------------------------------------------------
 # PAGE 4 : SYNTHÈSE BÉTON
