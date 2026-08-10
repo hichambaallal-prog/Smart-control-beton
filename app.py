@@ -170,7 +170,8 @@ with st.sidebar:
             "🏠 Accueil", 
             "🪨 Essai à la Plaque", 
             "🏗️ Suivi de Bétonnage",
-            "📊 Synthèse Béton"
+            "📊 Synthèse Béton",
+            "📈 Synthèse Essai à la Plaque"
         ]
     )
     
@@ -197,6 +198,7 @@ if page == "🏠 Accueil":
         * **🪨 Essai à la Plaque :** Saisie des données de chargement, calculs automatiques EV1, EV2 et k.
         * **🏗️ Suivi de Bétonnage :** Module clôturé (historique et consultation).
         * **📊 Synthèse Béton :** Bilan journalier et mensuel détaillé.
+        * **📈 Synthèse Essai à la Plaque :** Bilans journaliers et mensuels avec filtrage par type de plateforme et export Excel A4.
         """)
     with col2:
         st.info("**Projet :** LGV CASA SUD\n\n**Client :** TGCC\n\n**Centrale :** TG PREFA")
@@ -427,4 +429,131 @@ elif page == "📊 Synthèse Béton":
                     file_name=f"Recap_Mensuel_{mois_choisi:02d}_{annee_choisie}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="btn_excel_m"
+                )
+
+# ------------------------------------------------------------------------------
+# PAGE 5 : SYNTHÈSE ESSAI À LA PLAQUE
+# ------------------------------------------------------------------------------
+elif page == "📈 Synthèse Essai à la Plaque":
+    st.title("📈 Récapitulatif et Synthèse - Essai à la Plaque")
+    
+    try:
+        resp_plaque = supabase.table("essai_plaque").select("*").execute()
+        data_all_plaque = resp_plaque.data or []
+    except Exception as e:
+        st.error(f"Erreur de chargement : {e}")
+        data_all_plaque = []
+
+    if not data_all_plaque:
+        st.warning("⚠️ Aucun essai à la plaque n'est encore enregistré.")
+    else:
+        df_p = pd.DataFrame(data_all_plaque)
+        df_p['date_essai_dt'] = pd.to_datetime(df_p['date_essai'], format='%d/%m/%Y', errors='coerce')
+        
+        tab_jour_p, tab_mois_p = st.tabs(["📅 Bilan Journalier (Plaque)", "📆 Bilan Mensuel (Plaque)"])
+        
+        colonnes_plaque_afficher = {
+            "date_essai": "Date de l'essai",
+            "technicien": "Technicien",
+            "client": "Client",
+            "localisation": "Localisation / PK",
+            "projet": "Projet",
+            "type_plateforme": "Type de plateforme",
+            "z1": "Z1 (mm)",
+            "z2": "Z2 (mm)",
+            "ev1": "EV1 (MPa)",
+            "ev2": "EV2 (MPa)",
+            "k": "Coefficient k",
+            "observations": "Observations"
+        }
+        
+        cols_disp_p = {k: v for k, v in colonnes_plaque_afficher.items() if k in df_p.columns}
+        
+        plateformes_uniques = sorted(df_p['type_plateforme'].dropna().unique().tolist()) if 'type_plateforme' in df_p.columns else []
+        options_filtre_plt = ["Toutes"] + plateformes_uniques
+        
+        # ==========================================
+        # ONGLET 1 : BILAN JOURNALIER (PLAQUE)
+        # ==========================================
+        with tab_jour_p:
+            st.subheader("Filtrage par jour et par type de plateforme")
+            col_fp1, col_fp2 = st.columns(2)
+            with col_fp1:
+                d_jour_p = st.date_input("Sélectionnez une date :", value=date.today(), key="input_date_jour_plaque")
+            with col_fp2:
+                plt_filtre_j = st.selectbox("Filtrer par type de plateforme :", options_filtre_plt, key="filtre_plt_j")
+            
+            df_p_jour = df_p[df_p['date_essai_dt'].dt.date == d_jour_p]
+            
+            if plt_filtre_j != "Toutes":
+                df_p_jour = df_p_jour[df_p_jour['type_plateforme'] == plt_filtre_j]
+            
+            if df_p_jour.empty:
+                st.info("Aucun essai à la plaque enregistré pour les critères sélectionnés.")
+            else:
+                total_essais_j = len(df_p_jour)
+                col1_j, col2_j = st.columns(2)
+                col1_j.metric(label="Nombre d'Essais Réalisés", value=total_essais_j)
+                if 'ev2' in df_p_jour.columns and not df_p_jour['ev2'].empty:
+                    col2_j.metric(label="EV2 Moyen (MPa)", value=f"{df_p_jour['ev2'].mean():.2f} MPa")
+                
+                st.markdown("#### 📄 Détail des Essais (Journalier)")
+                recap_p_j_detail = df_p_jour[list(cols_disp_p.keys())].rename(columns=cols_disp_p)
+                
+                st.dataframe(recap_p_j_detail, use_container_width=True, hide_index=True)
+                
+                titre_pj = f"Recapitulatif Journalier - Essai Plaque - {d_jour_p.strftime('%d/%m/%Y')}" + (f" ({plt_filtre_j})" if plt_filtre_j != "Toutes" else "")
+                excel_data_pj = generer_excel_recap(recap_p_j_detail, titre_pj)
+                st.download_button(
+                    label="📥 Télécharger le Bilan Journalier Plaque en Excel",
+                    data=excel_data_pj,
+                    file_name=f"Recap_Plaque_Journalier_{d_jour_p.strftime('%d-%m-%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="btn_excel_pj"
+                )
+
+        # ==========================================
+        # ONGLET 2 : BILAN MENSUEL (PLAQUE)
+        # ==========================================
+        with tab_mois_p:
+            st.subheader("Filtrage par mois, année et type de plateforme")
+            col_mp1, col_mp2, col_mp3 = st.columns(3)
+            
+            with col_mp1:
+                mois_choisi_p = st.selectbox("Mois", range(1, 13), index=date.today().month - 1, key="select_mois_p")
+            with col_mp2:
+                annee_choisie_p = st.selectbox("Année", range(2024, 2030), index=2, key="select_annee_p")
+            with col_mp3:
+                plt_filtre_m = st.selectbox("Filtrer par type de plateforme :", options_filtre_plt, key="filtre_plt_m")
+                
+            df_p_mois = df_p[
+                (df_p['date_essai_dt'].dt.month == mois_choisi_p) & 
+                (df_p['date_essai_dt'].dt.year == annee_choisie_p)
+            ]
+            
+            if plt_filtre_m != "Toutes":
+                df_p_mois = df_p_mois[df_p_mois['type_plateforme'] == plt_filtre_m]
+            
+            if df_p_mois.empty:
+                st.info("Aucun essai à la plaque enregistré pour la période et la plateforme sélectionnées.")
+            else:
+                total_essais_m = len(df_p_mois)
+                col1_m, col2_m = st.columns(2)
+                col1_m.metric(label="Nombre Total d'Essais (Mensuel)", value=total_essais_m)
+                if 'ev2' in df_p_mois.columns and not df_p_mois['ev2'].empty:
+                    col2_m.metric(label="EV2 Moyen (MPa)", value=f"{df_p_mois['ev2'].mean():.2f} MPa")
+                
+                st.markdown(f"#### 📄 Synthèse Détaillée pour {mois_choisi_p:02d}/{annee_choisie_p}")
+                recap_p_m_detail = df_p_mois[list(cols_disp_p.keys())].rename(columns=cols_disp_p)
+                
+                st.dataframe(recap_p_m_detail, use_container_width=True, hide_index=True)
+                
+                titre_pm = f"Recapitulatif Mensuel - Essai Plaque - {mois_choisi_p:02d}/{annee_choisie_p}" + (f" ({plt_filtre_m})" if plt_filtre_m != "Toutes" else "")
+                excel_data_pm = generer_excel_recap(recap_p_m_detail, titre_pm)
+                st.download_button(
+                    label="📥 Télécharger le Bilan Mensuel Plaque en Excel",
+                    data=excel_data_pm,
+                    file_name=f"Recap_Plaque_Mensuel_{mois_choisi_p:02d}_{annee_choisie_p}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="btn_excel_pm"
                 )
