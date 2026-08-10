@@ -19,7 +19,6 @@ if not st.session_state["authenticated"]:
     col_g, col_c, col_d = st.columns([1, 2, 1])
     
     with col_c:
-        # 📸 Photo directe du TGV Al Boraq via un lien Web (Wikimedia Commons)
         url_image_al_boraq = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/ONCF_Al_boraq.jpeg/1280px-ONCF_Al_boraq.jpeg"
         
         st.image(
@@ -62,7 +61,6 @@ with st.sidebar:
     st.caption("Projet : **LGV CASA SUD** | Client : **TGCC**")
     st.write("---")
     
-    # Choix de la page
     page = st.radio(
         "📌 Menu Principal",
         ["🏠 Accueil", "🪨 Essai à la Plaque", "🏗️ Suivi de Bétonnage"]
@@ -108,7 +106,6 @@ if page == "🏠 Accueil":
 elif page == "🪨 Essai à la Plaque":
     st.title("🪨 Contrôle de Portance - Essai à la Plaque (NF P94-117-1)")
     
-    # Chargement des données
     try:
         resp = supabase.table("essais_plaque").select("*").execute()
         data_all_plaque = resp.data or []
@@ -207,7 +204,7 @@ elif page == "🏗️ Suivi de Bétonnage":
     st.title("🏗️ Suivi et Contrôle Qualité Béton")
     st.info("Module de saisie et de suivi des bons de livraison du béton.")
     
-    # Chargement des enregistrements depuis Supabase
+    # Chargement des enregistrements
     try:
         resp_beton = supabase.table("suivi_beton").select("*").execute()
         data_all_beton = resp_beton.data or []
@@ -217,53 +214,68 @@ elif page == "🏗️ Suivi de Bétonnage":
     date_b = st.date_input("📅 Date de livraison :", value=date.today())
     str_date_b = date_b.strftime("%d/%m/%Y")
 
-    with st.form("form_beton"):
-        st.subheader(f"📝 Saisie d'un contrôle de bétonnage ({str_date_b})")
+    st.subheader(f"📝 Saisie d'un contrôle de bétonnage ({str_date_b})")
+
+    # 🔹 On place les champs directement dans la page pour activer l'interactivité dynamique
+    c_b1, c_b2, c_b3 = st.columns(3)
+    
+    # Colonne 1
+    with c_b1:
+        bl_num = st.text_input("N° Bon de Livraison (BL)", value="BL-2026-001")
+        ouvrage = st.text_input("Élément d'ouvrage / Emplacement", value="Voile / Semelle")
+        quantite_m3 = st.number_input("Quantité de béton (m³)", value=8.0, step=0.5, min_value=0.1)
+
+    # Colonne 2
+    with c_b2:
+        classe_b = st.selectbox("Classe béton", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
+        meteo = st.selectbox("Conditions Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
+        temp = st.number_input("Température du béton (°C)", value=20.0, step=0.5)
+
+    # Colonne 3
+    with c_b3:
+        affaisse = st.number_input("Affaissement / Slump (cm)", value=15.0, step=0.5)
         
-        c_b1, c_b2, c_b3 = st.columns(3)
+        # Sélection du prélèvement
+        prelev = st.selectbox(
+            "Prélèvement : NF EN 12390-2", 
+            ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"]
+        )
         
-        # Colonne 1 : Identification & Quantité
-        with c_b1:
-            bl_num = st.text_input("N° Bon de Livraison (BL)", value="BL-2026-001")
-            ouvrage = st.text_input("Élément d'ouvrage / Emplacement", value="Voile / Semelle")
-            quantite_m3 = st.number_input("Quantité de béton (m³)", value=8.0, step=0.5, min_value=0.1)
-
-        # Colonne 2 : Météo & Caractéristiques Béton
-        with c_b2:
-            classe_b = st.selectbox("Classe béton", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
-            meteo = st.selectbox("Conditions Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
-            temp = st.number_input("Température du béton (°C)", value=20.0, step=0.5)
-
-        # Colonne 3 : Essais & Éprouvettes
-        with c_b3:
-            affaisse = st.number_input("Affaissement / Slump (cm)", value=15.0, step=0.5)
-            prelev = st.selectbox("Prélèvement : NF EN 12390-2", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
-            nb_ep = st.number_input("Nombre d'éprouvettes", min_value=0, max_value=12, value=6)
-
-        obs_b = st.text_area("Observations", value="Béton conforme aux exigences du CCTP")
-
-        submit_b = st.form_submit_button("💾 Enregistrer le contrôle béton", type="primary")
+        # 💡 CONDITION : Si "NON" est sélectionné, le champ est désactivé et remis à 0
+        is_disabled = (prelev == "NON")
+        default_nb = 0 if is_disabled else 6
         
-        if submit_b:
-            row_b = {
-                "date_livraison": str_date_b,
-                "bl_num": bl_num,
-                "ouvrage": ouvrage,
-                "quantite_m3": float(quantite_m3),
-                "classe_beton": classe_b,
-                "meteo": meteo,
-                "temperature": float(temp),
-                "affaissement": float(affaisse),
-                "prelevement": prelev,
-                "nb_eprouvettes": int(nb_ep),
-                "observations": obs_b
-            }
-            try:
-                supabase.table("suivi_beton").insert(row_b).execute()
-                st.success("✅ Données de bétonnage enregistrées avec succès !")
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Erreur lors de l'enregistrement Supabase : {e}")
+        nb_ep = st.number_input(
+            "Nombre d'éprouvettes", 
+            min_value=0, 
+            max_value=12, 
+            value=default_nb, 
+            disabled=is_disabled
+        )
+
+    obs_b = st.text_area("Observations", value="Béton conforme aux exigences du CCTP")
+
+    # Bouton d'enregistrement principal
+    if st.button("💾 Enregistrer le contrôle béton", type="primary"):
+        row_b = {
+            "date_livraison": str_date_b,
+            "bl_num": bl_num,
+            "ouvrage": ouvrage,
+            "quantite_m3": float(quantite_m3),
+            "classe_beton": classe_b,
+            "meteo": meteo,
+            "temperature": float(temp),
+            "affaissement": float(affaisse),
+            "prelevement": prelev,
+            "nb_eprouvettes": int(nb_ep),
+            "observations": obs_b
+        }
+        try:
+            supabase.table("suivi_beton").insert(row_b).execute()
+            st.success("✅ Données de bétonnage enregistrées avec succès !")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Erreur lors de l'enregistrement Supabase : {e}")
 
     # Historique sous forme de tableau
     st.markdown("---")
