@@ -109,7 +109,7 @@ def generer_excel_recap(df_data, titre_rapport):
                 valeur_cellule = ""
             worksheet.write(6 + row_idx, col_idx, valeur_cellule, fmt_cellule)
 
-    # --- AJUSTEMENT SÉCURISÉ DES COLONNES (Évite les erreurs TypeError) ---
+    # --- AJUSTEMENT SÉCURISÉ DES COLONNES ---
     for i, col in enumerate(df_data.columns):
         valeurs_str = [str(val) if pd.notna(val) else "" for val in df_data[col]]
         max_val_len = max([len(v) for v in valeurs_str]) if valeurs_str else 0
@@ -277,9 +277,12 @@ elif page == "🏗️ Suivi de Bétonnage":
             "nb_eprouvettes": int(nb_ep), 
             "observations": obs_b
         }
-        supabase.table("suivi_beton").insert(row_b).execute()
-        st.success("✅ Enregistré !")
-        st.rerun()
+        try:
+            supabase.table("suivi_beton").insert(row_b).execute()
+            st.success("✅ Enregistré !")
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Erreur détaillée Supabase : {e}")
 
     st.markdown("---")
     st.subheader("📋 Historique")
@@ -342,18 +345,24 @@ elif page == "🏗️ Suivi de Bétonnage":
                                 "affaissement": mod_aff,
                                 "observations": mod_obs
                             }
-                            supabase.table("suivi_beton").update(donnees_maj).eq("id", id_selectionne).execute()
-                            st.success("✅ Enregistrement mis à jour avec succès !")
-                            st.rerun()
+                            try:
+                                supabase.table("suivi_beton").update(donnees_maj).eq("id", id_selectionne).execute()
+                                st.success("✅ Enregistrement mis à jour avec succès !")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de la mise à jour Supabase : {e}")
 
                 with col_act2:
                     st.markdown("##### 🗑️ Supprimer l'enregistrement")
                     st.warning(f"Attention, vous êtes sur le point de supprimer l'enregistrement ID n° **{id_selectionne}** (BL : {enregistrement_actuel.get('bl_num')}).")
                     
                     if st.button("🗑️ Confirmer la suppression", type="secondary"):
-                        supabase.table("suivi_beton").delete().eq("id", id_selectionne).execute()
-                        st.success("🗑️ Enregistrement supprimé avec succès !")
-                        st.rerun()
+                        try:
+                            supabase.table("suivi_beton").delete().eq("id", id_selectionne).execute()
+                            st.success("🗑️ Enregistrement supprimé avec succès !")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erreur lors de la suppression Supabase : {e}")
 
 # ------------------------------------------------------------------------------
 # PAGE 4 : SYNTHÈSE BÉTON
