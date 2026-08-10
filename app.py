@@ -277,7 +277,11 @@ elif page == "🏗️ Suivi de Bétonnage":
     st.markdown("---")
     st.subheader("📋 Historique")
     if data_all_beton:
-        st.dataframe(pd.DataFrame(data_all_beton), use_container_width=True)
+        df_hist = pd.DataFrame(data_all_beton)
+        # Suppression de la colonne "created_at" si elle existe
+        if "created_at" in df_hist.columns:
+            df_hist = df_hist.drop(columns=["created_at"])
+        st.dataframe(df_hist, use_container_width=True, hide_index=True)
 
 # ------------------------------------------------------------------------------
 # PAGE 4 : SYNTHÈSE BÉTON
