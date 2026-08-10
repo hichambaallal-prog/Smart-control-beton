@@ -90,7 +90,7 @@ if page == "🏠 Accueil":
         Ce portail vous permet de gérer et d'enregistrer les essais de contrôle qualité sur site :
         
         * **🪨 Essai à la Plaque :** Saisie des enfoncements Z1 et Z2, calcul automatique des modules EV1, EV2 et du rapport k.
-        * **🏗️ Suivi de Bétonnage :** Contrôle des livraisons, classe béton, affaissement et prélèvements selon la norme **NF EN 12390-2**.
+        * **🏗️ Suivi de Bétonnage :** Contrôle des livraisons, volume de béton, météo, classe béton, affaissement et prélèvements selon la norme **NF EN 12390-2**.
         
         Sélectionnez le module souhaité dans le menu latéral à gauche.
         """)
@@ -207,22 +207,70 @@ elif page == "🏗️ Suivi de Bétonnage":
     st.title("🏗️ Suivi et Contrôle Qualité Béton")
     st.info("Module de saisie et de suivi des bons de livraison du béton.")
     
+    # Chargement des enregistrements depuis Supabase
+    try:
+        resp_beton = supabase.table("suivi_beton").select("*").execute()
+        data_all_beton = resp_beton.data or []
+    except Exception as e:
+        data_all_beton = []
+
+    date_b = st.date_input("📅 Date de livraison :", value=date.today())
+    str_date_b = date_b.strftime("%d/%m/%Y")
+
     with st.form("form_beton"):
-        st.subheader("Saisie d'un contrôle de bétonnage")
-        col1, col2 = st.columns(2)
+        st.subheader(f"📝 Saisie d'un contrôle de bétonnage ({str_date_b})")
         
-        with col1:
-            date_b = st.date_input("Date de livraison", value=date.today())
+        c_b1, c_b2, c_b3 = st.columns(3)
+        
+        # Colonne 1 : Identification & Quantité
+        with c_b1:
             bl_num = st.text_input("N° Bon de Livraison (BL)", value="BL-2026-001")
-            classe_b = st.selectbox("Classe béton", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
             ouvrage = st.text_input("Élément d'ouvrage / Emplacement", value="Voile / Semelle")
-            
-        with col2:
-            temp = st.number_input("Température (°C)", value=20.0, step=0.5)
+            quantite_m3 = st.number_input("Quantité de béton (m³)", value=8.0, step=0.5, min_value=0.1)
+
+        # Colonne 2 : Météo & Caractéristiques Béton
+        with c_b2:
+            classe_b = st.selectbox("Classe béton", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
+            meteo = st.selectbox("Conditions Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
+            temp = st.number_input("Température du béton (°C)", value=20.0, step=0.5)
+
+        # Colonne 3 : Essais & Éprouvettes
+        with c_b3:
             affaisse = st.number_input("Affaissement / Slump (cm)", value=15.0, step=0.5)
             prelev = st.selectbox("Prélèvement : NF EN 12390-2", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
             nb_ep = st.number_input("Nombre d'éprouvettes", min_value=0, max_value=12, value=6)
 
-        submit_b = st.form_submit_button("Enregistrer le contrôle béton", type="primary")
+        obs_b = st.text_area("Observations", value="Béton conforme aux exigences du CCTP")
+
+        submit_b = st.form_submit_button("💾 Enregistrer le contrôle béton", type="primary")
+        
         if submit_b:
-            st.success("✅ Données de bétonnage enregistrées avec succès !")
+            row_b = {
+                "date_livraison": str_date_b,
+                "bl_num": bl_num,
+                "ouvrage": ouvrage,
+                "quantite_m3": float(quantite_m3),
+                "classe_beton": classe_b,
+                "meteo": meteo,
+                "temperature": float(temp),
+                "affaissement": float(affaisse),
+                "prelevement": prelev,
+                "nb_eprouvettes": int(nb_ep),
+                "observations": obs_b
+            }
+            try:
+                supabase.table("suivi_beton").insert(row_b).execute()
+                st.success("✅ Données de bétonnage enregistrées avec succès !")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Erreur lors de l'enregistrement Supabase : {e}")
+
+    # Historique sous forme de tableau
+    st.markdown("---")
+    st.subheader("📋 Historique des Livraisons & Contrôles Béton")
+    if data_all_beton:
+        df_b = pd.DataFrame(data_all_beton)
+        df_b.index = range(1, len(df_b) + 1)
+        st.dataframe(df_b, use_container_width=True)
+    else:
+        st.info("Aucune donnée de bétonnage enregistrée.")
