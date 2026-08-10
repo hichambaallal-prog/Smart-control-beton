@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime
 from supabase import create_client, Client
-
+import streamlit as st
+import pandas as pd
+from datetime import date, datetime
+from supabase import create_client, Client
+import io  # <--- AJOUTEZ-LE ICI
 # Configuration globale de la page
 st.set_page_config(page_title="LPEE CTR-CSB - LGV CASA SUD", layout="wide")
 
