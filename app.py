@@ -16,35 +16,94 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 # ==============================================================================
-# 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL
+# 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL (MISE EN PAGE COULEUR & A4)
 # ==============================================================================
 def generer_excel_recap(df_data, titre_rapport):
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    df_data.to_excel(writer, index=False, sheet_name='Recap', startrow=7)
+    
+    # Écriture des données à partir de la ligne 6 pour laisser de la place à l'en-tête
+    df_data.to_excel(writer, index=False, sheet_name='Recap', startrow=5)
     
     workbook = writer.book
     worksheet = writer.sheets['Recap']
     
-    # Configuration A4 Paysage
-    worksheet.set_paper(9)
+    # Configuration Impression A4 Paysage et ajustement automatique à 1 page de large
+    worksheet.set_paper(9)  # Format A4
     worksheet.set_landscape()
+    worksheet.fit_to_pages(1, 0)  # 1 page de large, hauteur automatique
+    worksheet.set_print_scale(85)  # Échelle d'impression confortable
     
-    # Formats
-    fmt_titre = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center'})
+    # --- Définition des Styles et Couleurs ---
+    fmt_titre = workbook.add_format({
+        'bold': True, 
+        'font_size': 14, 
+        'align': 'center', 
+        'valign': 'vcenter',
+        'font_color': '#1B365D',
+        'border': 1
+    })
     
-    # Tentative d'insertion du logo
-    try:
-        worksheet.insert_image('A1', 'logo_lpee.png', {'x_scale': 0.4, 'y_scale': 0.4})
-    except:
-        pass
+    fmt_sous_titre = workbook.add_format({
+        'bold': True, 
+        'font_size': 10, 
+        'align': 'center', 
+        'valign': 'vcenter',
+        'font_color': '#555555'
+    })
     
-    worksheet.merge_range('C2:E2', titre_rapport, fmt_titre)
+    fmt_entete = workbook.add_format({
+        'bold': True,
+        'font_size': 10,
+        'font_color': '#FFFFFF',
+        'bg_color': '#1B365D',  # Bleu marine professionnel
+        'align': 'center',
+        'valign': 'vcenter',
+        'border': 1
+    })
     
-    # Signature
-    derniere_ligne = len(df_data) + 12
-    worksheet.write(f'B{derniere_ligne}', "Responsable d'essai")
-    worksheet.write(f'E{derniere_ligne}', "Chef du laboratoire")
+    fmt_cellule = workbook.add_format({
+        'font_size': 10,
+        'valign': 'vcenter',
+        'align': 'center',
+        'border': 1
+    })
+    
+    fmt_signature = workbook.add_format({
+        'bold': True,
+        'font_size': 10,
+        'align': 'center',
+        'valign': 'vcenter'
+    })
+
+    # Insertion d'un en-tête fusionné pour le titre du rapport
+    worksheet.merge_range('B2:G2', "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - LGV CASA SUD", fmt_sous_titre)
+    worksheet.merge_range('B3:G3', titre_rapport, fmt_titre)
+    
+    # Application des styles sur les en-têtes du tableau (Ligne 6, index 5)
+    for col_num, value in enumerate(df_data.columns.values):
+        worksheet.write(5, col_num, value, fmt_entete)
+        worksheet.set_row(5, 25) # Hauteur de l'en-tête
+        
+    # Application des styles sur les cellules de données
+    for row_idx in range(len(df_data)):
+        worksheet.set_row(6 + row_idx, 20) # Hauteur des lignes de données
+        for col_idx in range(len(df_data.columns)):
+            valeur_cellule = df_data.iloc[row_idx, col_idx]
+            # Gestion propre des valeurs manquantes / NaN
+            if pd.isna(valeur_cellule):
+                valeur_cellule = ""
+            worksheet.write(6 + row_idx, col_idx, valeur_cellule, fmt_cellule)
+
+    # Ajustement automatique de la largeur des colonnes avec une marge de sécurité
+    for i, col in enumerate(df_data.columns):
+        max_len = max(df_data[col].astype(str).map(len).max(), len(str(col))) + 4
+        worksheet.set_column(i, i, max(max_len, 15))
+
+    # Blocs de Signature en bas du document
+    derniere_ligne = len(df_data) + 9
+    worksheet.merge_range(f'B{derniere_ligne}:C{derniere_ligne}', "Responsable d'Essai LPEE", fmt_signature)
+    worksheet.merge_range(f'E{derniere_ligne}:F{derniere_ligne}', "Chef du Laboratoire LGV CASA SUD", fmt_signature)
     
     writer.close()
     return output.getvalue()
@@ -171,8 +230,6 @@ elif page == "🏗️ Suivi de Bétonnage":
         meteo = st.selectbox("Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
         temp_beton = st.number_input("🌡️ Température du béton (°C)", value=20.0, step=0.5)
         temp_ambiante = st.number_input("🌤️ Température ambiante (°C)", value=25.0, step=0.5)
-        
-        # Modification de l'affaissement en mm
         affaisse = st.number_input("Affaissement (mm)", value=150.0, step=10.0)
         
         prelev = st.selectbox("Prélèvement", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
@@ -231,7 +288,6 @@ elif page == "📊 Synthèse Béton":
         
         tab_jour, tab_mois = st.tabs(["📅 Bilan Journalier", "📆 Bilan Mensuel"])
         
-        # Mise à jour du libellé en mm dans l'affichage des synthèses et exports Excel
         colonnes_a_afficher = {
             "date_livraison": "Date de suivi",
             "ouvrage": "Partie d'ouvrage",
