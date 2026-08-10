@@ -1030,9 +1030,3 @@ if data_jour:
   )
 else:
   st.warning(f"Aucun camion enregistré pour le {str_date_choisie}.")
-    import streamlit as st
-
-# 🔒 VÉRIFICATION DE SÉCURITÉ OBLIGATOIRE
-if not st.session_state.get("authenticated", False):
-    st.error("⛔ Accès refusé. Veuillez d'abord vous connecter sur la page d'accueil (app).")
-    st.stop()
