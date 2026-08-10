@@ -3,10 +3,11 @@ import pandas as pd
 from datetime import date
 from supabase import create_client, Client
 
-st.set_page_config(page_title="Essai à la Plaque - LPEE", layout="wide")
+st.set_page_config(page_title="Essai à la Plaque - LPEE CTR-CSB", layout="wide")
 
-# Connexion Supabase
+# Connection Supabase
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
+# ⚠️ Remplacez la chaîne ci-dessous par votre clé ANON Supabase
 CLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxaWpzdnh5cmR5bWNucWx1aXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NDIwMjIsImV4cCI6MjEwMTUxODAyMn0.xjYXfGqea7P8kK8df9ootEJywCz-zoOzt8LESNRo2i0"
 
 try:
@@ -15,8 +16,9 @@ except Exception as e:
     st.error(f"Erreur Supabase : {e}")
     st.stop()
 
+# --- EN-TÊTE DU RAPPORT ---
 st.title("🪨 Contrôle de Portance - Essai à la Plaque (NF P94-117-1)")
-st.markdown("### Laboratoire Public d'Essais et d'Études (LPEE)")
+st.subheader("🏢 LPEE - CTR-CSB")
 
 # Chargement des données
 try:
@@ -29,9 +31,20 @@ except Exception as e:
 date_choisie_p = st.date_input("📅 Date de l'essai :", value=date.today())
 str_date_p = date_choisie_p.strftime("%d/%m/%Y")
 
-# Formulaire de Saisie
+# --- FORMULAIRE DE SAISIE ---
 with st.form("form_plaque"):
-    st.subheader(f"📝 Saisie Essai à la Plaque ({str_date_p})")
+    st.markdown(f"### 📝 Saisie Essai à la Plaque ({str_date_p})")
+    
+    # Champs d'en-tête du projet
+    col_proj1, col_proj2 = st.columns(2)
+    with col_proj1:
+        projet = st.text_input("Projet", value="LGV CASA SUD")
+    with col_proj2:
+        client = st.text_input("Entreprise / Client", value="TGCC")
+        
+    st.markdown("---")
+    
+    # Informations techniques et mesures
     c1, c2, c3 = st.columns(3)
     
     with c1:
@@ -39,20 +52,17 @@ with st.form("form_plaque"):
         couche_elem = st.selectbox("Couche / Support", ["PFT3 (Couche de Forme)", "PST (Arase)", "Couche d'Assise", "Remblai"])
         
     with c2:
-        # Données de base des chargements Z1 et Z2
+        # Données de base chargement Z1 et Z2
         z1 = st.number_input("Enfoncement 1er chargement Z1 (mm)", value=1.50, step=0.01, min_value=0.01)
         z2 = st.number_input("Enfoncement 2ème chargement Z2 (mm)", value=0.50, step=0.01, min_value=0.01)
         
     with c3:
-        # Calculs automatiques
-        # EV1 = 112.5 / (Z1 * 2)
-        # EV2 = 90 / (Z2 * 2)
-        # K = EV2 / EV1
+        # Calculs automatiques des modules
         ev1 = round(112.5 / (z1 * 2.0), 2) if z1 > 0 else 0.0
         ev2 = round(90.0 / (z2 * 2.0), 2) if z2 > 0 else 0.0
         rapport_calc = round(ev2 / ev1, 2) if ev1 > 0 else 0.0
         
-        # Affichage des résultats
+        # Affichage des métriques
         st.metric("EV1 (MPa)", value=ev1)
         st.metric("EV2 (MPa)", value=ev2)
         st.metric("Rapport k = EV2 / EV1", value=rapport_calc)
@@ -68,22 +78,42 @@ with st.form("form_plaque"):
     if submitted:
         row_p = {
             "date_essai": str_date_p,
+            "projet": projet,
+            "client": client,
             "pk_emplacement": pk_emp,
             "couche_element": couche_elem,
-            "z1": float(z1),
-            "z2": float(z2),
             "ev1": float(ev1),
             "ev2": float(ev2),
             "rapport_ev2_ev1": float(rapport_calc),
             "statut": statut_auto,
             "observations": obs_p
         }
+        
         try:
             supabase.table("essais_plaque").insert(row_p).execute()
             st.success("✅ Essai enregistré avec succès !")
             st.rerun()
         except Exception as e:
-            st.error(f"Erreur lors de l'enregistrement : {e}")
+            # Sécurité si les colonnes 'projet' et 'client' ne existent pas encore dans Supabase
+            if "Could not find" in str(e):
+                row_p_fallback = {
+                    "date_essai": str_date_p,
+                    "pk_emplacement": pk_emp,
+                    "couche_element": couche_elem,
+                    "ev1": float(ev1),
+                    "ev2": float(ev2),
+                    "rapport_ev2_ev1": float(rapport_calc),
+                    "statut": statut_auto,
+                    "observations": obs_p
+                }
+                try:
+                    supabase.table("essais_plaque").insert(row_p_fallback).execute()
+                    st.success("✅ Essai enregistré avec succès !")
+                    st.rerun()
+                except Exception as e2:
+                    st.error(f"Erreur lors de l'enregistrement : {e2}")
+            else:
+                st.error(f"Erreur lors de l'enregistrement : {e}")
 
 st.markdown("---")
 st.subheader("📋 Historique des Essais à la Plaque")
