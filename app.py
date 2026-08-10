@@ -118,8 +118,8 @@ def generer_excel_recap(df_data, titre_rapport):
     derniere_ligne = len(df_data) + 9
     milieu_col = max_col_idx // 2
     
-    worksheet.merge_range(derniere_ligne, 0, derniere_ligne, min(milieu_col, max_col_idx), "Responsable d'Essai LPEE", fmt_signature)
-    worksheet.merge_range(derniere_ligne, milieu_col + 1, derniere_ligne, max_col_idx, "Chef du Laboratoire LGV CASA SUD", fmt_signature)
+    worksheet.merge_range(derniere_ligne, 0, derniere_ligne, min(milieu_col, max_col_idx), "Responsable d'essai", fmt_signature)
+    worksheet.merge_range(derniere_ligne, milieu_col + 1, derniere_ligne, max_col_idx, "Chef du laboratoire", fmt_signature)
     
     writer.close()
     return output.getvalue()
@@ -263,8 +263,8 @@ elif page == "🏗️ Suivi de Bétonnage":
             "centrale_beton": centrale_b,
             "bl_num": bl_num, 
             "ouvrage": ouvrage, 
-            "heure de fin de production": t_prod_fin.strftime("%H h %M min"), 
-            "heure d'arrive au chantier": t_chantier.strftime("%H h %M min"),
+            "heure_arrivee": t_prod_fin.strftime("%H h %M min"), 
+            "heure_fin_coulage": t_chantier.strftime("%H h %M min"),
             "quantite_m3": float(quantite_m3), 
             "classe_beton": classe_b, 
             "meteo": meteo, 
