@@ -1,9 +1,3 @@
-import streamlit as st
-
-# 🔒 Sécurité : Bloque l'accès si non connecté
-if not st.session_state.get("authenticated", False):
-    st.error("⛔ Accès refusé. Veuillez d'abord vous connecter sur la page d'accueil.")
-    st.stop()
 import io
 import os
 from datetime import date, datetime
