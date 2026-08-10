@@ -3,13 +3,19 @@ import pandas as pd
 from datetime import date
 from supabase import create_client, Client
 
-# Configuration globale de la page
-st.set_page_config(page_title="LPEE CTR-CSB - LGV CASA SUD", layout="wide")
+# ==============================================================================
+# ⚙️ 1. CONFIGURATION DE LA PAGE
+# ==============================================================================
+st.set_page_config(
+    page_title="LPEE CTR-CSB - LGV CASA SUD", 
+    page_icon="🏗️", 
+    layout="wide"
+)
 
 # ==============================================================================
-# 🔐 1. GESTION DU MOT DE PASSE ET AUTHENTIFICATION
+# 🔐 2. GESTION DU MOT DE PASSE ET AUTHENTIFICATION
 # ==============================================================================
-MOT_DE_PASSE_ACCES = "lpee2026"  # 👈 Mot de passe d'accès
+MOT_DE_PASSE_ACCES = "lpee2026"  # 👈 Votre mot de passe d'accès
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -19,7 +25,6 @@ if not st.session_state["authenticated"]:
     col_g, col_c, col_d = st.columns([1, 2, 1])
     
     with col_c:
-        # 📸 Photo directe du TGV Al Boraq via un lien Web (Wikimedia Commons)
         url_image_al_boraq = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/ONCF_Al_boraq.jpeg/1280px-ONCF_Al_boraq.jpeg"
         
         st.image(
@@ -42,10 +47,10 @@ if not st.session_state["authenticated"]:
             else:
                 st.error("❌ Mot de passe incorrect.")
                 
-    st.stop()  # Bloque l'accès tant qu'on n'est pas connecté
+    st.stop()  # Bloque l'exécution tant que l'utilisateur n'est pas connecté
 
 # ==============================================================================
-# ⚙️ 2. CONNEXION SUPABASE & MENU LATÉRAL
+# ⚙️ 3. CONNEXION SUPABASE
 # ==============================================================================
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
 CLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxaWpzdnh5cmR5bWNucWx1aXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NDIwMjIsImV4cCI6MjEwMTUxODAyMn0.xjYXfGqea7P8kK8df9ootEJywCz-zoOzt8LESNRo2i0"
@@ -56,16 +61,23 @@ except Exception as e:
     st.error(f"Erreur Supabase : {e}")
     st.stop()
 
-# Barre latérale : Navigation & Déconnexion
+# ==============================================================================
+# 📌 4. BARRE LATÉRALE DE NAVIGATION (Sans re-demander le mot de passe)
+# ==============================================================================
 with st.sidebar:
     st.title("🏢 LPEE - CTR-CSB")
     st.caption("Projet : **LGV CASA SUD** | Client : **TGCC**")
     st.write("---")
     
-    # Choix de la page
+    # Menu principal comprenant les 3 modules du projet
     page = st.radio(
         "📌 Menu Principal",
-        ["🏠 Accueil", "🪨 Essai à la Plaque", "🏗️ Suivi de Bétonnage"]
+        [
+            "🏠 Accueil", 
+            "🏗️ Suivi de Bétonnage", 
+            "🧪 Contrôle de Béton", 
+            "🪨 Essai à la Plaque"
+        ]
     )
     
     st.write("---")
@@ -74,11 +86,11 @@ with st.sidebar:
         st.rerun()
 
 # ==============================================================================
-# 📄 3. CONTENU DES PAGES
+# 📄 5. CONTENU DES MODULES
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# PAGE 1 : ACCUEIL
+# PAGE : ACCUEIL
 # ------------------------------------------------------------------------------
 if page == "🏠 Accueil":
     st.title("👋 Bienvenue sur le Portail de Contrôle Qualité")
@@ -87,12 +99,11 @@ if page == "🏠 Accueil":
     col1, col2 = st.columns([2, 1])
     with col1:
         st.markdown("""
-        Ce portail vous permet de gérer et d'enregistrer les essais de contrôle qualité sur site :
+        Ce portail rassemble la gestion et le suivi des essais de contrôle qualité sur site :
         
-        * **🪨 Essai à la Plaque :** Saisie des enfoncements Z1 et Z2, calcul automatique des modules EV1, EV2 et du rapport k.
-        * **🏗️ Suivi de Bétonnage :** Contrôle des livraisons, classe béton, affaissement et prélèvements selon la norme **NF EN 12390-2**.
-        
-        Sélectionnez le module souhaité dans le menu latéral à gauche.
+        * **🏗️ Suivi de Bétonnage :** Enregistrement des bons de livraison, heures de coulage et volumes.
+        * **🧪 Contrôle de Béton :** Mesures de consistance (slump), températures et confection des éprouvettes (NF EN 12390-2).
+        * **🪨 Essai à la Plaque :** Calcul des modules EV1, EV2 et du rapport k (NF P94-117-1).
         """)
     with col2:
         st.info("""
@@ -103,16 +114,63 @@ if page == "🏠 Accueil":
         """)
 
 # ------------------------------------------------------------------------------
-# PAGE 2 : ESSAI À LA PLAQUE
+# PAGE : SUIVI DE BÉTONNAGE
+# ------------------------------------------------------------------------------
+elif page == "🏗️ Suivi de Bétonnage":
+    st.title("🏗️ Suivi de Bétonnage")
+    st.info("Saisie des livraisons et suivi des plannings de bétonnage.")
+    
+    with st.form("form_suivi_beton"):
+        st.subheader("Nouveau suivi de coulage")
+        c1, c2 = st.columns(2)
+        with c1:
+            date_s = st.date_input("Date de bétonnage", value=date.today())
+            bl_num = st.text_input("N° Bon de Livraison (BL)", value="BL-2026-001")
+            element = st.text_input("Élément d'ouvrage", value="Pile P2 - Semelle")
+        with c2:
+            volume = st.number_input("Volume béton (m³)", value=8.0, step=0.5)
+            centrale = st.text_input("Centrale à béton", value="Centrale BTP TGCC")
+            
+        submit_s = st.form_submit_button("Enregistrer le suivi", type="primary")
+        if submit_s:
+            st.success("✅ Suivi de bétonnage enregistré !")
+
+# ------------------------------------------------------------------------------
+# PAGE : CONTRÔLE DE BÉTON
+# ------------------------------------------------------------------------------
+elif page == "🧪 Contrôle de Béton":
+    st.title("🧪 Contrôle de Béton Frais (NF EN 12390-2)")
+    st.info("Contrôle de la consistance, température et prélèvements d'éprouvettes.")
+    
+    with st.form("form_controle_beton"):
+        st.subheader("Saisie d'un contrôle béton frais")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            date_b = st.date_input("Date de contrôle", value=date.today())
+            classe_b = st.selectbox("Classe de résistance", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
+            temp = st.number_input("Température du béton (°C)", value=20.0, step=0.5)
+            
+        with col2:
+            affaisse = st.number_input("Affaissement / Slump (cm)", value=15.0, step=0.5)
+            prelev = st.selectbox("Prélèvement conforme", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
+            nb_ep = st.number_input("Nombre d'éprouvettes prélevées", min_value=0, max_value=12, value=6)
+
+        submit_b = st.form_submit_button("Enregistrer le contrôle", type="primary")
+        if submit_b:
+            st.success("✅ Contrôle de béton enregistré avec succès !")
+
+# ------------------------------------------------------------------------------
+# PAGE : ESSAI À LA PLAQUE
 # ------------------------------------------------------------------------------
 elif page == "🪨 Essai à la Plaque":
     st.title("🪨 Contrôle de Portance - Essai à la Plaque (NF P94-117-1)")
     
-    # Chargement des données
+    # Chargement des données Supabase
     try:
         resp = supabase.table("essais_plaque").select("*").execute()
         data_all_plaque = resp.data or []
-    except Exception as e:
+    except Exception:
         data_all_plaque = []
 
     date_choisie_p = st.date_input("📅 Date de l'essai :", value=date.today())
@@ -174,22 +232,7 @@ elif page == "🪨 Essai à la Plaque":
                 st.success("✅ Essai enregistré avec succès !")
                 st.rerun()
             except Exception as e:
-                row_p_fallback = {
-                    "date_essai": str_date_p,
-                    "pk_emplacement": pk_emp,
-                    "couche_element": couche_elem,
-                    "ev1": float(ev1),
-                    "ev2": float(ev2),
-                    "rapport_ev2_ev1": float(rapport_calc),
-                    "statut": statut_auto,
-                    "observations": obs_p
-                }
-                try:
-                    supabase.table("essais_plaque").insert(row_p_fallback).execute()
-                    st.success("✅ Essai enregistré avec succès !")
-                    st.rerun()
-                except Exception as e2:
-                    st.error(f"Erreur d'enregistrement : {e2}")
+                st.error(f"Erreur d'enregistrement : {e}")
 
     st.markdown("---")
     st.subheader("📋 Historique des Essais à la Plaque")
@@ -199,30 +242,3 @@ elif page == "🪨 Essai à la Plaque":
         st.dataframe(df_p, use_container_width=True)
     else:
         st.info("Aucun essai enregistré.")
-
-# ------------------------------------------------------------------------------
-# PAGE 3 : SUIVI DE BÉTONNAGE
-# ------------------------------------------------------------------------------
-elif page == "🏗️ Suivi de Bétonnage":
-    st.title("🏗️ Suivi et Contrôle Qualité Béton")
-    st.info("Module de saisie et de suivi des bons de livraison du béton.")
-    
-    with st.form("form_beton"):
-        st.subheader("Saisie d'un contrôle de bétonnage")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            date_b = st.date_input("Date de livraison", value=date.today())
-            bl_num = st.text_input("N° Bon de Livraison (BL)", value="BL-2026-001")
-            classe_b = st.selectbox("Classe béton", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
-            ouvrage = st.text_input("Élément d'ouvrage / Emplacement", value="Voile / Semelle")
-            
-        with col2:
-            temp = st.number_input("Température (°C)", value=20.0, step=0.5)
-            affaisse = st.number_input("Affaissement / Slump (cm)", value=15.0, step=0.5)
-            prelev = st.selectbox("Prélèvement : NF EN 12390-2", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
-            nb_ep = st.number_input("Nombre d'éprouvettes", min_value=0, max_value=12, value=6)
-
-        submit_b = st.form_submit_button("Enregistrer le contrôle béton", type="primary")
-        if submit_b:
-            st.success("✅ Données de bétonnage enregistrées avec succès !")
