@@ -16,7 +16,7 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 # ==============================================================================
-# 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL (MISE EN PAGE COULEUR & A4)
+# 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL (MISE EN PAGE COULEUR & A4 PORTRAIT)
 # ==============================================================================
 def generer_excel_recap(df_data, titre_rapport):
     output = io.BytesIO()
@@ -28,16 +28,16 @@ def generer_excel_recap(df_data, titre_rapport):
     workbook = writer.book
     worksheet = writer.sheets['Recap']
     
-    # Configuration Impression A4 Paysage et ajustement automatique à 1 page de large
+    # Configuration Impression A4 Portrait et ajustement automatique à 1 page de large
     worksheet.set_paper(9)  # Format A4
-    worksheet.set_landscape()
+    worksheet.set_portrait() # Orientation Portrait
     worksheet.fit_to_pages(1, 0)  # 1 page de large, hauteur automatique
-    worksheet.set_print_scale(85)  # Échelle d'impression confortable
+    worksheet.set_print_scale(75)  # Échelle d'impression adaptée au portrait
     
     # --- Définition des Styles et Couleurs ---
     fmt_titre = workbook.add_format({
         'bold': True, 
-        'font_size': 14, 
+        'font_size': 13, 
         'align': 'center', 
         'valign': 'vcenter',
         'font_color': '#1B365D',
@@ -46,7 +46,7 @@ def generer_excel_recap(df_data, titre_rapport):
     
     fmt_sous_titre = workbook.add_format({
         'bold': True, 
-        'font_size': 10, 
+        'font_size': 9, 
         'align': 'center', 
         'valign': 'vcenter',
         'font_color': '#555555'
@@ -54,7 +54,7 @@ def generer_excel_recap(df_data, titre_rapport):
     
     fmt_entete = workbook.add_format({
         'bold': True,
-        'font_size': 10,
+        'font_size': 9,
         'font_color': '#FFFFFF',
         'bg_color': '#1B365D',  # Bleu marine professionnel
         'align': 'center',
@@ -63,7 +63,7 @@ def generer_excel_recap(df_data, titre_rapport):
     })
     
     fmt_cellule = workbook.add_format({
-        'font_size': 10,
+        'font_size': 9,
         'valign': 'vcenter',
         'align': 'center',
         'border': 1
@@ -71,14 +71,14 @@ def generer_excel_recap(df_data, titre_rapport):
     
     fmt_signature = workbook.add_format({
         'bold': True,
-        'font_size': 10,
+        'font_size': 9,
         'align': 'center',
         'valign': 'vcenter'
     })
 
-    # Insertion d'un en-tête fusionné pour le titre du rapport
-    worksheet.merge_range('B2:G2', "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - LGV CASA SUD", fmt_sous_titre)
-    worksheet.merge_range('B3:G3', titre_rapport, fmt_titre)
+    # Insertion d'un en-tête fusionné pour le titre du rapport (adapté pour portrait)
+    worksheet.merge_range('A2:H2', "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - LGV CASA SUD", fmt_sous_titre)
+    worksheet.merge_range('A3:H3', titre_rapport, fmt_titre)
     
     # Application des styles sur les en-têtes du tableau (Ligne 6, index 5)
     for col_num, value in enumerate(df_data.columns.values):
@@ -90,20 +90,19 @@ def generer_excel_recap(df_data, titre_rapport):
         worksheet.set_row(6 + row_idx, 20) # Hauteur des lignes de données
         for col_idx in range(len(df_data.columns)):
             valeur_cellule = df_data.iloc[row_idx, col_idx]
-            # Gestion propre des valeurs manquantes / NaN
             if pd.isna(valeur_cellule):
                 valeur_cellule = ""
             worksheet.write(6 + row_idx, col_idx, valeur_cellule, fmt_cellule)
 
-    # Ajustement automatique de la largeur des colonnes avec une marge de sécurité
+    # Ajustement automatique de la largeur des colonnes pour le format portrait
     for i, col in enumerate(df_data.columns):
-        max_len = max(df_data[col].astype(str).map(len).max(), len(str(col))) + 4
-        worksheet.set_column(i, i, max(max_len, 15))
+        max_len = max(df_data[col].astype(str).map(len).max(), len(str(col))) + 2
+        worksheet.set_column(i, i, max(max_len, 12))
 
     # Blocs de Signature en bas du document
     derniere_ligne = len(df_data) + 9
     worksheet.merge_range(f'B{derniere_ligne}:C{derniere_ligne}', "Responsable d'Essai LPEE", fmt_signature)
-    worksheet.merge_range(f'E{derniere_ligne}:F{derniere_ligne}', "Chef du Laboratoire LGV CASA SUD", fmt_signature)
+    worksheet.merge_range(f'F{derniere_ligne}:G{derniere_ligne}', "Chef du Laboratoire LGV CASA SUD", fmt_signature)
     
     writer.close()
     return output.getvalue()
