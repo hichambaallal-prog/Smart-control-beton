@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 from supabase import create_client, Client
 
 # Configuration globale de la page
@@ -9,12 +9,12 @@ st.set_page_config(page_title="LPEE CTR-CSB - LGV CASA SUD", layout="wide")
 # ==============================================================================
 # 🔐 1. GESTION DU MOT DE PASSE ET AUTHENTIFICATION
 # ==============================================================================
-MOT_DE_PASSE_ACCES = "lpee2026"  # 👈 Mot de passe d'accès
+MOT_DE_PASSE_ACCES = "lpee2026"
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
-# --- ÉCRAN DE CONNEXION AVEC PHOTO AL BORAQ ---
+# --- ÉCRAN DE CONNEXION ---
 if not st.session_state["authenticated"]:
     col_g, col_c, col_d = st.columns([1, 2, 1])
     
@@ -41,7 +41,7 @@ if not st.session_state["authenticated"]:
             else:
                 st.error("❌ Mot de passe incorrect.")
                 
-    st.stop()  # Bloque l'accès tant qu'on n'est pas connecté
+    st.stop()
 
 # ==============================================================================
 # ⚙️ 2. CONNEXION SUPABASE & MENU LATÉRAL
@@ -55,7 +55,7 @@ except Exception as e:
     st.error(f"Erreur Supabase : {e}")
     st.stop()
 
-# Barre latérale : Navigation & Déconnexion
+# Barre latérale
 with st.sidebar:
     st.title("🏢 LPEE - CTR-CSB")
     st.caption("Projet : **LGV CASA SUD** | Client : **TGCC**")
@@ -88,7 +88,7 @@ if page == "🏠 Accueil":
         Ce portail vous permet de gérer et d'enregistrer les essais de contrôle qualité sur site :
         
         * **🪨 Essai à la Plaque :** Saisie des enfoncements Z1 et Z2, calcul automatique des modules EV1, EV2 et du rapport k.
-        * **🏗️ Suivi de Bétonnage :** Contrôle des livraisons, volume de béton, météo, classe béton, affaissement et prélèvements selon la norme **NF EN 12390-2**.
+        * **🏗️ Suivi de Bétonnage :** Contrôle des livraisons, volume de béton, météo, classe béton, suivi horaire, affaissement et prélèvements selon la norme **NF EN 12390-2**.
         
         Sélectionnez le module souhaité dans le menu latéral à gauche.
         """)
@@ -96,7 +96,8 @@ if page == "🏠 Accueil":
         st.info("""
         **Rappels Projet :**
         * **Projet :** LGV CASA SUD
-        * **Entreprise :** TGCC
+        * **Entreprise / Client :** TGCC
+        * **Centrale :** TG PREFA
         * **Centre :** CTR-CSB
         """)
 
@@ -171,22 +172,7 @@ elif page == "🪨 Essai à la Plaque":
                 st.success("✅ Essai enregistré avec succès !")
                 st.rerun()
             except Exception as e:
-                row_p_fallback = {
-                    "date_essai": str_date_p,
-                    "pk_emplacement": pk_emp,
-                    "couche_element": couche_elem,
-                    "ev1": float(ev1),
-                    "ev2": float(ev2),
-                    "rapport_ev2_ev1": float(rapport_calc),
-                    "statut": statut_auto,
-                    "observations": obs_p
-                }
-                try:
-                    supabase.table("essais_plaque").insert(row_p_fallback).execute()
-                    st.success("✅ Essai enregistré avec succès !")
-                    st.rerun()
-                except Exception as e2:
-                    st.error(f"Erreur d'enregistrement : {e2}")
+                st.error(f"Erreur d'enregistrement : {e}")
 
     st.markdown("---")
     st.subheader("📋 Historique des Essais à la Plaque")
@@ -216,32 +202,51 @@ elif page == "🏗️ Suivi de Bétonnage":
 
     st.subheader(f"📝 Saisie d'un contrôle de bétonnage ({str_date_b})")
 
-    # 🔹 On place les champs directement dans la page pour activer l'interactivité dynamique
+    # 🔹 Formulaire dynamique pour le bétonnage
+    
+    # LIGNE 1 : Intervenants & Centrale
+    col_header1, col_header2, col_header3 = st.columns(3)
+    with col_header1:
+        technicien = st.text_input("👤 Nom du Technicien LPEE", value="Agent LPEE")
+    with col_header2:
+        client_b = st.text_input("🏢 Client", value="TGCC", disabled=True)
+    with col_header3:
+        centrale_b = st.text_input("🏭 Centrale à Béton", value="TG PREFA")
+
+    st.markdown("---")
+
+    # LIGNE 2 : Informations de Livraison & Horaires
     c_b1, c_b2, c_b3 = st.columns(3)
     
-    # Colonne 1
+    # Colonne 1 : Livraison & Horaires
     with c_b1:
         bl_num = st.text_input("N° Bon de Livraison (BL)", value="BL-2026-001")
         ouvrage = st.text_input("Élément d'ouvrage / Emplacement", value="Voile / Semelle")
         quantite_m3 = st.number_input("Quantité de béton (m³)", value=8.0, step=0.5, min_value=0.1)
 
-    # Colonne 2
+    # Colonne 2 : Temps et Météo
     with c_b2:
+        # Heures au format HH h MM min
+        t_arrivee = st.time_input("🕒 Heure d'arrivée de la toupie", value=datetime.strptime("08:30", "%H:%M").time())
+        t_fin = st.time_input("🏁 Heure de fin de coulage", value=datetime.strptime("09:15", "%H:%M").time())
+        
+        str_h_arrivee = t_arrivee.strftime("%H h %M min")
+        str_h_fin = t_fin.strftime("%H h %M min")
+        
         classe_b = st.selectbox("Classe béton", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
+
+    # Colonne 3 : Essais Frais & Prélèvements
+    with c_b3:
         meteo = st.selectbox("Conditions Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
         temp = st.number_input("Température du béton (°C)", value=20.0, step=0.5)
-
-    # Colonne 3
-    with c_b3:
         affaisse = st.number_input("Affaissement / Slump (cm)", value=15.0, step=0.5)
         
-        # Sélection du prélèvement
         prelev = st.selectbox(
             "Prélèvement : NF EN 12390-2", 
             ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"]
         )
         
-        # 💡 CONDITION : Si "NON" est sélectionné, le champ est désactivé et remis à 0
+        # Logique de désactivation si "NON"
         is_disabled = (prelev == "NON")
         default_nb = 0 if is_disabled else 6
         
@@ -256,11 +261,16 @@ elif page == "🏗️ Suivi de Bétonnage":
     obs_b = st.text_area("Observations", value="Béton conforme aux exigences du CCTP")
 
     # Bouton d'enregistrement principal
-    if st.button("💾 Enregistrer le contrôle béton", type="primary"):
+    if st.button("💾 Enregistrer le contrôle béton", type="primary", use_container_width=True):
         row_b = {
             "date_livraison": str_date_b,
+            "technicien": technicien,
+            "client": client_b,
+            "centrale_beton": centrale_b,
             "bl_num": bl_num,
             "ouvrage": ouvrage,
+            "heure_arrivee": str_h_arrivee,
+            "heure_fin_coulage": str_h_fin,
             "quantite_m3": float(quantite_m3),
             "classe_beton": classe_b,
             "meteo": meteo,
