@@ -194,8 +194,8 @@ if page == "🏠 Accueil":
     with col1:
         st.markdown("""
         Ce portail vous permet de gérer les essais :
-        * **🪨 Essai à la Plaque :** Calculs EV1, EV2 et rapport k.
-        * **🏗️ Suivi de Bétonnage :** Gestion des bons de livraison et prélèvements.
+        * **🪨 Essai à la Plaque :** Saisie des données de chargement, calculs automatiques EV1, EV2 et k.
+        * **🏗️ Suivi de Bétonnage :** Module clôturé (historique et consultation).
         * **📊 Synthèse Béton :** Bilan journalier et mensuel détaillé.
         """)
     with col2:
@@ -206,155 +206,103 @@ if page == "🏠 Accueil":
 # ------------------------------------------------------------------------------
 elif page == "🪨 Essai à la Plaque":
     st.title("🪨 Contrôle de Portance - Essai à la Plaque")
-    st.info("Module d'essai à la plaque.") 
+    
+    try:
+        resp_plaque = supabase.table("essai_plaque").select("*").execute()
+        data_all_plaque = resp_plaque.data or []
+    except Exception:
+        data_all_plaque = []
+
+    date_p = st.date_input("📅 Date de l'essai :", value=date.today(), key="date_plaque_input")
+    str_date_p = date_p.strftime("%d/%m/%Y")
+
+    st.subheader(f"📝 Saisie d'un Essai à la Plaque ({str_date_p})")
+
+    col_p1, col_p2, col_p3 = st.columns(3)
+    with col_p1:
+        technicien_p = st.text_input("👤 Nom du Technicien LPEE", value="Agent LPEE", key="tech_p")
+        client_p = st.text_input("🏢 Client", value="TGCC", disabled=True, key="client_p")
+    with col_p2:
+        localisation = st.text_input("📍 Localisation / PK / Ouvrage", value="Zone de plateforme PK 0+000", key="loc_p")
+        abscisse = st.text_input("Offset / Emplacement", value="Axe", key="offset_p")
+    with col_p3:
+        type_plaque = st.selectbox("Type de Plaque", ["Plaque Ø 300 mm", "Plaque Ø 600 mm"], key="type_plq")
+
+    st.markdown("---")
+    st.markdown("#### ⚙️ Paramètres de Chargement & Déformations")
+    
+    col_z1, col_z2 = st.columns(2)
+    with col_z1:
+        z1 = st.number_input("Z1 - 1er Chargement (mm)", min_value=0.001, value=1.50, step=0.05, format="%.3f", key="input_z1")
+    with col_z2:
+        z2 = st.number_input("Z2 - 2ème Chargement (mm)", min_value=0.001, value=1.00, step=0.05, format="%.3f", key="input_z2")
+
+    # Calculs automatiques
+    ev1 = 112.5 / (z1 * 2) if z1 > 0 else 0.0
+    ev2 = 90.0 / (z2 * 2) if z2 > 0 else 0.0
+    k_val = (ev2 / ev1) if ev1 > 0 else 0.0
+
+    st.markdown("---")
+    st.markdown("#### 📊 Résultats Calculés")
+    res_c1, res_c2, res_c3 = st.columns(3)
+    res_c1.metric(label="EV1 (MPa)", value=f"{ev1:.2f} MPa")
+    res_c2.metric(label="EV2 (MPa)", value=f"{ev2:.2f} MPa")
+    res_c3.metric(label="Coefficient k (EV2/EV1)", value=f"{k_val:.2f}")
+
+    obs_p = st.text_area("Observations / Conformité", value="Plateforme conforme", key="obs_plq")
+
+    if st.button("💾 Enregistrer l'Essai à la Plaque", type="primary", key="btn_save_plaque"):
+        row_p = {
+            "date_essai": str_date_p,
+            "technicien": technicien_p,
+            "client": client_p,
+            "localisation": localisation,
+            "emplacement": abscisse,
+            "type_plaque": type_plaque,
+            "z1": float(z1),
+            "z2": float(z2),
+            "ev1": float(ev1),
+            "ev2": float(ev2),
+            "k": float(k_val),
+            "observations": obs_p
+        }
+        try:
+            supabase.table("essai_plaque").insert(row_p).execute()
+            st.success("✅ Essai à la plaque enregistré avec succès !")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erreur lors de l'enregistrement dans Supabase : {e}")
+
+    st.markdown("---")
+    st.subheader("📋 Historique des Essais à la Plaque")
+    if data_all_plaque:
+        df_hist_p = pd.DataFrame(data_all_plaque)
+        if "created_at" in df_hist_p.columns:
+            df_hist_p = df_hist_p.drop(columns=["created_at"])
+        st.dataframe(df_hist_p, use_container_width=True, hide_index=True)
+    else:
+        st.info("Aucun essai à la plaque enregistré pour le moment.")
 
 # ------------------------------------------------------------------------------
-# PAGE 3 : SUIVI DE BÉTONNAGE
+# PAGE 3 : SUIVI DE BÉTONNAGE (CLÔTURÉ)
 # ------------------------------------------------------------------------------
 elif page == "🏗️ Suivi de Bétonnage":
     st.title("🏗️ Suivi et Contrôle Qualité Béton")
-    
+    st.info("🔒 Ce module est désormais **clôturé** en saisie. Vous pouvez consulter l'historique ci-dessous ou utiliser le module **Synthèse Béton** pour les bilans.")
+
     try:
         resp_beton = supabase.table("suivi_beton").select("*").execute()
         data_all_beton = resp_beton.data or []
     except Exception:
         data_all_beton = []
 
-    date_b = st.date_input("📅 Date de livraison :", value=date.today())
-    str_date_b = date_b.strftime("%d/%m/%Y")
-
-    st.subheader(f"📝 Saisie d'un contrôle ({str_date_b})")
-
-    col_h1, col_h2, col_h3 = st.columns(3)
-    with col_h1: technicien = st.text_input("👤 Nom du Technicien LPEE", value="Agent LPEE")
-    with col_h2: client_b = st.text_input("🏢 Client", value="TGCC", disabled=True)
-    with col_h3: centrale_b = st.text_input("🏭 Centrale à Béton", value="TG PREFA")
-
-    st.markdown("---")
-    c_b1, c_b2, c_b3 = st.columns(3)
-    
-    with c_b1:
-        bl_num = st.text_input("N° BL", value="BL-2026-001")
-        ouvrage = st.text_input("Ouvrage", value="Voile / Semelle")
-        quantite_m3 = st.number_input("Quantité (m³)", value=8.0, step=0.5)
-
-    with c_b2:
-        t_prod_fin = st.time_input("🕒 Heure de fin de production", value=datetime.strptime("08:30", "%H:%M").time())
-        t_chantier = st.time_input("🏁 Heure d'arrivée au chantier", value=datetime.strptime("09:15", "%H:%M").time())
-        classe_b = st.selectbox("Classe", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
-
-    with c_b3:
-        meteo = st.selectbox("Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
-        temp_beton = st.number_input("🌡️ Température du béton (°C)", value=20.0, step=0.5)
-        temp_ambiante = st.number_input("🌤️ Température ambiante (°C)", value=25.0, step=0.5)
-        affaisse = st.number_input("Affaissement (mm)", value=150.0, step=10.0)
-        
-        prelev = st.selectbox("Prélèvement", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
-        is_disabled = (prelev == "NON")
-        nb_ep = st.number_input("Nb d'éprouvettes", min_value=0, max_value=12, value=0 if is_disabled else 6, disabled=is_disabled)
-
-    obs_b = st.text_area("Observations", value="Béton conforme")
-
-    if st.button("💾 Enregistrer", type="primary"):
-        row_b = {
-            "date_livraison": str_date_b, 
-            "technicien": technicien, 
-            "client": client_b, 
-            "centrale_beton": centrale_b,
-            "bl_num": bl_num, 
-            "ouvrage": ouvrage, 
-            "heure_arrivee": t_prod_fin.strftime("%H h %M min"), 
-            "heure_fin_coulage": t_chantier.strftime("%H h %M min"),
-            "quantite_m3": float(quantite_m3), 
-            "classe_beton": classe_b, 
-            "meteo": meteo, 
-            "temperature_beton": float(temp_beton), 
-            "temperature_ambiante": float(temp_ambiante), 
-            "affaissement": float(affaisse), 
-            "prelevement": prelev, 
-            "nb_eprouvettes": int(nb_ep), 
-            "observations": obs_b
-        }
-        supabase.table("suivi_beton").insert(row_b).execute()
-        st.success("✅ Enregistré !")
-        st.rerun()
-
-    st.markdown("---")
-    st.subheader("📋 Historique")
-    
     if data_all_beton:
         df_hist = pd.DataFrame(data_all_beton)
         if "created_at" in df_hist.columns:
             df_hist = df_hist.drop(columns=["created_at"])
         st.dataframe(df_hist, use_container_width=True, hide_index=True)
-
-        st.markdown("#### 🔐 Espace Administrateur : Modifier ou Supprimer un enregistrement")
-        
-        # Vérification / Demande du mot de passe admin
-        if not st.session_state["admin_authenticated"]:
-            col_adm1, col_adm2 = st.columns([2, 1])
-            with col_adm1:
-                pwd_admin_input = st.text_input("Mot de passe Administrateur requis pour Modifier/Supprimer :", type="password", key="pwd_admin")
-            with col_adm2:
-                st.write("")
-                st.write("")
-                if st.button("Valider Admin"):
-                    if pwd_admin_input == MOT_DE_PASSE_ADMIN:
-                        st.session_state["admin_authenticated"] = True
-                        st.success("Mode administrateur activé !")
-                        st.rerun()
-                    else:
-                        st.error("❌ Mot de passe administrateur incorrect.")
-        else:
-            st.success("🔓 Mode Administrateur Actif")
-            if st.button("Verrouiller l'accès admin"):
-                st.session_state["admin_authenticated"] = False
-                st.rerun()
-
-            # Sélection de l'enregistrement via son ID
-            ids_disponibles = [item["id"] for item in data_all_beton if "id" in item]
-            id_selectionne = st.selectbox("Sélectionnez l'ID de l'enregistrement à modifier ou supprimer :", ids_disponibles)
-            
-            # Récupérer les données actuelles de l'enregistrement choisi
-            enregistrement_actuel = next((item for item in data_all_beton if item["id"] == id_selectionne), None)
-            
-            if enregistrement_actuel:
-                col_act1, col_act2 = st.columns(2)
-                
-                with col_act1:
-                    st.markdown("##### ✏️ Modifier l'enregistrement")
-                    with st.form("form_modification"):
-                        mod_date = st.text_input("Date de livraison (jj/mm/aaaa)", value=enregistrement_actuel.get("date_livraison", ""))
-                        mod_bl = st.text_input("N° BL", value=enregistrement_actuel.get("bl_num", ""))
-                        mod_ouvrage = st.text_input("Ouvrage", value=enregistrement_actuel.get("ouvrage", ""))
-                        mod_classe = st.text_input("Classe de béton", value=enregistrement_actuel.get("classe_beton", ""))
-                        mod_qte = st.number_input("Quantité (m³)", value=float(enregistrement_actuel.get("quantite_m3", 0.0)))
-                        mod_aff = st.number_input("Affaissement (mm)", value=float(enregistrement_actuel.get("affaissement", 0.0)))
-                        mod_obs = st.text_area("Observations", value=enregistrement_actuel.get("observations", ""))
-                        
-                        submit_modif = st.form_submit_button("Mettre à jour", type="primary")
-                        if submit_modif:
-                            donnees_maj = {
-                                "date_livraison": mod_date,
-                                "bl_num": mod_bl,
-                                "ouvrage": mod_ouvrage,
-                                "classe_beton": mod_classe,
-                                "quantite_m3": mod_qte,
-                                "affaissement": mod_aff,
-                                "observations": mod_obs
-                            }
-                            supabase.table("suivi_beton").update(donnees_maj).eq("id", id_selectionne).execute()
-                            st.success("✅ Enregistrement mis à jour avec succès !")
-                            st.rerun()
-
-                with col_act2:
-                    st.markdown("##### 🗑️ Supprimer l'enregistrement")
-                    st.warning(f"Attention, vous êtes sur le point de supprimer l'enregistrement ID n° **{id_selectionne}** (BL : {enregistrement_actuel.get('bl_num')}).")
-                    
-                    if st.button("🗑️ Confirmer la suppression", type="secondary"):
-                        supabase.table("suivi_beton").delete().eq("id", id_selectionne).execute()
-                        st.success("🗑️ Enregistrement supprimé avec succès !")
-                        st.rerun()
+    else:
+        st.warning("⚠️ Aucune donnée de bétonnage enregistrée.")
 
 # ------------------------------------------------------------------------------
 # PAGE 4 : SYNTHÈSE BÉTON
