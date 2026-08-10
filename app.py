@@ -171,7 +171,9 @@ elif page == "🏗️ Suivi de Bétonnage":
         meteo = st.selectbox("Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
         temp_beton = st.number_input("🌡️ Température du béton (°C)", value=20.0, step=0.5)
         temp_ambiante = st.number_input("🌤️ Température ambiante (°C)", value=25.0, step=0.5)
-        affaisse = st.number_input("Affaissement (cm)", value=15.0)
+        
+        # Modification de l'affaissement en mm
+        affaisse = st.number_input("Affaissement (mm)", value=150.0, step=10.0)
         
         prelev = st.selectbox("Prélèvement", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
         is_disabled = (prelev == "NON")
@@ -229,12 +231,13 @@ elif page == "📊 Synthèse Béton":
         
         tab_jour, tab_mois = st.tabs(["📅 Bilan Journalier", "📆 Bilan Mensuel"])
         
+        # Mise à jour du libellé en mm dans l'affichage des synthèses et exports Excel
         colonnes_a_afficher = {
             "date_livraison": "Date de suivi",
             "ouvrage": "Partie d'ouvrage",
             "bl_num": "N° de BL",
             "classe_beton": "Classe de béton",
-            "affaissement": "Affaissement (cm)",
+            "affaissement": "Affaissement (mm)",
             "temperature_beton": "Temp. Béton (°C)",
             "temperature_ambiante": "Temp. Ambiante (°C)",
             "meteo": "Météo"
@@ -242,7 +245,6 @@ elif page == "📊 Synthèse Béton":
         
         colonnes_disponibles = {k: v for k, v in colonnes_a_afficher.items() if k in df.columns}
         
-        # Récupération de la liste des classes de béton disponibles pour le filtre
         classes_uniques = sorted(df['classe_beton'].dropna().unique().tolist()) if 'classe_beton' in df.columns else []
         options_filtre_classe = ["Toutes"] + classes_uniques
         
@@ -277,7 +279,6 @@ elif page == "📊 Synthèse Béton":
                 
                 st.dataframe(recap_j_detail, use_container_width=True, hide_index=True)
                 
-                # Bouton Excel Journalier
                 titre_j = f"Recapitulatif Journalier - {d_jour.strftime('%d/%m/%Y')}" + (f" ({classe_filtre_j})" if classe_filtre_j != "Toutes" else "")
                 excel_data_j = generer_excel_recap(recap_j_detail, titre_j)
                 st.download_button(
@@ -325,7 +326,6 @@ elif page == "📊 Synthèse Béton":
                 
                 st.dataframe(recap_m_detail, use_container_width=True, hide_index=True)
                 
-                # Bouton Excel Mensuel
                 titre_m = f"Recapitulatif Mensuel - {mois_choisi:02d}/{annee_choisie}" + (f" ({classe_filtre_m})" if classe_filtre_m != "Toutes" else "")
                 excel_data_m = generer_excel_recap(recap_m_detail, titre_m)
                 st.download_button(
