@@ -277,12 +277,9 @@ elif page == "🏗️ Suivi de Bétonnage":
             "nb_eprouvettes": int(nb_ep), 
             "observations": obs_b
         }
-        try:
-            supabase.table("suivi_beton").insert(row_b).execute()
-            st.success("✅ Enregistré !")
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ Erreur détaillée Supabase : {e}")
+        supabase.table("suivi_beton").insert(row_b).execute()
+        st.success("✅ Enregistré !")
+        st.rerun()
 
     st.markdown("---")
     st.subheader("📋 Historique")
@@ -345,24 +342,18 @@ elif page == "🏗️ Suivi de Bétonnage":
                                 "affaissement": mod_aff,
                                 "observations": mod_obs
                             }
-                            try:
-                                supabase.table("suivi_beton").update(donnees_maj).eq("id", id_selectionne).execute()
-                                st.success("✅ Enregistrement mis à jour avec succès !")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ Erreur lors de la mise à jour Supabase : {e}")
+                            supabase.table("suivi_beton").update(donnees_maj).eq("id", id_selectionne).execute()
+                            st.success("✅ Enregistrement mis à jour avec succès !")
+                            st.rerun()
 
                 with col_act2:
                     st.markdown("##### 🗑️ Supprimer l'enregistrement")
                     st.warning(f"Attention, vous êtes sur le point de supprimer l'enregistrement ID n° **{id_selectionne}** (BL : {enregistrement_actuel.get('bl_num')}).")
                     
                     if st.button("🗑️ Confirmer la suppression", type="secondary"):
-                        try:
-                            supabase.table("suivi_beton").delete().eq("id", id_selectionne).execute()
-                            st.success("🗑️ Enregistrement supprimé avec succès !")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de la suppression Supabase : {e}")
+                        supabase.table("suivi_beton").delete().eq("id", id_selectionne).execute()
+                        st.success("🗑️ Enregistrement supprimé avec succès !")
+                        st.rerun()
 
 # ------------------------------------------------------------------------------
 # PAGE 4 : SYNTHÈSE BÉTON
@@ -467,7 +458,7 @@ elif page == "📊 Synthèse Béton":
             if df_mois.empty:
                 st.info(f"Aucun coulage enregistré pour la période et la classe sélectionnées.")
             else:
-                total_vol_mois = df_mois["quantite_m3"].sum() = df_mois["quantite_m3"].sum()
+                total_vol_mois = df_mois["quantite_m3"].sum()
                 total_liv_mois = df_mois["bl_num"].count()
                 
                 col1, col2 = st.columns(2)
