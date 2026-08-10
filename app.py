@@ -20,7 +20,7 @@ if "admin_authenticated" not in st.session_state:
     st.session_state["admin_authenticated"] = False
 
 # ==============================================================================
-# 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL (MISE EN PAGE COULEUR & A4 PORTRAIT)
+# 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL (SÉCURISÉE CONTRE LES ERREURS DE TYPE)
 # ==============================================================================
 def generer_excel_recap(df_data, titre_rapport):
     output = io.BytesIO()
@@ -109,9 +109,11 @@ def generer_excel_recap(df_data, titre_rapport):
                 valeur_cellule = ""
             worksheet.write(6 + row_idx, col_idx, valeur_cellule, fmt_cellule)
 
-    # Ajustement ciblé de la largeur des colonnes pour un affichage parfait en portrait
+    # --- AJUSTEMENT SÉCURISÉ DES COLONNES (Évite les erreurs TypeError) ---
     for i, col in enumerate(df_data.columns):
-        max_len = max(df_data[col].astype(str).map(len).max(), len(str(col))) + 3
+        valeurs_str = [str(val) if pd.notna(val) else "" for val in df_data[col]]
+        max_val_len = max([len(v) for v in valeurs_str]) if valeurs_str else 0
+        max_len = max(max_val_len, len(str(col))) + 3
         worksheet.set_column(i, i, max(max_len, 11))
 
     # Blocs de Signature en bas du document proprement répartis
@@ -290,7 +292,6 @@ elif page == "🏗️ Suivi de Bétonnage":
 
         st.markdown("#### 🔐 Espace Administrateur : Modifier ou Supprimer un enregistrement")
         
-        # Vérification / Demande du mot de passe admin
         if not st.session_state["admin_authenticated"]:
             col_adm1, col_adm2 = st.columns([2, 1])
             with col_adm1:
@@ -311,11 +312,9 @@ elif page == "🏗️ Suivi de Bétonnage":
                 st.session_state["admin_authenticated"] = False
                 st.rerun()
 
-            # Sélection de l'enregistrement via son ID
             ids_disponibles = [item["id"] for item in data_all_beton if "id" in item]
             id_selectionne = st.selectbox("Sélectionnez l'ID de l'enregistrement à modifier ou supprimer :", ids_disponibles)
             
-            # Récupérer les données actuelles de l'enregistrement choisi
             enregistrement_actuel = next((item for item in data_all_beton if item["id"] == id_selectionne), None)
             
             if enregistrement_actuel:
