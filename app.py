@@ -207,7 +207,7 @@ elif page == "🏗️ Suivi de Bétonnage":
     # LIGNE 1 : Intervenants & Centrale
     col_header1, col_header2, col_header3 = st.columns(3)
     with col_header1:
-        technicien = st.text_input("👤 Nom du Technicien LPEE", value="Agent LPEE")
+        technicien = st.text_input("👤 Nom du Technicien LPEE", value="Adam")
     with col_header2:
         client_b = st.text_input("🏢 Client", value="TGCC", disabled=True)
     with col_header3:
@@ -227,8 +227,8 @@ elif page == "🏗️ Suivi de Bétonnage":
     # Colonne 2 : Temps et Météo
     with c_b2:
         # Heures au format HH h MM min
-        t_arrivee = st.time_input("🕒 Heure d'arrivée de la toupie", value=datetime.strptime("08:30", "%H:%M").time())
-        t_fin = st.time_input("🏁 Heure de fin de coulage", value=datetime.strptime("09:15", "%H:%M").time())
+        t_arrivee = st.time_input("🕒 Heure de fin de production", value=datetime.strptime("08:30", "%H:%M").time())
+        t_fin = st.time_input("🏁 Heure d'arrivé au chantier", value=datetime.strptime("09:15", "%H:%M").time())
         
         str_h_arrivee = t_arrivee.strftime("%H h %M min")
         str_h_fin = t_fin.strftime("%H h %M min")
