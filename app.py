@@ -9,22 +9,31 @@ st.set_page_config(page_title="LPEE CTR-CSB - LGV CASA SUD", layout="wide")
 # ==============================================================================
 # 🔐 1. GESTION DU MOT DE PASSE ET AUTHENTIFICATION
 # ==============================================================================
-MOT_DE_PASSE_ACCES = "LPEE2026"  # 👈 Modifiez votre mot de passe ici
+MOT_DE_PASSE_ACCES = "LPEE2026"  # 👈 Mot de passe d'accès
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
-# --- ECRAN DE CONNEXION (PAGE D'ACCUEIL SÉCURISÉE) ---
+# --- ÉCRAN DE CONNEXION (PAGE D'ACCUEIL SÉCURISÉE) ---
 if not st.session_state["authenticated"]:
     col_g, col_c, col_d = st.columns([1, 2, 1])
     
     with col_c:
-        # 📸 Photo d'accueil (Changer l'URL ou utiliser un fichier local "chantier.jpg")
-        st.image(
-            "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b3?q=80&w=1000", 
-            caption="Projet LGV CASA SUD - LPEE CTR-CSB",
-            use_container_width=True
-        )
+        # 📸 PHOTO DE PAGE DE GARDE (Al Boraq - LGV)
+        # Placez le fichier 'Al-boraq-get-on-board-scaled.jpg' dans le même dossier que ce fichier Python
+        try:
+            st.image(
+                "Al-boraq-get-on-board-scaled.jpg", 
+                caption="Projet LGV CASA SUD - LPEE CTR-CSB",
+                use_container_width=True
+            )
+        except Exception:
+            # Image de secours au cas où le fichier local n'est pas encore trouvé
+            st.image(
+                "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b3?q=80&w=1000", 
+                caption="Projet LGV CASA SUD - LPEE CTR-CSB",
+                use_container_width=True
+            )
         
         st.title("🔒 Connexion au Portail Laboratoire")
         st.markdown("##### **LPEE - CTR-CSB** | Client : **TGCC**")
@@ -39,10 +48,10 @@ if not st.session_state["authenticated"]:
             else:
                 st.error("❌ Mot de passe incorrect.")
                 
-    st.stop()  # Bloque l'exécution du reste du code si non connecté
+    st.stop()  # Bloque l'accès tant qu'on n'est pas connecté
 
 # ==============================================================================
-# ⚙️ 2. CONNEXION SUPABASE & MENU LATÉRAL (Une fois connecté)
+# ⚙️ 2. CONNEXION SUPABASE & MENU LATÉRAL
 # ==============================================================================
 URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
 CLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxaWpzdnh5cmR5bWNucWx1aXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NDIwMjIsImV4cCI6MjEwMTUxODAyMn0.xjYXfGqea7P8kK8df9ootEJywCz-zoOzt8LESNRo2i0"
@@ -86,7 +95,7 @@ if page == "🏠 Accueil":
         st.markdown("""
         Ce portail vous permet de gérer et d'enregistrer les essais de contrôle qualité sur site :
         
-        * **🪨 Essai à la Plaque :** Saisie des enfoncements $Z_1$ et $Z_2$, calcul automatique des modules $EV_1$, $EV_2$ et du rapport $K$.
+        * **🪨 Essai à la Plaque :** Saisie des enfoncements Z1 et Z2, calcul automatique des modules EV1, EV2 et du rapport k.
         * **🏗️ Suivi de Bétonnage :** Contrôle des livraisons, classe béton, affaissement et prélèvements selon la norme **NF EN 12390-2**.
         
         Sélectionnez le module souhaité dans le menu latéral à gauche.
@@ -171,7 +180,6 @@ elif page == "🪨 Essai à la Plaque":
                 st.success("✅ Essai enregistré avec succès !")
                 st.rerun()
             except Exception as e:
-                # Fallback de sécurité si certaines colonnes manquent dans la BDD
                 row_p_fallback = {
                     "date_essai": str_date_p,
                     "pk_emplacement": pk_emp,
