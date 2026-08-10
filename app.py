@@ -229,7 +229,6 @@ elif page == "📊 Synthèse Béton":
         
         tab_jour, tab_mois = st.tabs(["📅 Bilan Journalier", "📆 Bilan Mensuel"])
         
-        # Ajout de la classe de béton dans les colonnes à afficher et exporter
         colonnes_a_afficher = {
             "date_livraison": "Date de suivi",
             "ouvrage": "Partie d'ouvrage",
@@ -243,17 +242,28 @@ elif page == "📊 Synthèse Béton":
         
         colonnes_disponibles = {k: v for k, v in colonnes_a_afficher.items() if k in df.columns}
         
+        # Récupération de la liste des classes de béton disponibles pour le filtre
+        classes_uniques = sorted(df['classe_beton'].dropna().unique().tolist()) if 'classe_beton' in df.columns else []
+        options_filtre_classe = ["Toutes"] + classes_uniques
+        
         # ==========================================
         # ONGLET 1 : BILAN JOURNALIER
         # ==========================================
         with tab_jour:
-            st.subheader("Filtrage par jour")
-            d_jour = st.date_input("Sélectionnez une date :", value=date.today(), key="input_date_jour")
+            st.subheader("Filtrage par jour et par classe de béton")
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                d_jour = st.date_input("Sélectionnez une date :", value=date.today(), key="input_date_jour")
+            with col_f2:
+                classe_filtre_j = st.selectbox("Filtrer par classe de béton :", options_filtre_classe, key="filtre_classe_j")
             
             df_jour = df[df['date_livraison_dt'].dt.date == d_jour]
             
+            if classe_filtre_j != "Toutes":
+                df_jour = df_jour[df_jour['classe_beton'] == classe_filtre_j]
+            
             if df_jour.empty:
-                st.info(f"Aucun coulage enregistré pour le {d_jour.strftime('%d/%m/%Y')}.")
+                st.info(f"Aucun coulage enregistré pour les critères sélectionnés.")
             else:
                 total_vol_jour = df_jour["quantite_m3"].sum()
                 total_liv_jour = df_jour["bl_num"].count()
@@ -268,7 +278,7 @@ elif page == "📊 Synthèse Béton":
                 st.dataframe(recap_j_detail, use_container_width=True, hide_index=True)
                 
                 # Bouton Excel Journalier
-                titre_j = f"Recapitulatif Journalier - {d_jour.strftime('%d/%m/%Y')}"
+                titre_j = f"Recapitulatif Journalier - {d_jour.strftime('%d/%m/%Y')}" + (f" ({classe_filtre_j})" if classe_filtre_j != "Toutes" else "")
                 excel_data_j = generer_excel_recap(recap_j_detail, titre_j)
                 st.download_button(
                     label="📥 Télécharger le Bilan Journalier en Excel",
@@ -282,21 +292,26 @@ elif page == "📊 Synthèse Béton":
         # ONGLET 2 : BILAN MENSUEL
         # ==========================================
         with tab_mois:
-            st.subheader("Filtrage par mois et année")
-            col_m1, col_m2 = st.columns(2)
+            st.subheader("Filtrage par mois, année et classe de béton")
+            col_m1, col_m2, col_m3 = st.columns(3)
             
             with col_m1:
                 mois_choisi = st.selectbox("Mois", range(1, 13), index=date.today().month - 1, key="select_mois")
             with col_m2:
                 annee_choisie = st.selectbox("Année", range(2024, 2030), index=2, key="select_annee")
+            with col_m3:
+                classe_filtre_m = st.selectbox("Filtrer par classe de béton :", options_filtre_classe, key="filtre_classe_m")
                 
             df_mois = df[
                 (df['date_livraison_dt'].dt.month == mois_choisi) & 
                 (df['date_livraison_dt'].dt.year == annee_choisie)
             ]
             
+            if classe_filtre_m != "Toutes":
+                df_mois = df_mois[df_mois['classe_beton'] == classe_filtre_m]
+            
             if df_mois.empty:
-                st.info(f"Aucun coulage enregistré pour la période {mois_choisi:02d}/{annee_choisie}.")
+                st.info(f"Aucun coulage enregistré pour la période et la classe sélectionnées.")
             else:
                 total_vol_mois = df_mois["quantite_m3"].sum()
                 total_liv_mois = df_mois["bl_num"].count()
@@ -311,7 +326,7 @@ elif page == "📊 Synthèse Béton":
                 st.dataframe(recap_m_detail, use_container_width=True, hide_index=True)
                 
                 # Bouton Excel Mensuel
-                titre_m = f"Recapitulatif Mensuel - {mois_choisi:02d}/{annee_choisie}"
+                titre_m = f"Recapitulatif Mensuel - {mois_choisi:02d}/{annee_choisie}" + (f" ({classe_filtre_m})" if classe_filtre_m != "Toutes" else "")
                 excel_data_m = generer_excel_recap(recap_m_detail, titre_m)
                 st.download_button(
                     label="📥 Télécharger le Bilan Mensuel en Excel",
