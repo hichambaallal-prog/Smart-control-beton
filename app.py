@@ -17,7 +17,39 @@ MOT_DE_PASSE_ACCES = "lpee2026"
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
-
+# ==============================================================================
+# 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL
+# ==============================================================================
+def generer_excel_recap(df_data, titre_rapport):
+    output = io.BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    df_data.to_excel(writer, index=False, sheet_name='Recap', startrow=7)
+    
+    workbook = writer.book
+    worksheet = writer.sheets['Recap']
+    
+    # Configuration A4 Paysage
+    worksheet.set_paper(9)
+    worksheet.set_landscape()
+    
+    # Formats
+    fmt_titre = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center'})
+    
+    # Tentative d'insertion du logo (doit s'appeler logo_lpee.png dans le dossier GitHub)
+    try:
+        worksheet.insert_image('A1', 'logo_lpee.png', {'x_scale': 0.4, 'y_scale': 0.4})
+    except:
+        pass
+    
+    worksheet.merge_range('C2:E2', titre_rapport, fmt_titre)
+    
+    # Signature
+    derniere_ligne = len(df_data) + 12
+    worksheet.write(f'B{derniere_ligne}', "Responsable d'essai")
+    worksheet.write(f'E{derniere_ligne}', "Chef du laboratoire")
+    
+    writer.close()
+    return output.getvalue()
 # --- ÉCRAN DE CONNEXION ---
 if not st.session_state["authenticated"]:
     col_g, col_c, col_d = st.columns([1, 2, 1])
@@ -221,7 +253,15 @@ elif page == "📊 Synthèse Béton":
                 
                 # Affichage propre du tableau
                 st.dataframe(recap_j, use_container_width=True, hide_index=True)
-
+# Bouton Excel
+    titre_j = f"Recapitulatif - {d_jour.strftime('%d/%m/%Y')}"
+    excel_data = generer_excel_recap(recap_j, titre_j)
+    st.download_button(
+        label="📥 Télécharger en Excel",
+        data=excel_data,
+        file_name="Recap_Beton.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
         # ==========================================
         # ONGLET 2 : BILAN MENSUEL
         # ==========================================
