@@ -265,7 +265,7 @@ elif page == "📊 Synthèse Béton":
         # ==========================================
         # ONGLET 2 : BILAN MENSUEL
         # ==========================================
-        with tab_mois:
+with tab_mois:
             st.subheader("Filtrage par mois et année")
             col_m1, col_m2 = st.columns(2)
             
