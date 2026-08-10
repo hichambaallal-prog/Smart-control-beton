@@ -45,19 +45,44 @@ def safe_int(val, default=0):
 
 
 # =========================================================
-# FONCTION 1 : EXCEL RAPPORT JOURNALIER (FORMAT PORTRAIT / SANS TECHNICIEN ET STATUT)
+# CALCUL AUTOMATIQUE DU STATUT BÉTON
+# =========================================================
+def evaluer_statut_beton(tbf, h_fin, h_arr, affaissement):
+  """Calcule automatiquement si le béton est conforme ou non conforme.
+
+  Critères :
+  - TBF < 32.1 °C
+  - Affaissement entre 160 mm et 220 mm
+  - Délai (Arrivée - Fin prod) <= 120 min (2h)
+  """
+  try:
+    cond_tbf = float(tbf) < 32.1
+    cond_aff = 160 <= int(float(affaissement)) <= 220
+    fmt = "%H:%M"
+    t_fin = datetime.strptime(str(h_fin).strip(), fmt)
+    t_arr = datetime.strptime(str(h_arr).strip(), fmt)
+    diff_minutes = (t_arr - t_fin).total_seconds() / 60
+    if diff_minutes < 0:
+      diff_minutes += 24 * 60
+    cond_delai = 0 <= diff_minutes <= 120
+
+    if cond_tbf and cond_aff and cond_delai:
+      return "✅ Conforme"
+    else:
+      return "⚠️ Non Conforme"
+  except Exception:
+    return "⚠️ Non Conforme"
+
+
+# =========================================================
+# FONCTION 1 : EXCEL RAPPORT JOURNALIER (FORMAT PORTRAIT)
 # =========================================================
 def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
-  """Génère un fichier Excel (.xlsx) stylisé aux normes LPEE en format PORTRAIT.
-
-  Sans les colonnes Technicien et Statut. Contient la référence à la norme NF
-  EN 12350-2 pour l'affaissement.
-  """
+  """Génère un fichier Excel (.xlsx) stylisé aux normes LPEE en format PORTRAIT."""
   output = io.BytesIO()
   wb = openpyxl.Workbook()
-  wb.remove(wb.active)  # Supprimer la feuille par défaut
+  wb.remove(wb.active)
 
-  # Définition des Styles LPEE
   font_titre = Font(name="Calibri", size=12, bold=True, color="1F4E78")
   font_sub_ctr = Font(name="Calibri", size=9, bold=True, color="1F4E78")
   font_info = Font(name="Calibri", size=8, italic=True, color="333333")
@@ -96,7 +121,6 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
       "prelevement": "Prélév.",
   }
 
-  # Identification des classes de béton présentes
   if df_jour.empty:
     classes = ["Rapport Béton"]
   elif est_historique or "classe_beton" not in df_jour.columns:
@@ -121,7 +145,6 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
       df_export = df_export.drop(columns=["N°"])
     df_export.insert(0, "N°", range(1, len(df_export) + 1))
 
-    # Assurer la présence de toutes les colonnes du mapping
     for c_key in col_mapping.keys():
       if c_key not in df_export.columns:
         df_export[c_key] = ""
@@ -129,7 +152,6 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
     cols_presentes = list(col_mapping.keys())
     nb_cols = len(cols_presentes)
 
-    # --- CONFIGURATION IMPRESSION EXCEL (A4 PORTRAIT) ---
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -142,7 +164,6 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
     ws.page_margins.bottom = 0.3
     ws.print_title_rows = "5:5"
 
-    # --- 1. EN-TÊTE ET LOGO LPEE ---
     ws.row_dimensions[1].height = 18
     ws.row_dimensions[2].height = 16
     ws.row_dimensions[3].height = 16
@@ -195,18 +216,16 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
         end_row=3,
         end_column=nb_cols,
     )
-    if est_historique:
-      txt_info = "Projet : LGV CASA SUD | Client : TGCC | Registre Général"
-    else:
-      txt_info = (
-          f"Projet : LGV CASA SUD | Client : TGCC | Classe : {cls} | Date :"
-          f" {date_rapport}"
-      )
+    txt_info = (
+        "Projet : LGV CASA SUD | Client : TGCC | Registre Général"
+        if est_historique
+        else f"Projet : LGV CASA SUD | Client : TGCC | Classe : {cls} | Date :"
+        f" {date_rapport}"
+    )
     c3 = ws.cell(row=3, column=start_text_col, value=txt_info)
     c3.font = font_info
     c3.alignment = align_center
 
-    # --- 2. TABLEAU DE DONNÉES ---
     start_row = 5
     ws.row_dimensions[start_row].height = 28
     for col_idx, col_key in enumerate(cols_presentes, start=1):
@@ -228,10 +247,8 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
         cell.alignment = align_center
       current_row += 1
 
-    # --- 3. PIED DE PAGE : SIGNATURES ---
     sig_row = current_row + 2
     ws.row_dimensions[sig_row].height = 16
-
     mid_col = nb_cols // 2
 
     ws.merge_cells(
@@ -269,7 +286,6 @@ def generer_excel_lpee(df_jour, date_rapport="", est_historique=False):
         right = Side(style="thin", color="1F4E78") if c == nb_cols else None
         cell.border = Border(top=top, bottom=bottom, left=left, right=right)
 
-    # Ajustement des largeurs de colonnes
     for col in ws.columns:
       max_len = 0
       col_letter = get_column_letter(col[0].column)
@@ -482,29 +498,6 @@ def generer_excel_recap_mensuel_lpee(df_recap, mois):
 
 
 # =========================================================
-# CALCUL STATUT BÉTON (AUTOMATIQUE)
-# =========================================================
-def evaluer_statut_beton(tbf, h_fin, h_arr, affaissement):
-  try:
-    cond_tbf = float(tbf) < 32.1
-    cond_aff = 160 <= int(float(affaissement)) <= 220
-    fmt = "%H:%M"
-    t_fin = datetime.strptime(str(h_fin).strip(), fmt)
-    t_arr = datetime.strptime(str(h_arr).strip(), fmt)
-    diff_minutes = (t_arr - t_fin).total_seconds() / 60
-    if diff_minutes < 0:
-      diff_minutes += 24 * 60
-    cond_delai = 0 <= diff_minutes <= 120
-    return (
-        "✅ Conforme"
-        if (cond_tbf and cond_aff and cond_delai)
-        else "⚠️ Non Conforme"
-    )
-  except Exception:
-    return "⚠️ Non Conforme"
-
-
-# =========================================================
 # 2. VALEURS FIXES & AUTHENTIFICATION
 # =========================================================
 DEFAULT_PROJET = "LGV Casa Sud"
@@ -585,47 +578,7 @@ tab_ajouter, tab_modifier, tab_supprimer, tab_historique, tab_recap_mensuel = (
 with tab_ajouter:
   st.subheader("📝 Saisie de suivi de bétonnage")
   with st.form("form_controle_ajouter"):
-    c1, c2, c3 = st.columns(3)
-    with c1:
-      date_betonnage_saisie = st.date_input(
-          "📅 Date de bétonnage :", value=date_choisie, key="add_date_saisie"
-      )
-      projet = st.text_input("Projet", value=DEFAULT_PROJET, disabled=True)
-      entreprise = st.text_input(
-          "Entreprise / Client", value=DEFAULT_ENTREPRISE, disabled=True
-      )
-      centrale_beton = st.text_input(
-          "Centrale béton", value=DEFAULT_CENTRALE, disabled=True
-      )
-    with c2:
-      ouvrage = st.text_input("Ouvrage", value="PRO745 OA1", key="add_ouvrage")
-      element_betonne = st.text_input(
-          "Élément bétonné", value="Semelle C0", key="add_elem"
-      )
-      
-      # MODIFICATION ICI : Séparation en 2 sous-colonnes pour placer Statut à côté du Volume
-      col_vol1, col_vol2 = st.columns(2)
-      with col_vol1:
-        volume_beton = st.text_input("Volume béton (m³)", value="8", key="add_vol")
-      with col_vol2:
-        statut = st.selectbox(
-            "Statut",
-            ["✅ Conforme", "⚠️ Non Conforme"],
-            index=0,
-            key="add_statut"
-        )
-    with c3:
-      num_bon_livraison = st.text_input(
-          "N° bon livraison (BL)", value="BL2548", key="add_bl"
-      )
-      classe_beton = st.selectbox(
-          "Classe béton",
-          options=CLASSES_BETON_LISTE,
-          index=2,  # C30/37 sélectionné par défaut
-          key="add_classe",
-      )
-
-    st.markdown("---")
+    # 1. PARAMÈTRES ET MESURES TECHNIQUES
     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
     with col_m1:
       heure_fin_prod = st.text_input(
@@ -660,6 +613,49 @@ with tab_ajouter:
           "Technicien Contrôleur", value="Ismail / Mohamed", key="add_tech"
       )
 
+    # EVALUATION AUTOMATIQUE DU STATUT
+    statut_auto = evaluer_statut_beton(
+        tbf, heure_fin_prod, heure_arrivee, affaissement
+    )
+
+    st.markdown("---")
+
+    # 2. INFORMATIONS BÉTON & OUVRAGE
+    c1, c2, c3 = st.columns(3)
+    with c1:
+      date_betonnage_saisie = st.date_input(
+          "📅 Date de bétonnage :", value=date_choisie, key="add_date_saisie"
+      )
+      ouvrage = st.text_input("Ouvrage", value="PRO745 OA1", key="add_ouvrage")
+      element_betonne = st.text_input(
+          "Élément bétonné", value="Semelle C0", key="add_elem"
+      )
+    with c2:
+      # VOLUME ET STATUT CÔTE À CÔTE
+      col_vol1, col_vol2 = st.columns(2)
+      with col_vol1:
+        volume_beton = st.text_input(
+            "Volume béton (m³)", value="8", key="add_vol"
+        )
+      with col_vol2:
+        # Case Statut remplie automatiquement en lecture seule
+        st.text_input(
+            "Statut (Automatique)",
+            value=statut_auto,
+            disabled=True,
+            key="add_statut_disp",
+        )
+    with c3:
+      num_bon_livraison = st.text_input(
+          "N° bon livraison (BL)", value="BL2548", key="add_bl"
+      )
+      classe_beton = st.selectbox(
+          "Classe béton",
+          options=CLASSES_BETON_LISTE,
+          index=2,
+          key="add_classe",
+      )
+
     observations = st.text_area("Observations", value="RAS", key="add_obs")
     submit_add = st.form_submit_button("💾 Enregistrer le camion")
 
@@ -684,12 +680,12 @@ with tab_ajouter:
           "affaissement": int(affaissement),
           "prelevement": prelevement,
           "technicien": technicien,
-          "statut": statut,  # Enregistrement du statut choisi
+          "statut": statut_auto,  # Statut automatique enregistré dans la base de données
       }
       try:
         supabase.table("controles_beton").insert(data_to_insert).execute()
         st.success(
-            f"Camion BL : {num_bon_livraison} (Statut : {statut})"
+            f"Camion BL : {num_bon_livraison} (Statut calculé : {statut_auto})"
             f" enregistré pour le {str_date_saisie} !"
         )
         st.rerun()
@@ -699,7 +695,9 @@ with tab_ajouter:
 # --- ONGLET 2 : MODIFIER ---
 with tab_modifier:
   if not st.session_state["is_admin"]:
-    pwd_admin = st.text_input("Code Administrateur :", type="password", key="mod_pwd")
+    pwd_admin = st.text_input(
+        "Code Administrateur :", type="password", key="mod_pwd"
+    )
     if st.button("Débloquer pour modification"):
       if pwd_admin == PASSWORD_ADMIN:
         st.session_state["is_admin"] = True
@@ -720,57 +718,6 @@ with tab_modifier:
       )
       row_s = options_edit[choix]
       with st.form("form_edit"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-          e_proj = st.text_input(
-              "Projet", value=str(row_s.get("projet") or DEFAULT_PROJET)
-          )
-          e_ent = st.text_input(
-              "Client", value=str(row_s.get("entreprise") or DEFAULT_ENTREPRISE)
-          )
-          e_cent = st.text_input(
-              "Centrale",
-              value=str(row_s.get("centrale_beton") or DEFAULT_CENTRALE),
-          )
-        with c2:
-          e_ouv = st.text_input("Ouvrage", value=str(row_s.get("ouvrage") or ""))
-          e_elem = st.text_input(
-              "Élément", value=str(row_s.get("element_betonne") or "")
-          )
-          
-          # MODIFICATION ICI : Volume et Statut côte à côte dans l'édition
-          col_evol1, col_evol2 = st.columns(2)
-          with col_evol1:
-            e_vol = st.text_input(
-                "Volume", value=str(row_s.get("volume_beton") or "")
-            )
-          with col_evol2:
-            statuts_possibles = ["✅ Conforme", "⚠️ Non Conforme"]
-            curr_statut = str(row_s.get("statut") or "✅ Conforme")
-            idx_statut = (
-                statuts_possibles.index(curr_statut)
-                if curr_statut in statuts_possibles
-                else 0
-            )
-            e_statut = st.selectbox(
-                "Statut", options=statuts_possibles, index=idx_statut, key="mod_statut"
-            )
-        with c3:
-          e_bl = st.text_input(
-              "BL", value=str(row_s.get("num_bon_livraison") or "")
-          )
-
-          curr_classe = str(row_s.get("classe_beton") or "C30/37")
-          idx_classe = (
-              CLASSES_BETON_LISTE.index(curr_classe)
-              if curr_classe in CLASSES_BETON_LISTE
-              else 0
-          )
-          e_classe = st.selectbox(
-              "Classe béton", options=CLASSES_BETON_LISTE, index=idx_classe
-          )
-
-        st.markdown("---")
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         with col_m1:
           e_h_fin = st.text_input(
@@ -795,7 +742,6 @@ with tab_modifier:
               step=10,
               format="%d",
           )
-
           meteo_list = ["Soleil", "Nuageux", "Pluie", "Vent"]
           curr_meteo = str(row_s.get("meteo") or "Soleil")
           meteo_idx = (
@@ -813,14 +759,62 @@ with tab_modifier:
           e_prelev = st.selectbox(
               "Prélèvement", prelev_list, index=prelev_idx
           )
-
           e_tech = st.text_input(
               "Technicien", value=str(row_s.get("technicien") or "")
+          )
+
+        # Recalcul automatique du statut lors des modifications
+        e_statut_auto = evaluer_statut_beton(e_tbf, e_h_fin, e_h_arr, e_aff)
+
+        st.markdown("---")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+          e_proj = st.text_input(
+              "Projet", value=str(row_s.get("projet") or DEFAULT_PROJET)
+          )
+          e_ent = st.text_input(
+              "Client", value=str(row_s.get("entreprise") or DEFAULT_ENTREPRISE)
+          )
+          e_cent = st.text_input(
+              "Centrale",
+              value=str(row_s.get("centrale_beton") or DEFAULT_CENTRALE),
+          )
+        with c2:
+          e_ouv = st.text_input("Ouvrage", value=str(row_s.get("ouvrage") or ""))
+          e_elem = st.text_input(
+              "Élément", value=str(row_s.get("element_betonne") or "")
+          )
+
+          col_evol1, col_evol2 = st.columns(2)
+          with col_evol1:
+            e_vol = st.text_input(
+                "Volume", value=str(row_s.get("volume_beton") or "")
+            )
+          with col_evol2:
+            st.text_input(
+                "Statut (Automatique)",
+                value=e_statut_auto,
+                disabled=True,
+                key="mod_statut_disp",
+            )
+        with c3:
+          e_bl = st.text_input(
+              "BL", value=str(row_s.get("num_bon_livraison") or "")
+          )
+          curr_classe = str(row_s.get("classe_beton") or "C30/37")
+          idx_classe = (
+              CLASSES_BETON_LISTE.index(curr_classe)
+              if curr_classe in CLASSES_BETON_LISTE
+              else 0
+          )
+          e_classe = st.selectbox(
+              "Classe béton", options=CLASSES_BETON_LISTE, index=idx_classe
           )
 
         e_obs = st.text_area(
             "Observations", value=str(row_s.get("observations") or "")
         )
+
         if st.form_submit_button("🔄 Mettre à jour"):
           up_data = {
               "projet": e_proj,
@@ -841,7 +835,7 @@ with tab_modifier:
               "affaissement": int(e_aff),
               "prelevement": e_prelev,
               "technicien": e_tech,
-              "statut": e_statut,
+              "statut": e_statut_auto,
           }
           try:
             supabase.table("controles_beton").update(up_data).eq(
@@ -931,7 +925,6 @@ with tab_recap_mensuel:
           df_m["ouvrage"].fillna("") + " - " + df_m["element_betonne"].fillna("")
       )
 
-      # Assurer la conversion numérique
       df_m["affaissement"] = pd.to_numeric(
           df_m["affaissement"], errors="coerce"
       )
@@ -1016,7 +1009,6 @@ if data_jour:
   else:
     df_visu = df_jour[df_jour["classe_beton"] == cls_selectionnee].copy()
 
-  # Colonnes affichées (sans technicien ni statut dans l'aperçu journalier)
   cols_vis = [
       "num_bon_livraison",
       "ouvrage",
