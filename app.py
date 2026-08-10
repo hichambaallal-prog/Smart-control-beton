@@ -2,11 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime
 from supabase import create_client, Client
-import streamlit as st
-import pandas as pd
-from datetime import date, datetime
-from supabase import create_client, Client
-import io  # <--- AJOUTEZ-LE ICI
+import io
+
 # Configuration globale de la page
 st.set_page_config(page_title="LPEE CTR-CSB - LGV CASA SUD", layout="wide")
 
@@ -17,6 +14,7 @@ MOT_DE_PASSE_ACCES = "lpee2026"
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
+
 # ==============================================================================
 # 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL
 # ==============================================================================
@@ -35,7 +33,7 @@ def generer_excel_recap(df_data, titre_rapport):
     # Formats
     fmt_titre = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center'})
     
-    # Tentative d'insertion du logo (doit s'appeler logo_lpee.png dans le dossier GitHub)
+    # Tentative d'insertion du logo
     try:
         worksheet.insert_image('A1', 'logo_lpee.png', {'x_scale': 0.4, 'y_scale': 0.4})
     except:
@@ -50,6 +48,7 @@ def generer_excel_recap(df_data, titre_rapport):
     
     writer.close()
     return output.getvalue()
+
 # --- ÉCRAN DE CONNEXION ---
 if not st.session_state["authenticated"]:
     col_g, col_c, col_d = st.columns([1, 2, 1])
@@ -96,7 +95,7 @@ with st.sidebar:
             "🏠 Accueil", 
             "🪨 Essai à la Plaque", 
             "🏗️ Suivi de Bétonnage",
-            "📊 Synthèse Béton"  # <--- NOUVEAU MENU AJOUTÉ ICI
+            "📊 Synthèse Béton"
         ]
     )
     
@@ -121,22 +120,20 @@ if page == "🏠 Accueil":
         Ce portail vous permet de gérer les essais :
         * **🪨 Essai à la Plaque :** Calculs EV1, EV2 et rapport k.
         * **🏗️ Suivi de Bétonnage :** Gestion des bons de livraison et prélèvements.
-        * **📊 Synthèse Béton :** Bilan journalier et mensuel par classe de béton.
+        * **📊 Synthèse Béton :** Bilan journalier et mensuel détaillé.
         """)
     with col2:
         st.info("**Projet :** LGV CASA SUD\n\n**Client :** TGCC\n\n**Centrale :** TG PREFA")
 
 # ------------------------------------------------------------------------------
-# PAGE 2 : ESSAI À LA PLAQUE (Code inchangé)
+# PAGE 2 : ESSAI À LA PLAQUE
 # ------------------------------------------------------------------------------
 elif page == "🪨 Essai à la Plaque":
     st.title("🪨 Contrôle de Portance - Essai à la Plaque")
-    # ... (le code reste identique à la version précédente, je le raccourcis visuellement pour toi ici mais tu peux copier ton bloc si besoin, ou utiliser ce qui suit)
-    st.info("Module d'essai à la plaque (Conservez votre code précédent pour cette page).") 
-    # NOTE: Pour ne pas faire un message trop long, j'ai masqué ce bloc. Tu as déjà le bon code pour cette page.
+    st.info("Module d'essai à la plaque.") 
 
 # ------------------------------------------------------------------------------
-# PAGE 3 : SUIVI DE BÉTONNAGE (Code inchangé, ajout de la gestion des données)
+# PAGE 3 : SUIVI DE BÉTONNAGE
 # ------------------------------------------------------------------------------
 elif page == "🏗️ Suivi de Bétonnage":
     st.title("🏗️ Suivi et Contrôle Qualité Béton")
@@ -198,12 +195,11 @@ elif page == "🏗️ Suivi de Bétonnage":
         st.dataframe(pd.DataFrame(data_all_beton), use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# PAGE 4 : NOUVELLE PAGE - SYNTHÈSE BÉTON
+# PAGE 4 : SYNTHÈSE BÉTON
 # ------------------------------------------------------------------------------
 elif page == "📊 Synthèse Béton":
     st.title("📊 Récapitulatif et Synthèse du Bétonnage")
     
-    # 1. Récupération des données depuis Supabase
     try:
         resp_beton = supabase.table("suivi_beton").select("*").execute()
         data_all_beton = resp_beton.data or []
@@ -214,12 +210,9 @@ elif page == "📊 Synthèse Béton":
     if not data_all_beton:
         st.warning("⚠️ Aucune donnée de bétonnage n'est encore enregistrée.")
     else:
-        # 2. Nettoyage et conversion avec Pandas
         df = pd.DataFrame(data_all_beton)
-        # Convertir la colonne 'date_livraison' (format texte "DD/MM/YYYY") en vrai format Date
         df['date_livraison_dt'] = pd.to_datetime(df['date_livraison'], format='%d/%m/%Y', errors='coerce')
         
-        # 3. Création de deux onglets : Journalier / Mensuel
         tab_jour, tab_mois = st.tabs(["📅 Bilan Journalier", "📆 Bilan Mensuel"])
         
         # ==========================================
@@ -227,15 +220,13 @@ elif page == "📊 Synthèse Béton":
         # ==========================================
         with tab_jour:
             st.subheader("Filtrage par jour")
-            d_jour = st.date_input("Sélectionnez une date :", value=date.today())
+            d_jour = st.date_input("Sélectionnez une date :", value=date.today(), key="input_date_jour")
             
-            # Filtrer le DataFrame pour la date choisie
             df_jour = df[df['date_livraison_dt'].dt.date == d_jour]
             
             if df_jour.empty:
                 st.info(f"Aucun coulage enregistré pour le {d_jour.strftime('%d/%m/%Y')}.")
             else:
-                # Calculs des totaux de la journée
                 total_vol_jour = df_jour["quantite_m3"].sum()
                 total_liv_jour = df_jour["bl_num"].count()
                 
@@ -243,40 +234,43 @@ elif page == "📊 Synthèse Béton":
                 col1.metric(label="Total Volume Coulé (m³)", value=f"{total_vol_jour:.2f} m³")
                 col2.metric(label="Nombre de Toupies / BL", value=total_liv_jour)
                 
-                # Tableau récapitulatif groupé par Classe de Béton
-                st.markdown("#### Détail par Classe de Béton")
-                recap_j = df_jour.groupby("classe_beton").agg(
-                    Nombre_BL=("bl_num", "count"),
-                    Volume_m3=("quantite_m3", "sum"),
-                    Total_Eprouvettes=("nb_eprouvettes", "sum")
-                ).reset_index()
+                st.markdown("#### 📄 Détail des Coulages (Chantier)")
+                # Sélection des colonnes demandées pour le récapitulatif détaillé
+                colonnes_a_afficher = {
+                    "date_livraison": "Date de suivi",
+                    "ouvrage": "Partie d'ouvrage",
+                    "bl_num": "N° de BL",
+                    "affaissement": "Affaissement (cm)",
+                    "temperature": "Temp. Béton (°C)",
+                    "meteo": "Météo / Temp. Ambiante"
+                }
+                recap_j_detail = df_jour[list(colonnes_a_afficher.keys())].rename(columns=colonnes_a_afficher)
                 
-                # Affichage propre du tableau
-                st.dataframe(recap_j, use_container_width=True, hide_index=True)
-# Bouton Excel
-    titre_j = f"Recapitulatif - {d_jour.strftime('%d/%m/%Y')}"
-    excel_data = generer_excel_recap(recap_j, titre_j)
-    st.download_button(
-        label="📥 Télécharger en Excel",
-        data=excel_data,
-        file_name="Recap_Beton.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+                st.dataframe(recap_j_detail, use_container_width=True, hide_index=True)
+                
+                # Bouton Excel Journalier
+                titre_j = f"Recapitulatif Journalier - {d_jour.strftime('%d/%m/%Y')}"
+                excel_data_j = generer_excel_recap(recap_j_detail, titre_j)
+                st.download_button(
+                    label="📥 Télécharger le Bilan Journalier en Excel",
+                    data=excel_data_j,
+                    file_name=f"Recap_Journalier_{d_jour.strftime('%d-%m-%Y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="btn_excel_j"
+                )
+
         # ==========================================
         # ONGLET 2 : BILAN MENSUEL
         # ==========================================
-with tab_mois:
+        with tab_mois:
             st.subheader("Filtrage par mois et année")
             col_m1, col_m2 = st.columns(2)
             
             with col_m1:
-                # Liste des mois de 1 à 12, index par défaut = mois actuel
-                mois_choisi = st.selectbox("Mois", range(1, 13), index=date.today().month - 1)
+                mois_choisi = st.selectbox("Mois", range(1, 13), index=date.today().month - 1, key="select_mois")
             with col_m2:
-                # Années possibles
-                annee_choisie = st.selectbox("Année", range(2024, 2030), index=2) # 2026 par défaut
+                annee_choisie = st.selectbox("Année", range(2024, 2030), index=2, key="select_annee")
                 
-            # Filtrer le DataFrame pour le mois et l'année choisis
             df_mois = df[
                 (df['date_livraison_dt'].dt.month == mois_choisi) & 
                 (df['date_livraison_dt'].dt.year == annee_choisie)
@@ -285,7 +279,6 @@ with tab_mois:
             if df_mois.empty:
                 st.info(f"Aucun coulage enregistré pour la période {mois_choisi:02d}/{annee_choisie}.")
             else:
-                # Calculs des totaux du mois
                 total_vol_mois = df_mois["quantite_m3"].sum()
                 total_liv_mois = df_mois["bl_num"].count()
                 
@@ -293,13 +286,18 @@ with tab_mois:
                 col1.metric(label="Volume Mensuel Cumulé (m³)", value=f"{total_vol_mois:.2f} m³")
                 col2.metric(label="Nombre de Toupies / BL", value=total_liv_mois)
                 
-                # Tableau récapitulatif groupé par Classe de Béton
-                st.markdown(f"#### Synthèse des Coulages pour {mois_choisi:02d}/{annee_choisie}")
-                recap_m = df_mois.groupby("classe_beton").agg(
-                    Nombre_BL=("bl_num", "count"),
-                    Volume_m3=("quantite_m3", "sum"),
-                    Total_Eprouvettes=("nb_eprouvettes", "sum")
-                ).reset_index()
+                st.markdown(f"#### 📄 Synthèse Détaillée pour {mois_choisi:02d}/{annee_choisie}")
+                recap_m_detail = df_mois[list(colonnes_a_afficher.keys())].rename(columns=colonnes_a_afficher)
                 
-                # Affichage propre
-                st.dataframe(recap_m, use_container_width=True, hide_index=True)
+                st.dataframe(recap_m_detail, use_container_width=True, hide_index=True)
+                
+                # Bouton Excel Mensuel
+                titre_m = f"Recapitulatif Mensuel - {mois_choisi:02d}/{annee_choisie}"
+                excel_data_m = generer_excel_recap(recap_m_detail, titre_m)
+                st.download_button(
+                    label="📥 Télécharger le Bilan Mensuel en Excel",
+                    data=excel_data_m,
+                    file_name=f"Recap_Mensuel_{mois_choisi:02d}_{annee_choisie}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="btn_excel_m"
+                )
