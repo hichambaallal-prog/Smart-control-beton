@@ -169,11 +169,8 @@ elif page == "🏗️ Suivi de Bétonnage":
 
     with c_b3:
         meteo = st.selectbox("Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
-        
-        # Ajout des deux champs distincts de température
         temp_beton = st.number_input("🌡️ Température du béton (°C)", value=20.0, step=0.5)
         temp_ambiante = st.number_input("🌤️ Température ambiante (°C)", value=25.0, step=0.5)
-        
         affaisse = st.number_input("Affaissement (cm)", value=15.0)
         
         prelev = st.selectbox("Prélèvement", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
@@ -195,8 +192,8 @@ elif page == "🏗️ Suivi de Bétonnage":
             "quantite_m3": float(quantite_m3), 
             "classe_beton": classe_b, 
             "meteo": meteo, 
-            "temperature_beton": float(temp_beton),       # Enregistrement temp. béton
-            "temperature_ambiante": float(temp_ambiante), # Enregistrement temp. ambiante
+            "temperature_beton": float(temp_beton), 
+            "temperature_ambiante": float(temp_ambiante), 
             "affaissement": float(affaisse), 
             "prelevement": prelev, 
             "nb_eprouvettes": int(nb_ep), 
@@ -232,18 +229,18 @@ elif page == "📊 Synthèse Béton":
         
         tab_jour, tab_mois = st.tabs(["📅 Bilan Journalier", "📆 Bilan Mensuel"])
         
-        # Sélection des colonnes avec les deux températures distinctes
+        # Ajout de la classe de béton dans les colonnes à afficher et exporter
         colonnes_a_afficher = {
             "date_livraison": "Date de suivi",
             "ouvrage": "Partie d'ouvrage",
             "bl_num": "N° de BL",
+            "classe_beton": "Classe de béton",
             "affaissement": "Affaissement (cm)",
             "temperature_beton": "Temp. Béton (°C)",
             "temperature_ambiante": "Temp. Ambiante (°C)",
             "meteo": "Météo"
         }
         
-        # Filtrage dynamique des colonnes présentes dans la base pour éviter les erreurs si l'ancienne table n'a pas les colonnes
         colonnes_disponibles = {k: v for k, v in colonnes_a_afficher.items() if k in df.columns}
         
         # ==========================================
