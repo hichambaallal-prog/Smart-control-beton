@@ -50,7 +50,7 @@ def show(supabase):
         ouvrage_p = str(beton_p.get("ouvrage") or "N/A")
         classe_beton_p = str(beton_p.get("classe_beton") or beton_p.get("classe") or "N/A")
         
-        # Récupération automatique de l'affaissement et de la température pour affichage
+        # Récupération automatique de l'affaissement et de la température
         affaissement_raw = str(beton_p.get("affaissement") or beton_p.get("slump") or "N/A")
         temp_beton_p = str(beton_p.get("temperature") or beton_p.get("temp_beton") or "N/A")
 
@@ -89,7 +89,6 @@ def show(supabase):
         with col_e1:
             echeance_p = st.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], index=2, key=f"p_echeance_{b_id}")
         
-        # Calcul automatique de la date prévisionnelle selon l'échéance sélectionnée
         jours_dict = {"3 jours": 3, "7 jours": 7, "28 jours": 28, "90 jours": 90}
         nb_j = jours_dict.get(echeance_p, 28)
         date_prevue_auto = date_coulee_p + timedelta(days=nb_j)
@@ -97,12 +96,7 @@ def show(supabase):
         with col_e2:
             st.date_input("Date de Coulée", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
         with col_e3:
-            echeance_key_clean = echeance_p.replace(' ', '_')
-            date_ecrasement_prevue = st.date_input(
-                "Date d'Écrasement Prévue", 
-                value=date_prevue_auto, 
-                key=f"p_date_ecras_{b_id}_{echeance_key_clean}"
-            )
+            date_ecrasement_prevue = st.date_input("Date d'Écrasement Prévue", value=date_prevue_auto, key=f"p_date_ecras_{b_id}")
         with col_e4:
             nb_eprouvettes_p = st.number_input("Nombre d'éprouvettes", min_value=1, max_value=6, value=2, step=1, key=f"p_nb_ep_{b_id}")
 
@@ -139,7 +133,7 @@ def show(supabase):
         cols_rep = st.columns(int(nb_eprouvettes_p))
         for i in range(int(nb_eprouvettes_p)):
             with cols_rep[i]:
-                rep_val = st.text_input(f"Repère #{i+1}", value=f"E{i+1}-{echeance_p.replace(' ', '')}", key=f"prog_rep_{b_id}_{echeance_key_clean}_{i}")
+                rep_val = st.text_input(f"Repère #{i+1}", value=f"E{i+1}-{echeance_p.replace(' ', '')}", key=f"prog_rep_{b_id}_{i}")
                 reperes_p.append(rep_val)
 
         if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}"):
@@ -150,6 +144,8 @@ def show(supabase):
                     "num_bl": num_bl_p,
                     "ouvrage": ouvrage_p,
                     "classe_beton": classe_beton_p,
+                    "affaissement": affaissement_p,
+                    "temp_beton": temp_beton_p,
                     "date_coulee": str(date_coulee_p),
                     "echeance": echeance_p,
                     "date_ecrasement": str(date_ecrasement_prevue),
@@ -254,7 +250,7 @@ def show(supabase):
             if res_all.data:
                 df_all = pd.DataFrame(res_all.data)
                 cols_display = [
-                    "id", "num_bl", "ouvrage", "classe_beton", "date_coulee", 
+                    "id", "num_bl", "ouvrage", "classe_beton", "affaissement", "temp_beton", "date_coulee", 
                     "echeance", "date_ecrasement", "repere_eprouvette", "statut",
                     "masse", "force_kn", "fc_mpa", "technicien"
                 ]
