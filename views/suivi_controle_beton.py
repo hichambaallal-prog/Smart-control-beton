@@ -50,8 +50,16 @@ def show(supabase):
         ouvrage_p = str(beton_p.get("ouvrage") or "N/A")
         classe_beton_p = str(beton_p.get("classe_beton") or beton_p.get("classe") or "N/A")
         
-        # Récupération du nombre d'éprouvettes prélevées dans le suivi de bétonnage (par défaut 2 si non spécifié)
-        nb_ep_suivi = int(beton_p.get("nb_eprouvettes") or beton_p.get("nombre_eprouvettes") or 2)
+        # Récupération sécurisée du nombre d'éprouvettes (par défaut 2 si non spécifié ou si valeur invalide)
+        raw_nb_ep = beton_p.get("nb_eprouvettes") or beton_p.get("nombre_eprouvettes")
+        try:
+            nb_ep_suivi = int(raw_nb_ep) if raw_nb_ep is not None else 2
+        except (ValueError, TypeError):
+            nb_ep_suivi = 2
+
+        # Sécurisation contre l'erreur StreamlitValueAboveMaxError
+        nb_ep_max = 20
+        nb_ep_initial = max(1, min(nb_ep_suivi, nb_ep_max))
 
         # Récupération automatique de l'affaissement et de la température
         affaissement_raw = str(beton_p.get("affaissement") or beton_p.get("slump") or "N/A")
@@ -67,15 +75,14 @@ def show(supabase):
         except Exception:
             date_coulee_p = date.today()
 
-        # Génération automatique de la Référence de Contrôle
-        # Exemple: REF-5-PRA 500-2026-08-01
-        ref_controle_defaut = f"REF-{b_id}-{ouvrage_p}-{date_coulee_p}"
+        # Génération automatique du préfixe pour le repère
+        ref_controle_defaut = f"REF-{b_id}-{ouvrage_p}"
 
         st.markdown("---")
         
         # Ligne Référence de contrôle
         ref_controle_p = st.text_input(
-            "🏷️ Référence de Contrôle (Identifiant unique du prélèvement)", 
+            "🏷️ Référence de Contrôle (Préfixe du repère)", 
             value=ref_controle_defaut, 
             key=f"p_ref_ctrl_{b_id}"
         )
@@ -123,8 +130,8 @@ def show(supabase):
             nb_eprouvettes_p = st.number_input(
                 "Nombre d'éprouvettes", 
                 min_value=1, 
-                max_value=12, 
-                value=nb_ep_suivi, 
+                max_value=nb_ep_max, 
+                value=nb_ep_initial, 
                 step=1, 
                 key=f"p_nb_ep_{b_id}"
             )
@@ -137,7 +144,6 @@ def show(supabase):
                 key=f"p_forme_{b_id}"
             )
         
-        # Calcul strict de la section théorique (en cm²)
         if "150x300" in forme_p:
             sect_def = 176.71
         elif "160x320" in forme_p:
@@ -161,10 +167,8 @@ def show(supabase):
         reperes_p = []
         cols_rep = st.columns(min(int(nb_eprouvettes_p), 6))
         for i in range(int(nb_eprouvettes_p)):
-            # Index d'affichage dynamique pour la grille
             col_idx = i % 6
             with cols_rep[col_idx]:
-                # Génération automatique sous le format REF/1, REF/2, ...
                 rep_defaut = f"{ref_controle_p}/{i+1}"
                 rep_val = st.text_input(
                     f"Repère #{i+1}", 
@@ -178,7 +182,6 @@ def show(supabase):
             for rep in reperes_p:
                 payload_prog = {
                     "betonnage_id": b_id,
-                    "reference_controle": ref_controle_p,
                     "num_bl": num_bl_p,
                     "ouvrage": ouvrage_p,
                     "classe_beton": classe_beton_p,
@@ -197,7 +200,7 @@ def show(supabase):
                     st.error(f"Erreur lors de la programmation de {rep} : {err}")
 
             if succes_cnt > 0:
-                st.success(f"✅ {succes_cnt} éprouvette(s) programmée(s) pour le {date_ecrasement_prevue} ({echeance_p}) avec la référence {ref_controle_p} !")
+                st.success(f"✅ {succes_cnt} éprouvette(s) programmée(s) pour le {date_ecrasement_prevue} ({echeance_p}) !")
                 st.rerun()
 
     # =========================================================
@@ -221,7 +224,7 @@ def show(supabase):
             st.info("👍 Aucune éprouvette en attente d'écrasement.")
         else:
             options_saisie = {
-                f"ID #{e['id']} | Ref: {e.get('reference_controle', 'N/A')} | Repère: {e.get('repere_eprouvette')} | Échéance: {e.get('echeance')} ({e.get('date_ecrasement')})": e
+                f"ID #{e['id']} | Repère: {e.get('repere_eprouvette')} | Ouvrage: {e.get('ouvrage')} | Échéance: {e.get('echeance')} ({e.get('date_ecrasement')})": e
                 for e in eprouvettes_en_attente
             }
 
@@ -241,7 +244,6 @@ def show(supabase):
 
             with col_in1:
                 section_val = float(item_saisie.get("section", 176.71))
-                # Section mesurée désactivée
                 section_reel = st.number_input("Section mesurée (cm²)", value=section_val, format="%.2f", disabled=True, key=f"s_section_{item_id}")
                 masse_g = st.number_input("Masse de l'éprouvette (g)", value=12500.0, step=10.0, key=f"s_masse_{item_id}")
 
@@ -285,7 +287,7 @@ def show(supabase):
             if res_all.data:
                 df_all = pd.DataFrame(res_all.data)
                 cols_display = [
-                    "id", "reference_controle", "num_bl", "ouvrage", "classe_beton", "date_coulee", 
+                    "id", "num_bl", "ouvrage", "classe_beton", "date_coulee", 
                     "echeance", "date_ecrasement", "repere_eprouvette",
                     "masse", "force_kn", "fc_mpa", "technicien"
                 ]
