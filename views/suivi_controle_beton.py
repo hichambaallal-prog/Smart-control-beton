@@ -5,283 +5,174 @@ from datetime import date, datetime, timedelta
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # Vérification du rôle administrateur
-    is_admin = st.session_state.get("is_admin", False) or st.session_state.get("role") == "admin"
-
-    # ---------------------------------------------------------
     # 1. RÉCUPÉRATION DES BÉTONNAGES AVEC PRÉLÈVEMENT "OUI"
-    # ---------------------------------------------------------
     betonnages_preleves = []
     try:
         res_beton = supabase.table("suivi_betonnage").select("*").order("id", desc=True).execute()
         if res_beton.data:
-            # Filtrer les enregistrements où un prélèvement a été effectué (Prélèvement commence par OUI)
+            # Filtrer les enregistrements où un prélèvement a été effectué
             betonnages_preleves = [
-                item for item in res_beton.data 
+                item for item in res_beton.data
                 if item.get("prelevement") and str(item.get("prelevement")).upper().startswith("OUI")
             ]
     except Exception as e:
-        st.error(f"Erreur lors du chargement des suivis de bétonnage : {e}")
+        st.error(f"❌ Erreur lors du chargement des bétonnages : {e}")
 
     if not betonnages_preleves:
-        st.warning("⚠️ Aucun suivi de bétonnage avec prélèvement (OUI) n'a été trouvé dans la base de données.")
+        st.info("ℹ️ Aucun bétonnage avec prélèvement d'éprouvettes enregistré pour le moment.")
         return
 
-    # ---------------------------------------------------------
-    # 2. SELECTION DU BETONNAGE CONCERNÉ
-    # ---------------------------------------------------------
-    st.subheader("📌 1. Sélection du Prélèvement à Tester")
-
-    # Format de la liste déroulante pour identifier facilement le bétonnage
+    # Option d'affichage dans la liste déroulante
     options_beton = {
-        f"ID #{b['id']} | Date: {b.get('date_livraison', b.get('date_betonnage', 'N/A'))} | BL: {b.get('num_bl', 'N/A')} | Ouvrage: {b.get('ouvrage', 'N/A')} | Classe: {b.get('classe', 'N/A')}": b
+        f"BL: {b.get('num_bl', 'N/A')} | Ouvrage: {b.get('ouvrage', 'N/A')} | Date: {b.get('date_coulee', 'N/A')} | Classe: {b.get('classe_beton', 'N/A')}": b
         for b in betonnages_preleves
     }
 
-    selected_label = st.selectbox(
-        "Choisissez l'enregistrement de bétonnage prélevé :",
-        options=list(options_beton.keys()),
-        key="select_beton_preleve"
-    )
+    st.subheader("📋 1. Sélection du Prélèvement")
+    choix_beton_label = st.selectbox("Sélectionner une fiche de bétonnage :", list(options_beton.keys()))
+    beton_selectionne = options_beton[choix_beton_label]
 
-    selected_beton = options_beton[selected_label]
-
-    # Extraction des infos du bétonnage sélectionné
-    beton_id = selected_beton["id"]
-    date_coulee_str = selected_beton.get("date_livraison") or selected_beton.get("date_betonnage") or str(date.today())
-    try:
-        date_coulee = datetime.strptime(date_coulee_str, "%Y-%m-%d").date()
-    except Exception:
-        date_coulee = date.today()
-
-    classe_beton = selected_beton.get("classe", "C25/30")
-    num_bl = selected_beton.get("num_bl", "N/A")
-    ouvrage = selected_beton.get("ouvrage", "N/A")
-
-    # Affichage récapitulatif
-    info_col1, info_col2, info_col3, info_col4 = st.columns(4)
-    info_col1.metric("Date de Coulée", str(date_coulee))
-    info_col2.metric("N° Bon Livraison", str(num_bl))
-    info_col3.metric("Ouvrage / Élément", str(ouvrage))
-    info_col4.metric("Classe Spécifiée", str(classe_beton))
-
-    st.markdown("---")
-
-    # ---------------------------------------------------------
-    # 3. FORMULAIRE DE SAISIE DE L'ÉCRASEMENT
-    # ---------------------------------------------------------
-    st.subheader("💥 2. Saisie de l'Écrasement d'Éprouvette")
-
-    # Mode Édition vs Nouvelle saisie
-    editing_item = st.session_state.get("edit_controle_beton_item", None)
-    if editing_item:
-        st.info(f"✏️ **Mode Modification Écrasement** - ID #{editing_item['id']}")
-
-    f_col1, f_col2, f_col3 = st.columns(3)
-
-    with f_col1:
-        echeance_options = ["3 jours", "7 jours", "28 jours", "90 jours"]
-        echeance = st.selectbox(
-            "Échéance d'écrasement", 
-            options=echeance_options,
-            index=echeance_options.index(editing_item["echeance"]) if editing_item and editing_item.get("echeance") in echeance_options else 2,
-            key="ctrl_echeance"
-        )
-
-        # Calcul automatique de la date d'écrasement théorique
-        jours_dict = {"3 jours": 3, "7 jours": 7, "28 jours": 28, "90 jours": 90}
-        nb_jours = jours_dict.get(echeance, 28)
-        date_ecrasement_prevue = date_coulee + timedelta(days=nb_jours)
-
-        date_ecrasement = st.date_input(
-            "Date d'écrasement effective", 
-            value=datetime.strptime(editing_item["date_ecrasement"], "%Y-%m-%d").date() if editing_item and editing_item.get("date_ecrasement") else date_ecrasement_prevue,
-            key="ctrl_date_ecrasement"
-        )
-
-        st.caption(f"📅 Date théorique à {echeance} : **{date_ecrasement_prevue}**")
-
-    with f_col2:
-        repere_eprouvette = st.text_input(
-            "Repère Éprouvette (ex: E1, E2...)", 
-            value=editing_item.get("repere_eprouvette", "E1") if editing_item else "E1",
-            key="ctrl_repere"
-        )
-        
-        forme = st.selectbox(
-            "Forme de l'éprouvette", 
-            ["Cylindrique (16x32 cm)", "Cubique (15x15 cm)"],
-            index=0 if not editing_item or "Cylindrique" in editing_item.get("forme", "") else 1,
-            key="ctrl_forme"
-        )
-
-        # Section selon la forme (cm²)
-        section_standard = 201.06 if "Cylindrique" in forme else 225.0
-        section = st.number_input(
-            "Section de l'éprouvette (cm²)", 
-            value=float(editing_item.get("section", section_standard)) if editing_item else section_standard,
-            step=0.1,
-            format="%.2f",
-            key="ctrl_section"
-        )
-
-    with f_col3:
-        masse = st.number_input(
-            "Masse de l'éprouvette (g)", 
-            value=float(editing_item.get("masse", 12500)) if editing_item else 12500.0,
-            step=50.0,
-            key="ctrl_masse"
-        )
-
-        force_kn = st.number_input(
-            "Force de rupture (kN)", 
-            value=float(editing_item.get("force_kn", 600.0)) if editing_item else 600.0,
-            step=5.0,
-            format="%.1f",
-            key="ctrl_force"
-        )
-
-        technicien = st.text_input(
-            "Opérateur / Technicien", 
-            value=editing_item.get("technicien", "Agent LPEE") if editing_item else "Agent LPEE",
-            key="ctrl_tech"
-        )
-
-    # Calcul de la résistance Fc (MPa) = Force (kN) * 10 / Section (cm²)
-    fc_mpa = round((force_kn * 10.0) / section, 2) if section > 0 else 0.0
-
-    # Résistance caractéristique requise à 28j (extraite de la classe, ex C25/30 -> 25 MPa)
-    fck_req = 25.0
-    if "/" in classe_beton:
-        try:
-            fck_req = float(classe_beton.split("/")[0].replace("C", "").strip())
-        except Exception:
-            fck_req = 25.0
-
-    st.markdown("---")
-    res_c1, res_c2, res_c3 = st.columns(3)
-    res_c1.metric("Force de Rupture", f"{force_kn:.1f} kN")
+    # --- Récupération dynamique de la Classe de Béton ---
+    classe_beton_auto = beton_selectionne.get("classe_beton", "Non spécifiée")
+    date_coulee_str = beton_selectionne.get("date_coulee")
     
-    # Indicateur visuel selon échéance
-    delta_text = f"Cible 28j : {fck_req} MPa"
-    res_c2.metric("Résistance Fc (MPa)", f"{fc_mpa:.2f} MPa", delta=delta_text)
+    # Conversion de la date de coulée
+    if date_coulee_str:
+        if isinstance(date_coulee_str, str):
+            date_coulee_obj = datetime.strptime(date_coulee_str, "%Y-%m-%d").date()
+        else:
+            date_coulee_obj = date_coulee_str
+    else:
+        date_coulee_obj = date.today()
 
-    observations = st.text_area(
-        "Observations / Mode de rupture", 
-        value=editing_item.get("observations", "Rupture satisfaisante (NF EN 12390-3).") if editing_item else "Rupture satisfaisante (NF EN 12390-3).",
-        key="ctrl_obs"
-    )
+    st.markdown("---")
+    st.subheader("🗓️ 2. Programmation et Saisie de l'Écrasement")
 
-    # ---------------------------------------------------------
-    # 4. ENREGISTREMENT SOUFFLÉ DANS SUPABASE
-    # ---------------------------------------------------------
-    btn_c1, btn_c2 = st.columns([3, 1])
+    col_info1, col_info2, col_info3 = st.columns(3)
+    with col_info1:
+        st.text_input("N° Bon de Livraison (BL)", value=str(beton_selectionne.get("num_bl", "")), disabled=True)
+    with col_info2:
+        st.text_input("Ouvrage / Elément", value=str(beton_selectionne.get("ouvrage", "")), disabled=True)
+    with col_info3:
+        # Affichage dynamique de la Classe de Béton provenant du suivi de bétonnage
+        st.text_input("Classe de Béton Spécifiée", value=str(classe_beton_auto), disabled=True)
 
-    with btn_c1:
-        label_btn = "🔄 Mettre à jour le contrôle" if editing_item else "💾 Enregistrer l'écrasement"
-        if st.button(label_btn, type="primary", use_container_width=True, key="btn_save_controle"):
-            payload = {
-                "betonnage_id": beton_id,
-                "num_bl": num_bl,
-                "ouvrage": ouvrage,
-                "classe_beton": classe_beton,
-                "date_coulee": str(date_coulee),
+    col_echeance, col_nbr, col_date_c, col_date_e = st.columns(4)
+
+    with col_echeance:
+        echeance = st.selectbox("Échéance / Âge du Béton", ["3 jours", "7 jours", "28 jours", "90 jours"], index=2)
+
+    # Calcul automatique des jours à ajouter
+    jours_dict = {"3 jours": 3, "7 jours": 7, "28 jours": 28, "90 jours": 90}
+    nb_jours = jours_dict.get(echeance, 28)
+
+    # Calcul automatique de la date d'écrasement prévue
+    date_ecrasement_auto = date_coulee_obj + timedelta(days=nb_jours)
+
+    with col_nbr:
+        nb_eprouvettes = st.number_input("Nombre d'éprouvettes à écraser", min_value=1, max_value=6, value=2, step=1)
+
+    with col_date_c:
+        st.date_input("Date de Coulée", value=date_coulee_obj, disabled=True)
+
+    with col_date_e:
+        # La date d'écrasement est calculée automatiquement (3j, 7j, 28j, 90j)
+        date_ecrasement = st.date_input("Date d'Écrasement Effective", value=date_ecrasement_auto)
+
+    st.markdown("---")
+    st.markdown("### 🧪 Résultats d'Écrasement")
+
+    # Formulaire de saisie pour chaque éprouvette
+    eprouvettes_data = []
+    
+    # Forme et Section par défaut (Cylindrique 15x30 -> ~176.7 cm²)
+    col_forme, col_section = st.columns(2)
+    with col_forme:
+        forme = st.selectbox("Type d'éprouvette", ["Cylindrique 15x30", "Cubique 15x15", "Cylindrique 11x22"])
+    with col_section:
+        if "15x30" in forme:
+            section_defaut = 176.7
+        elif "15x15" in forme:
+            section_defaut = 225.0
+        else:
+            section_defaut = 95.03
+        section_cm2 = st.number_input("Section (cm²)", value=section_defaut, format="%.2f")
+
+    st.caption("Saisissez la force de rupture (kN) et la masse (g) pour chaque éprouvette :")
+
+    cols_eprouvettes = st.columns(int(nb_eprouvettes))
+
+    for idx in range(int(nb_eprouvettes)):
+        with cols_eprouvettes[idx]:
+            st.markdown(f"**Éprouvette N° {idx + 1}**")
+            repere = st.text_input(f"Repère #{idx + 1}", value=f"E{idx+1}-{echeance.replace(' ', '')}", key=f"rep_{idx}")
+            masse = st.number_input(f"Masse (g) #{idx + 1}", value=12500.0, step=10.0, key=f"masse_{idx}")
+            force_kn = st.number_input(f"Force (kN) #{idx + 1}", value=500.0, step=5.0, key=f"force_{idx}")
+
+            # Calcul de la résistance Fc = (Force en N) / (Section en mm²) = (Force in kN * 10) / (Section in cm²)
+            fc_mpa = (force_kn * 10.0) / section_cm2 if section_cm2 > 0 else 0.0
+            st.metric(label=f"Résistance Fc #{idx + 1}", value=f"{fc_mpa:.2f} MPa")
+
+            eprouvettes_data.append({
+                "repere": repere,
+                "masse": masse,
+                "force_kn": force_kn,
+                "fc_mpa": round(fc_mpa, 2)
+            })
+
+    observations = st.text_area("Observations / Mode de rupture", value="Rupture satisfaisante (NF EN 12390-3).")
+    technicien = st.text_input("Technicien / Opérateur", value=st.session_state.get("username", "Technicien LPEE"))
+
+    # Enregistrement dans Supabase
+    if st.button("💾 Enregistrer l'écrasement", use_container_width=True, type="primary"):
+        enregistrements_succes = 0
+        
+        for ep in eprouvettes_data:
+            data_to_insert = {
+                "betonnage_id": beton_selectionne.get("id"),
+                "num_bl": beton_selectionne.get("num_bl"),
+                "ouvrage": beton_selectionne.get("ouvrage"),
+                "classe_beton": classe_beton_auto,  # Classe dynamique récupérée automatiquement
+                "date_coulee": str(date_coulee_obj),
                 "echeance": echeance,
                 "date_ecrasement": str(date_ecrasement),
-                "repere_eprouvette": repere_eprouvette,
+                "repere_eprouvette": ep["repere"],
                 "forme": forme,
-                "section": float(section),
-                "masse": float(masse),
-                "force_kn": float(force_kn),
-                "fc_mpa": float(fc_mpa),
+                "section": section_cm2,
+                "masse": ep["masse"],
+                "force_kn": ep["force_kn"],
+                "fc_mpa": ep["fc_mpa"],
                 "technicien": technicien,
                 "observations": observations
             }
 
             try:
-                # Vérification / filtrage des colonnes valides
-                sample = supabase.table("suivi_controle_beton").select("*").limit(1).execute()
-                if sample.data and len(sample.data) > 0:
-                    valid_cols = set(sample.data[0].keys())
-                    safe_payload = {k: v for k, v in payload.items() if k in valid_cols}
-                else:
-                    safe_payload = payload
-
-                if editing_item:
-                    supabase.table("suivi_controle_beton").update(safe_payload).eq("id", editing_item["id"]).execute()
-                    st.success(f"✅ Écrasement ID #{editing_item['id']} mis à jour !")
-                    st.session_state["edit_controle_beton_item"] = None
-                else:
-                    supabase.table("suivi_controle_beton").insert(safe_payload).execute()
-                    st.success("✅ Contrôle d'écrasement enregistré avec succès !")
-
-                st.rerun()
+                res = supabase.table("suivi_controle_beton").insert(data_to_insert).execute()
+                if res.data:
+                    enregistrements_succes += 1
             except Exception as e:
-                st.error(f"Erreur lors de l'enregistrement dans la table 'suivi_controle_beton' : {e}")
+                st.error(f"Erreur lors de l'enregistrement de l'éprouvette {ep['repere']} : {e}")
 
-    with btn_c2:
-        if editing_item:
-            if st.button("❌ Annuler", use_container_width=True):
-                st.session_state["edit_controle_beton_item"] = None
-                st.rerun()
+        if enregistrements_succes > 0:
+            st.success(f"✅ {enregistrements_succes} éprouvette(s) enregistrée(s) avec succès pour l'échéance {echeance} !")
+            st.rerun()
 
-    # ---------------------------------------------------------
-    # 5. HISTORIQUE DES ÉCRASEMENTS DE BÉTON
-    # ---------------------------------------------------------
+    # --- 3. HISTORIQUE DES ÉCRASEMENTS ---
     st.markdown("---")
-    st.subheader("📋 Historique du Suivi de Contrôle du Béton")
-
+    st.subheader("📜 Historique des Écrasements pour cet Ouvrage")
     try:
-        res_ctrl = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
+        res_hist = supabase.table("suivi_controle_beton")\
+            .select("*")\
+            .eq("betonnage_id", beton_selectionne.get("id"))\
+            .order("date_ecrasement", desc=True)\
+            .execute()
 
-        if res_ctrl.data and len(res_ctrl.data) > 0:
-            clean_rows = []
-            for item in res_ctrl.data:
-                clean_rows.append({
-                    "ID": item.get("id"),
-                    "N° BL": item.get("num_bl"),
-                    "Ouvrage": item.get("ouvrage"),
-                    "Classe": item.get("classe_beton"),
-                    "Date Coulée": item.get("date_coulee"),
-                    "Échéance": item.get("echeance"),
-                    "Date Écrasement": item.get("date_ecrasement"),
-                    "Repère": item.get("repere_eprouvette"),
-                    "Masse (g)": item.get("masse"),
-                    "Force (kN)": item.get("force_kn"),
-                    "Fc (MPa)": item.get("fc_mpa"),
-                    "Technicien": item.get("technicien")
-                })
-
-            df_display = pd.DataFrame(clean_rows)
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
-
-            # Actions Administrateur
-            if is_admin:
-                st.markdown("### ⚙️ Actions Administrateur (Modifier / Supprimer)")
-                selected_ctrl_id = st.selectbox(
-                    "Sélectionner un essai d'écrasement par son ID :",
-                    options=[item["id"] for item in res_ctrl.data],
-                    key="admin_select_ctrl_id"
-                )
-
-                act_col1, act_col2 = st.columns(2)
-                with act_col1:
-                    if st.button("✏️ Modifier cet écrasement", use_container_width=True):
-                        target = next((i for i in res_ctrl.data if i["id"] == selected_ctrl_id), None)
-                        if target:
-                            st.session_state["edit_controle_beton_item"] = target
-                            st.rerun()
-
-                with act_col2:
-                    if st.button("🗑️ Supprimer cet écrasement", type="primary", use_container_width=True):
-                        try:
-                            supabase.table("suivi_controle_beton").delete().eq("id", selected_ctrl_id).execute()
-                            st.success(f"🗑️ Contrôle #{selected_ctrl_id} supprimé.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erreur de suppression : {e}")
+        if res_hist.data:
+            df_hist = pd.DataFrame(res_hist.data)
+            col_order = ["echeance", "date_coulee", "date_ecrasement", "repere_eprouvette", "classe_beton", "masse", "force_kn", "fc_mpa", "technicien"]
+            cols_existantes = [c for c in col_order if c in df_hist.columns]
+            st.dataframe(df_hist[cols_existantes], use_container_width=True)
         else:
-            st.info("Aucun essai d'écrasement de béton n'a encore été enregistré.")
-
+            st.info("Aucun essai d'écrasement enregistré pour cette fiche de bétonnage.")
     except Exception as e:
-        st.warning(f"Impossible de charger l'historique des écrasements : {e}")
+        st.error(f"Erreur lors du chargement de l'historique : {e}")
