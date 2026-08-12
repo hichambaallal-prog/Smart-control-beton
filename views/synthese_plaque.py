@@ -273,7 +273,8 @@ def show(supabase):
         return
 
     try:
-        res = supabase.table("essai_plaque").select("*").order("date_essai", desc=True).execute()
+        # Modification ici : essais_plaque avec un "s"
+        res = supabase.table("essais_plaque").select("*").order("date_essai", desc=True).execute()
         data = res.data if res else []
     except Exception as e:
         st.error(f"Erreur lors de la connexion à la base de données : {e}")
@@ -407,7 +408,8 @@ def show(supabase):
                         if st.form_submit_button("Enregistrer les modifications"):
                             try:
                                 new_k = new_ev2 / new_ev1 if new_ev1 > 0 else 0
-                                supabase.table("essai_plaque").update({
+                                # Modification ici : essais_plaque
+                                supabase.table("essais_plaque").update({
                                     "pk_profil": new_pk,
                                     "ev1": new_ev1,
                                     "ev2": new_ev2,
@@ -422,7 +424,8 @@ def show(supabase):
                 st.markdown("##### ⚠️ Suppression")
                 if st.button("🗑️ Supprimer définitivement", type="primary"):
                     try:
-                        supabase.table("essai_plaque").delete().eq("id", selected_item["id"]).execute()
+                        # Modification ici : essais_plaque
+                        supabase.table("essais_plaque").delete().eq("id", selected_item["id"]).execute()
                         st.success("Enregistrement supprimé avec succès.")
                         st.rerun()
                     except Exception as e:
