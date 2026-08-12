@@ -89,6 +89,7 @@ def show(supabase):
         with col_e1:
             echeance_p = st.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], index=2, key=f"p_echeance_{b_id}")
         
+        # Calcul automatique de la date prévisionnelle selon l'échéance sélectionnée
         jours_dict = {"3 jours": 3, "7 jours": 7, "28 jours": 28, "90 jours": 90}
         nb_j = jours_dict.get(echeance_p, 28)
         date_prevue_auto = date_coulee_p + timedelta(days=nb_j)
@@ -96,7 +97,13 @@ def show(supabase):
         with col_e2:
             st.date_input("Date de Coulée", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
         with col_e3:
-            date_ecrasement_prevue = st.date_input("Date d'Écrasement Prévue", value=date_prevue_auto, key=f"p_date_ecras_{b_id}")
+            # La clé dynamique force le recalcul instantané à chaque changement d'échéance
+            echeance_key_clean = echeance_p.replace(' ', '_')
+            date_ecrasement_prevue = st.date_input(
+                "Date d'Écrasement Prévue", 
+                value=date_prevue_auto, 
+                key=f"p_date_ecras_{b_id}_{echeance_key_clean}"
+            )
         with col_e4:
             nb_eprouvettes_p = st.number_input("Nombre d'éprouvettes", min_value=1, max_value=6, value=2, step=1, key=f"p_nb_ep_{b_id}")
 
@@ -133,7 +140,7 @@ def show(supabase):
         cols_rep = st.columns(int(nb_eprouvettes_p))
         for i in range(int(nb_eprouvettes_p)):
             with cols_rep[i]:
-                rep_val = st.text_input(f"Repère #{i+1}", value=f"E{i+1}-{echeance_p.replace(' ', '')}", key=f"prog_rep_{b_id}_{i}")
+                rep_val = st.text_input(f"Repère #{i+1}", value=f"E{i+1}-{echeance_p.replace(' ', '')}", key=f"prog_rep_{b_id}_{echeance_key_clean}_{i}")
                 reperes_p.append(rep_val)
 
         if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}"):
