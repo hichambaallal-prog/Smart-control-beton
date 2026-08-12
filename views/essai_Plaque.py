@@ -99,21 +99,19 @@ def show(supabase):
                 "projet": projet,
                 "emplacement": emplacement,
                 "pk_profil": pk_profil,
-                "pkl": pk_profil,
                 "couche": couche,
                 "nature_materiau": nature_materiau,
                 "z1": float(z1),
                 "z2": float(z2),
                 "ev1": float(ev1),
                 "ev2": float(ev2),
-                "k": float(k_ratio),
                 "k_ratio": float(k_ratio),
                 "technicien": technicien,
                 "observations": observations
             }
 
             try:
-                # Filtrage des colonnes valides
+                # Filtrage des colonnes valides selon la table Supabase
                 sample_query = supabase.table("essais_plaque").select("*").limit(1).execute()
                 if sample_query.data and len(sample_query.data) > 0:
                     valid_columns = set(sample_query.data[0].keys())
@@ -143,7 +141,7 @@ def show(supabase):
                 st.rerun()
 
     # ---------------------------------------------------------
-    # 4. HISTORIQUE AVEC OPTIONS DE MODIFICATION ET SUPPRESSION (ADMIN)
+    # 4. HISTORIQUE - COLONNES NETTOYÉES ET FILTRÉES
     # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📋 Historique des Essais Enregistrés")
@@ -153,12 +151,26 @@ def show(supabase):
         if res.data and len(res.data) > 0:
             df = pd.DataFrame(res.data)
             
-            # Affichage du tableau de données
-            cols_to_drop = [c for c in ["created_at"] if c in df.columns]
+            # Liste des colonnes non désirées dans l'affichage du tableau
+            cols_to_remove = [
+                "created_at", 
+                "pkl", 
+                "statut", 
+                "observation", 
+                "observations", 
+                "k", 
+                "K", 
+                "rapport ev2/ev1", 
+                "rapport_ev2_ev1"
+            ]
+            
+            # Suppression dynamique des colonnes si elles existent dans la dataframe
+            cols_to_drop = [c for c in cols_to_remove if c in df.columns]
             df_display = df.drop(columns=cols_to_drop)
+
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-            # --- ACTIONS RESERVÉES A L'ADMINISTRATEUR ---
+            # --- ACTIONS RESERVÉES À L'ADMINISTRATEUR ---
             if is_admin:
                 st.markdown("### ⚙️ Actions Administrateur (Modifier / Supprimer)")
                 
