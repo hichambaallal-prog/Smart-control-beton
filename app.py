@@ -39,7 +39,7 @@ if st.session_state.role is None:
 # 3. CODE PRINCIPAL (Affiché si connecté)
 # ==========================================
 try:
-    from views import suivi_Betonnage, essai_Plaque, synthese_Beton, synthese_plaque
+    from views import suivi_Betonnage, suivi_controle_beton, essai_Plaque, synthese_Beton, synthese_plaque
 except ImportError as e:
     st.error(f"❌ Erreur lors de l'importation des vues : {e}")
     st.stop()
@@ -65,7 +65,14 @@ with st.sidebar:
     
     page = st.radio(
         "Menu Principal",
-        ["Accueil", "Essai à la Plaque", "Synthèse Plaque", "Suivi de Bétonnage", "Synthèse Béton"]
+        [
+            "Accueil", 
+            "Essai à la Plaque", 
+            "Synthèse Plaque", 
+            "Suivi de Bétonnage", 
+            "Suivi Contrôle Béton", 
+            "Synthèse Béton"
+        ]
     )
     
     st.markdown("---")
@@ -101,7 +108,8 @@ if page == "Accueil":
     
     Utilisez le menu de navigation latéral pour accéder aux différents modules de saisie et de suivi :
     * **🏗️ Suivi Béton :** Gestion des livraisons, fiches de contrôle, températures, affaissements et prélèvements.
-    * **🧪 Essai à la Plaque :** Saisie des essais de portance (Norme NF P 94-117-1) avec calculs automatiques des modules $EV_1$, $EV_2$ et du coefficient $K$.
+    * **🧪 Suivi Contrôle Béton :** Saisie des écrasements d'éprouvettes de béton (3j, 7j, 28j, 90j) associées aux prélèvements.
+    * **🚜 Essai à la Plaque :** Saisie des essais de portance (Norme NF P 94-117-1) avec calculs automatiques des modules $EV_1$, $EV_2$ et du coefficient $K$.
     """)
 
 elif page == "Essai à la Plaque":
@@ -110,5 +118,7 @@ elif page == "Synthèse Plaque":
     synthese_plaque.show(supabase)
 elif page == "Suivi de Bétonnage":
     suivi_Betonnage.show(supabase)
+elif page == "Suivi Contrôle Béton":
+    suivi_controle_beton.show(supabase)
 elif page == "Synthèse Béton":
     synthese_Beton.show(supabase)
