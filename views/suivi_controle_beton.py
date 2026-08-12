@@ -44,20 +44,17 @@ def show(supabase):
         choix_label_p = st.selectbox("Sélectionner la fiche de bétonnage :", list(options_beton.keys()), key="prog_beton_select")
         beton_p = options_beton[choix_label_p]
 
-        # Récupération dynamique des données du bétonnage
         b_id = beton_p.get("id")
         num_bl_p = str(beton_p.get("num_bl") or "N/A")
         ouvrage_p = str(beton_p.get("ouvrage") or "N/A")
         classe_beton_p = str(beton_p.get("classe_beton") or beton_p.get("classe") or "N/A")
         
-        # Total d'éprouvettes prévu au suivi de bétonnage (ex: 12)
         raw_nb_ep = beton_p.get("nb_eprouvettes") or beton_p.get("nombre_eprouvettes")
         try:
             total_eprouvettes_prevues = int(raw_nb_ep) if raw_nb_ep is not None else 12
         except (ValueError, TypeError):
             total_eprouvettes_prevues = 12
 
-        # Vérification des éprouvettes déjà programmées
         eprouvettes_deja_prog = 0
         try:
             res_deja = supabase.table("suivi_controle_beton").select("id").eq("betonnage_id", b_id).execute()
@@ -66,7 +63,6 @@ def show(supabase):
         except Exception:
             eprouvettes_deja_prog = 0
 
-        # Calcul du solde disponible
         solde_disponible = max(0, total_eprouvettes_prevues - eprouvettes_deja_prog)
 
         affaissement_raw = str(beton_p.get("affaissement") or beton_p.get("slump") or "N/A")
@@ -220,7 +216,6 @@ def show(supabase):
     with tab_saisie:
         st.subheader("💥 2. Saisie Groupée des Résultats d'Écrasement")
 
-        # Récupérer toutes les éprouvettes non encore écrasées
         eprouvettes_en_attente = []
         try:
             res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=False).execute()
@@ -235,7 +230,6 @@ def show(supabase):
         if not eprouvettes_en_attente:
             st.info("👍 Aucune éprouvette en attente d'écrasement.")
         else:
-            # Regroupement par (betonnage_id + echeance)
             groupes_lots = {}
             for ep in eprouvettes_en_attente:
                 b_id_ep = ep.get("betonnage_id")
@@ -249,11 +243,9 @@ def show(supabase):
                     groupes_lots[cle_groupe] = []
                 groupes_lots[cle_groupe].append(ep)
 
-            # Sélection du lot à écraser
             choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes à écraser :", list(groupes_lots.keys()), key="select_lot_saisie")
             lot_selected = groupes_lots[choix_lot]
 
-            # Informations générales du lot
             sample = lot_selected[0]
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
             col_l1.metric("Ouvrage", str(sample.get("ouvrage")))
@@ -263,7 +255,6 @@ def show(supabase):
 
             st.markdown("---")
             
-            # Formulaire global pour Technicien et Observations
             col_g1, col_g2 = st.columns(2)
             with col_g1:
                 tech_global = st.text_input("Technicien / Opérateur", value="Technicien LPEE", key="tech_global")
@@ -272,27 +263,45 @@ def show(supabase):
 
             st.markdown("##### 📝 Saisie des mesures pour le lot")
 
-            # Construction du DataFrame
-            rows_list = []
-            for ep in lot_selected:
-                sec = float(ep.get("section") or 176.71)
-                f_kn = float(ep.get("force_kn") or 0.0)
-                fc = round((f_kn * 10.0) / sec, 2) if sec > 0 and f_kn > 0 else 0.0
-                
-                rows_list.append({
-                    "ID": ep["id"],
-                    "Repère": ep.get("repere_eprouvette", f"EP-{ep['id']}"),
-                    "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
-                    "_section": sec,  # Champ masqué pour le calcul
-                    "Force (kN)": f_kn,
-                    "Résistance Fc (MPa)": fc
-                })
+            # --- INITIALISATION ET MISE À JOUR DANS SESSION_STATE ---
+            lot_key = f"df_lot_{choix_lot}"
+            
+            # 1. Construction du DataFrame initial s'il n'existe pas encore dans session_state
+            if lot_key not in st.session_state:
+                rows_list = []
+                for ep in lot_selected:
+                    sec = float(ep.get("section") or 176.71)
+                    f_kn = float(ep.get("force_kn") or 0.0)
+                    fc = round((f_kn * 10.0) / sec, 1) if sec > 0 and f_kn > 0 else 0.0
+                    
+                    rows_list.append({
+                        "ID": ep["id"],
+                        "Repère": ep.get("repere_eprouvette", f"EP-{ep['id']}"),
+                        "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
+                        "_section": sec,
+                        "Force (kN)": f_kn,
+                        "Résistance Fc (MPa)": fc
+                    })
+                st.session_state[lot_key] = pd.DataFrame(rows_list)
 
-            df_saisie = pd.DataFrame(rows_list)
+            # 2. Callback pour recalculer la résistance en temps réel après édition
+            def update_fc():
+                changes = st.session_state.data_editor_ecrasement.get("edited_rows", {})
+                for row_idx, updated_cols in changes.items():
+                    if "Force (kN)" in updated_cols:
+                        new_force = float(updated_cols["Force (kN)"] or 0.0)
+                        st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
+                        
+                        # Formule Fc = F * 10 / S
+                        sec = float(st.session_state[lot_key].at[row_idx, "_section"])
+                        if sec > 0 and new_force > 0:
+                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1)
+                        else:
+                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = 0.0
 
-            # Éditeur de données avec exclusion explicite de la section
+            # 3. Affichage du tableau interactif
             edited_df = st.data_editor(
-                df_saisie,
+                st.session_state[lot_key],
                 column_config={
                     "ID": st.column_config.NumberColumn("ID", disabled=True),
                     "Repère": st.column_config.TextColumn("Repère", disabled=True),
@@ -314,30 +323,26 @@ def show(supabase):
                 },
                 use_container_width=True,
                 hide_index=True,
-                key="data_editor_ecrasement"
-            )
-
-            # Recalcul dynamique de Fc
-            edited_df["Résistance Fc (MPa)"] = edited_df.apply(
-                lambda row: round((row["Force (kN)"] * 10.0) / row["_section"], 2) if row["_section"] > 0 and row["Force (kN)"] > 0 else 0.0,
-                axis=1
+                key="data_editor_ecrasement",
+                on_change=update_fc
             )
 
             # Résumé rapide des résultats
-            forces_valides = edited_df[edited_df["Force (kN)"] > 0]
+            df_actuel = st.session_state[lot_key]
+            forces_valides = df_actuel[df_actuel["Force (kN)"] > 0]
             if not forces_valides.empty:
-                fc_moy = round(forces_valides["Résistance Fc (MPa)"].mean(), 2)
+                fc_moy = round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
                 st.success(f"📈 **Résistance moyenne calculée pour les éprouvettes saisies : {fc_moy:.1f} MPa**")
             else:
                 st.warning("👈 Veuillez remplir la colonne **Force (kN)** pour chaque éprouvette.")
 
             # Bouton d'enregistrement pour TOUT LE LOT
             if st.button("💾 Valider et Enregistrer Tout le Lot", type="primary", use_container_width=True):
-                if (edited_df["Force (kN)"] == 0).any():
+                if (df_actuel["Force (kN)"] == 0).any():
                     st.error("❌ Attention : Une ou plusieurs éprouvettes ont encore une force de 0.0 kN. Veuillez compléter les saisies.")
                 else:
                     succes_lot = 0
-                    for _, row in edited_df.iterrows():
+                    for _, row in df_actuel.iterrows():
                         update_payload = {
                             "force_kn": float(row["Force (kN)"]),
                             "fc_mpa": float(row["Résistance Fc (MPa)"]),
@@ -350,7 +355,9 @@ def show(supabase):
                         except Exception as e:
                             st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
 
-                    if succes_lot == len(edited_df):
+                    if succes_lot == len(df_actuel):
+                        # Réinitialisation du session_state du lot après sauvegarde réussie
+                        del st.session_state[lot_key]
                         st.success(f"✅ Lot de {succes_lot} éprouvettes enregistré avec succès !")
                         st.rerun()
 
