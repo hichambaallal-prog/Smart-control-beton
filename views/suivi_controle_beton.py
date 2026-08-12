@@ -223,12 +223,11 @@ def show(supabase):
         # Récupérer toutes les éprouvettes non encore écrasées
         eprouvettes_en_attente = []
         try:
-            # Ordre croissant via desc=False pour éviter la TypeError asc=True
             res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=False).execute()
             if res_att.data:
                 eprouvettes_en_attente = [
                     e for e in res_att.data 
-                    if e.get("force_kn") is None or float(e.get("force_kn", 0)) == 0
+                    if e.get("force_kn") is None or float(e.get("force_kn") or 0) == 0
                 ]
         except Exception as e:
             st.error(f"Erreur de chargement des essais en attente : {e}")
@@ -271,16 +270,17 @@ def show(supabase):
             with col_g2:
                 obs_globale = st.text_input("Observations générales", value="Rupture satisfaisante (NF EN 12390-3).", key="obs_global")
 
-            st.markdown("##### 📝 Saisie des mesures pour le lot")
+            st.markdown("##### 📝 Saisie des mesures pour le lot (Entrez les charges en kN)")
 
             # Préparation des données dans un DataFrame pour le st.data_editor
+            # Force (kN) initialisée à 0.0 par défaut pour imposer la saisie
             df_saisie = pd.DataFrame([
                 {
                     "ID": ep["id"],
-                    "Repère": ep.get("repere_eprouvette"),
+                    "Repère": ep.get("repere_eprouvette", f"EP-{ep['id']}"),
                     "Section (cm²)": float(ep.get("section", 176.71)),
-                    "Masse (g)": 12500.0,
-                    "Force (kN)": 500.0,
+                    "Masse (g)": float(ep.get("masse") or 12500.0),
+                    "Force (kN)": 0.0,
                 }
                 for ep in lot_selected
             ])
@@ -289,48 +289,62 @@ def show(supabase):
             edited_df = st.data_editor(
                 df_saisie,
                 column_config={
-                    "ID": st.column_config.NumberColumn(disabled=True),
-                    "Repère": st.column_config.TextColumn(disabled=True),
-                    "Section (cm²)": st.column_config.NumberColumn(disabled=True, format="%.2f"),
-                    "Masse (g)": st.column_config.NumberColumn(min_value=1000.0, max_value=30000.0, step=10.0, format="%.1f"),
-                    "Force (kN)": st.column_config.NumberColumn(min_value=0.0, max_value=2000.0, step=5.0, format="%.1f"),
+                    "ID": st.column_config.NumberColumn("ID", disabled=True),
+                    "Repère": st.column_config.TextColumn("Repère", disabled=True),
+                    "Section (cm²)": st.column_config.NumberColumn("Section (cm²)", format="%.2f"),
+                    "Masse (g)": st.column_config.NumberColumn("Masse (g)", min_value=1000.0, max_value=30000.0, step=10.0, format="%.1f"),
+                    "Force (kN)": st.column_config.NumberColumn(
+                        "⚡ Force (kN)", 
+                        help="Saisissez la force de rupture lue sur la presse", 
+                        min_value=0.0, 
+                        max_value=3000.0, 
+                        step=1.0, 
+                        format="%.1f"
+                    ),
                 },
                 use_container_width=True,
                 hide_index=True,
                 key="data_editor_ecrasement"
             )
 
-            # Calcul en temps réel des résistances Fc
+            # Calcul en temps réel des résistances Fc pour les forces saisies (>0)
             edited_df["Fc (MPa)"] = edited_df.apply(
-                lambda row: round((row["Force (kN)"] * 10.0) / row["Section (cm²)"], 2) if row["Section (cm²)"] > 0 else 0.0,
+                lambda row: round((row["Force (kN)"] * 10.0) / row["Section (cm²)"], 2) if row["Section (cm²)"] > 0 and row["Force (kN)"] > 0 else 0.0,
                 axis=1
             )
 
             # Résumé rapide des résultats
-            fc_moy = round(edited_df["Fc (MPa)"].mean(), 2)
-            st.info(f"💡 **Résistance moyenne calculée pour le lot : {fc_moy} MPa**")
+            forces_valides = edited_df[edited_df["Force (kN)"] > 0]
+            if not forces_valides.empty:
+                fc_moy = round(forces_valides["Fc (MPa)"].mean(), 2)
+                st.success(f"📈 **Résistance moyenne calculée pour les éprouvettes saisies : {fc_moy} MPa**")
+            else:
+                st.warning("👈 Veuillez remplir la colonne **Force (kN)** pour chaque éprouvette.")
 
             # Bouton d'enregistrement pour TOUT LE LOT
             if st.button("💾 Valider et Enregistrer Tout le Lot", type="primary", use_container_width=True):
-                succes_lot = 0
-                for _, row in edited_df.iterrows():
-                    update_payload = {
-                        "section": float(row["Section (cm²)"]),
-                        "masse": float(row["Masse (g)"]),
-                        "force_kn": float(row["Force (kN)"]),
-                        "fc_mpa": float(row["Fc (MPa)"]),
-                        "technicien": tech_global,
-                        "observations": obs_globale
-                    }
-                    try:
-                        supabase.table("suivi_controle_beton").update(update_payload).eq("id", int(row["ID"])).execute()
-                        succes_lot += 1
-                    except Exception as e:
-                        st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
+                if (edited_df["Force (kN)"] == 0).any():
+                    st.error("❌ Attention : Une ou plusieurs éprouvettes ont encore une force de 0 kN. Veuillez compléter les saisies.")
+                else:
+                    succes_lot = 0
+                    for _, row in edited_df.iterrows():
+                        update_payload = {
+                            "section": float(row["Section (cm²)"]),
+                            "masse": float(row["Masse (g)"]),
+                            "force_kn": float(row["Force (kN)"]),
+                            "fc_mpa": float(row["Fc (MPa)"]),
+                            "technicien": tech_global,
+                            "observations": obs_globale
+                        }
+                        try:
+                            supabase.table("suivi_controle_beton").update(update_payload).eq("id", int(row["ID"])).execute()
+                            succes_lot += 1
+                        except Exception as e:
+                            st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
 
-                if succes_lot == len(edited_df):
-                    st.success(f"✅ Lot de {succes_lot} éprouvettes enregistré avec succès ! (Moyenne = {fc_moy} MPa)")
-                    st.rerun()
+                    if succes_lot == len(edited_df):
+                        st.success(f"✅ Lot de {succes_lot} éprouvettes enregistré avec succès !")
+                        st.rerun()
 
     # =========================================================
     # HISTORIQUE ET SUIVI GLOBAL
