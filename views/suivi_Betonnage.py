@@ -27,10 +27,12 @@ def show(supabase):
         heure_fin = st.time_input("Heure de fin de production", value=datetime.strptime("08:00", "%H:%M").time(), key="saisie_h_fin")
         heure_arrivee = st.time_input("Heure d'arrivée au chantier", value=datetime.strptime("08:35", "%H:%M").time(), key="saisie_h_arr")
         
-        # Calcul de la durée en minutes
+        # Calcul sécurisé de la durée en minutes
         dt_fin = datetime.combine(date.today(), heure_fin)
         dt_arr = datetime.combine(date.today(), heure_arrivee)
         duree_minutes = int((dt_arr - dt_fin).total_seconds() / 60)
+        if duree_minutes < 0:
+            duree_minutes += 1440  # Gestion du passage de minuit si besoin
         
         st.text_input("Durée de transport / attente (min)", value=f"{duree_minutes} min", disabled=True, key="saisie_duree")
         
@@ -72,18 +74,18 @@ def show(supabase):
             "date_livraison": str(date_livraison),
             "bl_num": bl_num,
             "ouvrage": ouvrage,
-            "quantite_m3": quantite_m3,
+            "quantite_m3": float(quantite_m3),
             "client": client,
             "classe_beton": classe_beton,
             "centrale_beton": centrale,
             "meteo": meteo,
             "heure_fin_coulage": heure_fin.strftime("%H:%M"),
             "heure_arrivee": heure_arrivee.strftime("%H:%M"),
-            "temperature": temp_beton,
-            "temperature_ambiante": temp_ambiante,
-            "affaissement": affaissement,
+            "temperature": float(temp_beton),
+            "temperature_ambiante": float(temp_ambiante),
+            "affaissement": int(affaissement),
             "prelevement": prelevement,
-            "nb_eprouvettes": nb_eprouvettes,
+            "nb_eprouvettes": int(nb_eprouvettes),
             "observations": observations,
             "technicien": technicien
         }
@@ -106,13 +108,22 @@ def show(supabase):
         if res.data:
             df = pd.DataFrame(res.data)
             
-            # 1. Calcul de la colonne "Durée de transport"
+            # 1. Calcul robuste de la colonne "Durée de transport"
             if "heure_fin_coulage" in df.columns and "heure_arrivee" in df.columns:
                 def calculer_duree(row):
                     try:
-                        h_fin = datetime.strptime(str(row["heure_fin_coulage"]), "%H:%M")
-                        h_arr = datetime.strptime(str(row["heure_arrivee"]), "%H:%M")
+                        str_fin = str(row["heure_fin_coulage"]).split(".")[0]
+                        str_arr = str(row["heure_arrivee"]).split(".")[0]
+                        
+                        fmt = "%H:%M:%S" if len(str_fin.split(":")) == 3 else "%H:%M"
+                        h_fin = datetime.strptime(str_fin, fmt)
+                        
+                        fmt_arr = "%H:%M:%S" if len(str_arr.split(":")) == 3 else "%H:%M"
+                        h_arr = datetime.strptime(str_arr, fmt_arr)
+                        
                         diff = int((h_arr - h_fin).total_seconds() / 60)
+                        if diff < 0:
+                            diff += 1440
                         return f"{diff} min"
                     except:
                         return "-"
@@ -178,21 +189,22 @@ def show(supabase):
                 with col_ed:
                     with st.expander("📝 Modifier ce contrôle (Tous les champs)"):
                         with st.form("edit_form_beton_complet"):
-                            # Valeurs par défaut sécurisées
+                            # Helper pour parser les dates et heures en toute sécurité
                             try:
                                 def_date = datetime.strptime(str(selected_item.get("date_livraison", date.today())), "%Y-%m-%d").date()
                             except:
                                 def_date = date.today()
 
-                            try:
-                                def_h_fin = datetime.strptime(str(selected_item.get("heure_fin_coulage", "08:00")), "%H:%M").time()
-                            except:
-                                def_h_fin = datetime.strptime("08:00", "%H:%M").time()
+                            def parse_heure_safe(val_str, default_str):
+                                try:
+                                    clean_str = str(val_str).split(".")[0]
+                                    fmt = "%H:%M:%S" if len(clean_str.split(":")) == 3 else "%H:%M"
+                                    return datetime.strptime(clean_str, fmt).time()
+                                except:
+                                    return datetime.strptime(default_str, "%H:%M").time()
 
-                            try:
-                                def_h_arr = datetime.strptime(str(selected_item.get("heure_arrivee", "08:35")), "%H:%M").time()
-                            except:
-                                def_h_arr = datetime.strptime("08:35", "%H:%M").time()
+                            def_h_fin = parse_heure_safe(selected_item.get("heure_fin_coulage"), "08:00")
+                            def_h_arr = parse_heure_safe(selected_item.get("heure_arrivee"), "08:35")
 
                             new_date_livraison = st.date_input("Date de livraison", value=def_date, key="edit_date")
                             new_technicien = st.text_input("Nom du Technicien LPEE", value=selected_item.get("technicien", "Agent LPEE"), key="edit_tech")
