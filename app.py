@@ -28,7 +28,7 @@ if st.session_state.role is None:
             if password == "ctr2026": 
                 st.session_state.role = "user"
                 st.rerun()
-            elif password == "admin2026":  # <-- MOT DE PASSE ADMIN
+            elif password == "admin2026": 
                 st.session_state.role = "admin"
                 st.rerun()
             else:
@@ -44,6 +44,7 @@ except ImportError as e:
     st.error(f"❌ Erreur lors de l'importation des vues : {e}")
     st.stop()
 
+# Connexion à la base de données Supabase
 try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
@@ -52,7 +53,7 @@ except Exception as e:
     supabase = None
     st.error(f"❌ Erreur de connexion Supabase : {e}")
 
-# Affichage du rôle dans la sidebar
+# Menu latéral (Sidebar)
 with st.sidebar:
     st.title("LPEE - CTR-CSB")
     st.info(f"Connecté en tant que : **{st.session_state.role.upper()}**")
@@ -75,7 +76,7 @@ if page == "Accueil":
     
     st.markdown("---")
     
-    # Affichage sécurisé de la photo Al Boraq (avec le nom exact du fichier sur GitHub)
+    # Affichage sécurisé de la photo Al Boraq
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         image_path = os.path.join(os.path.dirname(__file__), "al_boraq.jpg.jpg")
@@ -86,7 +87,7 @@ if page == "Accueil":
                 use_container_width=True
             )
         else:
-            st.warning("⚠️ L'image 'al_boraq.jpg.jpg' est introuvable.")
+            st.warning("⚠️ L'image 'al_boraq.jpg.jpg' est introuvable à la racine.")
         
     st.markdown("---")
     
@@ -96,7 +97,7 @@ if page == "Accueil":
     
     Utilisez le menu de navigation latéral pour accéder aux différents modules de saisie et de suivi :
     * **🏗️ Suivi Béton :** Gestion des livraisons, fiches de contrôle, températures, affaissements et prélèvements.
-    * **🧪 Essai à la Plaque :** Saisie des essais de portance (Norme NF P 94-117-1) avec calculs automatiques des modules EV1, EV2 et du coefficient K.
+    * **🧪 Essai à la Plaque :** Saisie des essais de portance (Norme NF P 94-117-1) avec calculs automatiques des modules $EV_1$, $EV_2$ et du coefficient $K$.
     """)
 
 elif page == "Essai à la Plaque":
