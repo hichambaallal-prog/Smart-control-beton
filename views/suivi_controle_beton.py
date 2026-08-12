@@ -7,193 +7,367 @@ import pandas as pd
 import streamlit as st
 
 
+# =========================================================
+# GÉNÉRATION DU PROCES-VERBAL EXCEL (FORMAT EXACT LPEE)
+# =========================================================
 def generer_pv_excel(export_data, infos_header):
-    """Génère un Procès-Verbal (PV) d'écrasement de béton au format Excel (Mise en page A4 Portrait)."""
+    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant exactement le modèle LPEE / CTR CSB."""
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "PV Écrasement"
+    ws.title = "PV Écrasement LPEE"
 
-    # Configuration de la page A4 Portrait
+    # Configuration A4 Portrait
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
 
-    # Marges fines (en pouces) pour l'impression A4
     ws.page_margins = PageMargins(
-        left=0.4, right=0.4, top=0.5, bottom=0.5, header=0.3, footer=0.3
+        left=0.3, right=0.3, top=0.4, bottom=0.4, header=0.2, footer=0.2
     )
 
-    # Palette de styles
-    font_title = Font(name="Calibri", size=14, bold=True, color="1F497D")
-    font_header = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-    font_bold = Font(name="Calibri", size=10, bold=True, color="000000")
-    font_regular = Font(name="Calibri", size=10, color="000000")
+    # Styles Typographiques
+    font_bold = Font(name="Calibri", size=9, bold=True)
+    font_regular = Font(name="Calibri", size=8.5)
+    font_small = Font(name="Calibri", size=8)
 
-    fill_header = PatternFill(
-        start_color="1F497D", end_color="1F497D", fill_type="solid"
+    # Alignements
+    align_center = Alignment(
+        horizontal="center", vertical="center", wrap_text=True
     )
-    fill_zebra = PatternFill(
-        start_color="F2F5F9", end_color="F2F5F9", fill_type="solid"
-    )
-    fill_total = PatternFill(
-        start_color="D9E1F2", end_color="D9E1F2", fill_type="solid"
+    align_left = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    align_right = Alignment(
+        horizontal="right", vertical="center", wrap_text=True
     )
 
-    thin_border_side = Side(border_style="thin", color="D9D9D9")
-    thick_border_side = Side(border_style="medium", color="1F497D")
+    # Bordures
+    thin_side = Side(border_style="thin", color="000000")
     border_cell = Border(
-        left=thin_border_side,
-        right=thin_border_side,
-        top=thin_border_side,
-        bottom=thin_border_side,
-    )
-    border_total = Border(
-        top=Side(border_style="thin", color="000000"),
-        bottom=Side(border_style="double", color="000000"),
+        left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
     )
 
-    align_center = Alignment(horizontal="center", vertical="center")
-    align_left = Alignment(horizontal="left", vertical="center")
-    align_right = Alignment(horizontal="right", vertical="center")
+    # 1. ENTÊTE DU LABORATOIRE ET REFERENCES
+    ws.merge_cells("A1:D1")
+    ws["A1"] = "LPEE / CTR CSB"
+    ws["A1"].font = font_bold
+    ws["A1"].alignment = align_center
 
-    # --- ENTÊTE DU PV ---
-    ws.merge_cells("A1:F1")
-    title_cell = ws["A1"]
-    title_cell.value = (
-        "PROCÈS-VERBAL D'ESSAI : ÉCRASEMENT DU BÉTON (NF EN 12390-3)"
+    ws.merge_cells("A2:D3")
+    ws["A2"] = "Laboratoire de Contrôle Externe"
+    ws["A2"].font = font_bold
+    ws["A2"].alignment = align_center
+
+    ws["E1"] = "RE N° :"
+    ws["E1"].font = font_bold
+    ws.merge_cells("F1:H1")
+    ws["F1"] = infos_header.get("re_num", "25/260/LGV/ B/01")
+    ws["F1"].font = font_regular
+
+    ws["E2"] = "DOSSIER :"
+    ws["E2"].font = font_bold
+    ws.merge_cells("F2:H2")
+    ws["F2"] = infos_header.get("dossier", "2025-260-05985-2025-0247")
+    ws["F2"].font = font_regular
+
+    ws["E3"] = "CLIENT :"
+    ws["E3"].font = font_bold
+    ws.merge_cells("F3:H3")
+    ws["F3"] = infos_header.get("client", "TGCC")
+    ws["F3"].font = font_bold
+
+    for r in range(1, 4):
+        for c in range(1, 9):
+            ws.cell(row=r, column=c).border = border_cell
+
+    # 2. TITRE DE L'ESSAI ET TYPE D'ESSAI
+    ws.merge_cells("A4:H4")
+    ws["A4"] = "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
+    ws["A4"].font = Font(name="Calibri", size=11, bold=True)
+    ws["A4"].alignment = align_center
+    ws["A4"].border = border_cell
+
+    ws.merge_cells("A5:D5")
+    ws["A5"] = "[X]  COMPRESSION NF EN 12390-3 (2019)"
+    ws["A5"].font = font_bold
+    ws["A5"].alignment = align_center
+
+    ws.merge_cells("E5:H5")
+    ws["E5"] = "[  ]  TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
+    ws["E5"].font = font_bold
+    ws["E5"].alignment = align_center
+
+    for c in range(1, 9):
+        ws.cell(row=5, column=c).border = border_cell
+
+    # Ligne de la Presse
+    ws.merge_cells("A6:F6")
+    ws["A6"] = "Presse : Marque: Controls"
+    ws["A6"].font = font_bold
+    ws["A6"].alignment = align_left
+
+    ws.merge_cells("G6:H6")
+    ws["G6"] = "Classe : A"
+    ws["G6"].font = font_bold
+    ws["G6"].alignment = align_center
+
+    for c in range(1, 9):
+        ws.cell(row=6, column=c).border = border_cell
+
+    # 3. FICHE TECHNIQUE DE PRELEVEMENT ET CHANTIER
+    ws["A7"] = "Date de\nprélèvement"
+    ws["A7"].font = font_bold
+    ws["A7"].alignment = align_center
+    ws["B7"] = str(infos_header.get("date_coulee", "02/06/2025"))
+    ws["B7"].font = font_bold
+    ws["B7"].alignment = align_center
+
+    ws.merge_cells("C7:D7")
+    ws["C7"] = "Lieu de\nprélèvement"
+    ws["C7"].font = font_bold
+    ws["C7"].alignment = align_center
+
+    ws.merge_cells("E7:H7")
+    ws["E7"] = infos_header.get(
+        "lieu_prelevement",
+        "Gros béton de la semelle C1 S2 Pro 745 bis Côté Marrakech 1° Partie",
     )
-    title_cell.font = font_title
-    title_cell.alignment = align_center
+    ws["E7"].font = font_regular
+    ws["E7"].alignment = align_center
 
-    # Informations du Projet / Client
-    headers_info = [
-        ("Client :", infos_header.get("client", "N/A"), "BL N° :", infos_header.get("num_bl", "N/A")),
-        ("Projet :", infos_header.get("projet", "N/A"), "Ouvrage :", infos_header.get("ouvrage", "N/A")),
-        ("Classe de Béton :", infos_header.get("classe_beton", "N/A"), "Échéance :", infos_header.get("echeance", "N/A")),
-        ("Date de Coulée :", str(infos_header.get("date_coulee", "N/A")), "Date d'Écrasement :", str(infos_header.get("date_ecrasement", "N/A"))),
-        ("Affaissement :", str(infos_header.get("affaissement", "N/A")), "Température Béton :", str(infos_header.get("temperature", "N/A"))),
-    ]
+    ws.merge_cells("A8:A9")
+    ws["A8"] = "Chantier"
+    ws["A8"].font = font_bold
+    ws["A8"].alignment = align_center
 
-    row_idx = 3
-    for lbl1, val1, lbl2, val2 in headers_info:
-        ws.cell(row=row_idx, column=1, value=lbl1).font = font_bold
-        ws.cell(row=row_idx, column=2, value=val1).font = font_regular
-        ws.cell(row=row_idx, column=4, value=lbl2).font = font_bold
-        ws.cell(row=row_idx, column=5, value=val2).font = font_regular
-        row_idx += 1
-
-    row_idx += 1
-
-    # --- TABLEAU DES ÉPROUVETTES ---
-    columns = [
-        "N°",
-        "Repère Éprouvette",
-        "Forme d'Éprouvette",
-        "Section (cm²)",
-        "Force (kN)",
-        "Résistance Fc (MPa)",
-    ]
-
-    for col_num, col_name in enumerate(columns, 1):
-        cell = ws.cell(row=row_idx, column=col_num, value=col_name)
-        cell.font = font_header
-        cell.fill = fill_header
-        cell.alignment = align_center
-        cell.border = Border(
-            left=thick_border_side,
-            right=thick_border_side,
-            top=thick_border_side,
-            bottom=thick_border_side,
-        )
-
-    row_idx += 1
-    start_data_row = row_idx
-
-    for idx, item in enumerate(export_data, 1):
-        ws.cell(row=row_idx, column=1, value=idx).alignment = align_center
-        ws.cell(row=row_idx, column=2, value=item.get("repere_eprouvette", "N/A")).alignment = align_left
-        ws.cell(row=row_idx, column=3, value=item.get("forme", "N/A")).alignment = align_left
-
-        sec_cell = ws.cell(row=row_idx, column=4, value=item.get("section", 0.0))
-        sec_cell.number_format = "#,##0.00"
-        sec_cell.alignment = align_right
-
-        force_cell = ws.cell(row=row_idx, column=5, value=item.get("force_kn", 0.0))
-        force_cell.number_format = "#,##0.0"
-        force_cell.alignment = align_right
-
-        fc_cell = ws.cell(row=row_idx, column=6, value=item.get("fc_mpa", 0.0))
-        fc_cell.number_format = "#,##0.0"
-        fc_cell.alignment = align_right
-
-        fill_to_use = fill_zebra if idx % 2 == 0 else PatternFill(fill_type=None)
-        for c in range(1, 7):
-            cell_item = ws.cell(row=row_idx, column=c)
-            cell_item.font = font_regular
-            cell_item.border = border_cell
-            if idx % 2 == 0:
-                cell_item.fill = fill_to_use
-
-        row_idx += 1
-
-    end_data_row = row_idx - 1
-
-    # --- LIGNE MOYENNE / SYNTHÈSE ---
-    ws.merge_cells(
-        start_row=row_idx, start_column=1, end_row=row_idx, end_column=5
+    ws.merge_cells("B8:D9")
+    ws["B8"] = infos_header.get(
+        "chantier",
+        "Augmentation de la capacité ferroviaire entre Kenitra et Marrakech et au niveau du hub de Casablanca\nTravaux d'exécution de terrassement, ouvrages d'art et rétablissement de communication entre PK 5+450 et PK 10+000-GARE CASA SUD",
     )
-    avg_label_cell = ws.cell(row=row_idx, column=1, value="Résistance Moyenne (MPa) :")
-    avg_label_cell.font = font_bold
-    avg_label_cell.alignment = align_right
+    ws["B8"].font = font_small
+    ws["B8"].alignment = align_center
 
-    avg_fc_cell = ws.cell(
-        row=row_idx,
-        column=6,
-        value=f"=AVERAGE(F{start_data_row}:F{end_data_row})",
+    ws.merge_cells("E8:F8")
+    ws["E8"] = "Type de béton"
+    ws["E8"].font = font_bold
+    ws["E8"].alignment = align_center
+
+    ws.merge_cells("G8:H8")
+    ws["G8"] = infos_header.get("classe_beton", "C30/37")
+    ws["G8"].font = font_bold
+    ws["G8"].alignment = align_center
+
+    ws.merge_cells("E9:H9")
+    ws["E9"] = "EPROUVETTES"
+    ws["E9"].font = font_bold
+    ws["E9"].alignment = align_center
+
+    ws.merge_cells("A10:B10")
+    ws["A10"] = infos_header.get("centrale", "TG Prefa Oulad Saleh")
+    ws["A10"].font = font_bold
+    ws["A10"].alignment = align_center
+
+    ws["C10"] = "- Dimensions"
+    ws["C10"].font = font_regular
+    ws["D10"] = "Φ"
+    ws["D10"].font = font_bold
+    ws["D10"].alignment = align_center
+    ws["E10"] = "15"
+    ws["E10"].alignment = align_center
+    ws.merge_cells("F10:H10")
+    ws["F10"] = "30"
+    ws["F10"].alignment = align_center
+
+    ws.merge_cells("A11:B11")
+    ws["A11"] = "Affaissement au cône d'abrams NF EN 12350-2"
+    ws["A11"].font = font_small
+    ws["A11"].alignment = align_center
+
+    ws["C11"] = str(infos_header.get("affaissement", "200"))
+    ws["C11"].font = font_bold
+    ws["C11"].alignment = align_center
+
+    ws["D11"] = "- Mode confection"
+    ws["D11"].font = font_regular
+
+    ws.merge_cells("E11:H11")
+    ws["E11"] = "Par vibration  NF EN 12390-2 (2019)"
+    ws["E11"].font = font_bold
+    ws["E11"].alignment = align_center
+
+    ws.merge_cells("A12:B12")
+    ws["A12"] = "Température °C"
+    ws["A12"].font = font_regular
+    ws["A12"].alignment = align_center
+
+    ws["C12"] = str(infos_header.get("temperature", "31"))
+    ws["C12"].font = font_bold
+    ws["C12"].alignment = align_center
+
+    ws["D12"] = "- Mode conservation"
+    ws["D12"].font = font_regular
+
+    ws.merge_cells("E12:H12")
+    ws["E12"] = (
+        "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C"
     )
-    avg_fc_cell.font = font_bold
-    avg_fc_cell.number_format = "#,##0.0"
-    avg_fc_cell.alignment = align_right
+    ws["E12"].font = font_bold
+    ws["E12"].alignment = align_center
 
-    for c in range(1, 7):
-        cell_item = ws.cell(row=row_idx, column=c)
-        cell_item.fill = fill_total
-        cell_item.border = border_total
+    ws.merge_cells("A13:C13")
+    ws["A13"] = "Densité du béton durci NF EN 12390-7(2019)"
+    ws["A13"].font = font_small
+    ws["A13"].alignment = align_center
 
-    row_idx += 2
+    ws.merge_cells("D13:E13")
+    ws["D13"] = "N° de bon de livraison"
+    ws["D13"].font = font_regular
+    ws["D13"].alignment = align_center
 
-    # --- OBSERVATIONS ---
-    ws.cell(row=row_idx, column=1, value="Observations :").font = font_bold
+    ws.merge_cells("F13:H13")
+    ws["F13"] = str(infos_header.get("num_bl", "15479"))
+    ws["F13"].font = font_bold
+    ws["F13"].alignment = align_center
+
+    for r in range(7, 14):
+        for c in range(1, 9):
+            ws.cell(row=r, column=c).border = border_cell
+
+    # 4. TABLEAU DES RÉSULTATS D'ÉCRASEMENT
+    ws.merge_cells("A14:A15")
+    ws["A14"] = "Réf,"
+    ws["A14"].font = font_bold
+    ws["A14"].alignment = align_center
+
+    ws.merge_cells("B14:C14")
+    ws["B14"] = "Date"
+    ws["B14"].font = font_bold
+    ws["B14"].alignment = align_center
+
+    ws["B15"] = "Fabri"
+    ws["B15"].font = font_regular
+    ws["B15"].alignment = align_center
+
+    ws["C15"] = "Essai"
+    ws["C15"].font = font_regular
+    ws["C15"].alignment = align_center
+
+    ws.merge_cells("D14:D15")
+    ws["D14"] = "Age (jours)"
+    ws["D14"].font = font_bold
+    ws["D14"].alignment = align_center
+
+    ws.merge_cells("E14:E15")
+    ws["E14"] = "Charge rupture(KN)"
+    ws["E14"].font = font_bold
+    ws["E14"].alignment = align_center
+
+    ws.merge_cells("F14:H14")
+    ws["F14"] = "Résistance (MPa)"
+    ws["F14"].font = font_bold
+    ws["F14"].alignment = align_center
+
+    ws["F15"] = "Compression"
+    ws["F15"].font = font_regular
+    ws["F15"].alignment = align_center
+
+    ws["G15"] = "Traction"
+    ws["G15"].font = font_regular
+    ws["G15"].alignment = align_center
+
+    ws["H15"] = "Moyenne"
+    ws["H15"].font = font_regular
+    ws["H15"].alignment = align_center
+
+    for r in range(14, 16):
+        for c in range(1, 9):
+            ws.cell(row=r, column=c).border = border_cell
+
+    row_start = 16
+    nb_total = len(export_data)
+
+    if nb_total > 0:
+        ws.merge_cells(f"A{row_start}:A{row_start + nb_total - 1}")
+        ws[f"A{row_start}"] = "B/01"
+        ws[f"A{row_start}"].font = font_bold
+        ws[f"A{row_start}"].alignment = align_center
+
+        ws.merge_cells(f"B{row_start}:B{row_start + nb_total - 1}")
+        ws[f"B{row_start}"] = str(infos_header.get("date_coulee", "02/06/2025"))
+        ws[f"B{row_start}"].font = font_bold
+        ws[f"B{row_start}"].alignment = align_center
+
+    for idx, item in enumerate(export_data):
+        curr_row = row_start + idx
+
+        ws.cell(row=curr_row, column=3, value=str(item.get("date_essai", "09/06/2025"))).alignment = align_center
+        ws.cell(row=curr_row, column=4, value=item.get("age", 7)).alignment = align_center
+
+        f_kn = float(item.get("force_kn", 0.0))
+        ws.cell(row=curr_row, column=5, value=f"{f_kn:.1f}".replace(".", ",")).alignment = align_right
+
+        fc_mpa = float(item.get("fc_mpa", 0.0))
+        ws.cell(row=curr_row, column=6, value=f"{fc_mpa:.1f}".replace(".", ",")).alignment = align_right
+
+        ws.cell(row=curr_row, column=7, value="-").alignment = align_center
+
+        for c in range(1, 9):
+            ws.cell(row=curr_row, column=c).font = font_regular
+            ws.cell(row=curr_row, column=c).border = border_cell
+
+    # Fusions conditionnelles pour la présentation de la moyenne
+    if nb_total >= 3:
+        ws.merge_cells(f"C16:C18")
+        ws.merge_cells(f"D16:D18")
+        ws.merge_cells(f"H16:H18")
+        ws["H16"] = "=ROUND(AVERAGE(F16:F18),1)"
+        ws["H16"].alignment = align_center
+        ws["H16"].font = font_bold
+
+    if nb_total >= 12:
+        ws.merge_cells(f"C19:C27")
+        ws.merge_cells(f"D19:D27")
+
+        ws.merge_cells(f"H19:H21")
+        ws["H19"] = "=ROUND(AVERAGE(F19:F21),1)"
+        ws["H19"].alignment = align_center
+        ws["H19"].font = font_bold
+
+        ws.merge_cells(f"H22:H27")
+        ws["H22"] = "=ROUND(AVERAGE(F22:F27),1)"
+        ws["H22"].alignment = align_center
+        ws["H22"].font = font_bold
+
+    # 5. PIED DE PAGE ET COMMENTAIRE
+    last_row = row_start + max(nb_total, 1)
+
+    ws.cell(row=last_row, column=1, value="COMMENTAIRE :").font = font_bold
+    ws.cell(row=last_row, column=1).alignment = align_center
+
+    ws.merge_cells(start_row=last_row, start_column=2, end_row=last_row, end_column=8)
     ws.cell(
-        row=row_idx,
+        row=last_row,
         column=2,
-        value=infos_header.get("observations", "Rupture conforme à la norme."),
-    ).font = font_regular
-
-    row_idx += 3
-
-    # --- ZONE DE SIGNATURE ---
-    ws.cell(row=row_idx, column=1, value="Le Technicien d'Essai :").font = font_bold
-    ws.merge_cells(
-        start_row=row_idx, start_column=4, end_row=row_idx, end_column=6
-    )
-    ws.cell(
-        row=row_idx,
-        column=4,
-        value="Le Responsable de Laboratoire / Validation :",
+        value=infos_header.get(
+            "observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+        ),
     ).font = font_bold
-    ws.cell(row=row_idx, column=4).alignment = align_right
+    ws.cell(row=last_row, column=2).alignment = align_left
 
-    # LARGEUR AUTOMATIQUE DES COLONNES AJUSTÉE AU A4 PORTRAIT
+    for c in range(1, 9):
+        ws.cell(row=last_row, column=c).border = border_cell
+
+    # Adjusting Column Widths
     col_widths = {
-        "A": 6,   # N°
-        "B": 24,  # Repère Éprouvette
-        "C": 22,  # Forme
-        "D": 15,  # Section
-        "E": 15,  # Force
-        "F": 20,  # Fc
+        "A": 8,
+        "B": 12,
+        "C": 12,
+        "D": 10,
+        "E": 18,
+        "F": 14,
+        "G": 12,
+        "H": 12,
     }
     for col_letter, width in col_widths.items():
         ws.column_dimensions[col_letter].width = width
@@ -204,19 +378,18 @@ def generer_pv_excel(export_data, infos_header):
     return output
 
 
+# =========================================================
+# APPLICATION PRINCIPALE STREAMLIT
+# =========================================================
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # Création des onglets
     tab_prog, tab_saisie, tab_hist = st.tabs([
         "📅 Phase 1 : Programmation",
         "💥 Phase 2 : Saisie des Écrasements (Par Lot)",
         "📋 Historique Complet",
     ])
 
-    # ---------------------------------------------------------
-    # RÉCUPÉRATION DES BÉTONNAGES PRÉLEVÉS (OUI)
-    # ---------------------------------------------------------
     betonnages_preleves = []
     try:
         res_beton = (
@@ -252,9 +425,9 @@ def show(supabase):
         for b in betonnages_preleves
     }
 
-    # =========================================================
-    # PHASE 1 : PROGRAMMATION DES ÉPROUVETTES
-    # =========================================================
+    # ---------------------------------------------------------
+    # PHASE 1 : PROGRAMMATION
+    # ---------------------------------------------------------
     with tab_prog:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
@@ -442,14 +615,7 @@ def show(supabase):
                 key=f"p_forme_{b_id}",
             )
 
-        if "150x300" in forme_p:
-            sect_def = 176.71
-        elif "160x320" in forme_p:
-            sect_def = 201.06
-        elif "100x200" in forme_p:
-            sect_def = 78.54
-        else:
-            sect_def = 176.71
+        sect_def = 176.71 if "150x300" in forme_p else 201.06
 
         with col_f2:
             forme_key_clean = forme_p.replace(" ", "_").replace("x", "_")
@@ -469,7 +635,7 @@ def show(supabase):
                 col_idx = i % 6
                 with cols_rep[col_idx]:
                     num_ep = eprouvettes_deja_prog + i + 1
-                    rep_defaut = f"{ref_controle_p}/{num_ep}"
+                    rep_defaut = f"/{num_ep}"
                     rep_val = st.text_input(
                         f"Repère #{num_ep}",
                         value=rep_defaut,
@@ -517,9 +683,9 @@ def show(supabase):
                     )
                     st.rerun()
 
-    # =========================================================
-    # PHASE 2 : SAISIE GROUPÉE PAR ÉCHÉANCE / AGE
-    # =========================================================
+    # ---------------------------------------------------------
+    # PHASE 2 : SAISIE DES ÉCRASEMENTS ET PV
+    # ---------------------------------------------------------
     with tab_saisie:
         st.subheader("💥 2. Saisie Groupée & Édition des PV d'Écrasement")
 
@@ -585,8 +751,10 @@ def show(supabase):
                 )
             with col_g2:
                 obs_globale = st.text_input(
-                    "Observations générales",
-                    value="Rupture satisfaisante (NF EN 12390-3).",
+                    "Commentaire / Observation",
+                    value=(
+                        "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+                    ),
                     key="obs_global",
                 )
 
@@ -594,7 +762,6 @@ def show(supabase):
 
             lot_key = f"df_lot_{choix_lot}"
 
-            # Initialisation de st.session_state pour ce lot précis
             if lot_key not in st.session_state:
                 rows_list = []
                 for ep in lot_selected:
@@ -609,7 +776,7 @@ def show(supabase):
                     rows_list.append({
                         "ID": ep["id"],
                         "Repère": ep.get(
-                            "repere_eprouvette", f"EP-{ep['id']}"
+                            "repere_eprouvette", f"/{ep['id']}"
                         ),
                         "Forme d'éprouvette": str(
                             ep.get("forme") or "Cylindrique 150x300"
@@ -620,7 +787,6 @@ def show(supabase):
                     })
                 st.session_state[lot_key] = pd.DataFrame(rows_list)
 
-            # Callback corrigé pour la mise à jour de la résistance Fc
             def update_fc():
                 changes = st.session_state.data_editor_ecrasement.get(
                     "edited_rows", {}
@@ -643,7 +809,7 @@ def show(supabase):
                                 row_idx, "Résistance Fc (MPa)"
                             ] = 0.0
 
-            edited_df = st.data_editor(
+            st.data_editor(
                 st.session_state[lot_key],
                 column_config={
                     "ID": st.column_config.NumberColumn("ID", disabled=True),
@@ -656,9 +822,7 @@ def show(supabase):
                     "_section": None,
                     "Force (kN)": st.column_config.NumberColumn(
                         "⚡ Force (kN)",
-                        help=(
-                            "Saisissez la force de rupture lue sur la presse"
-                        ),
+                        help="Saisissez la force lue",
                         min_value=0.0,
                         max_value=3000.0,
                         step=0.1,
@@ -679,13 +843,7 @@ def show(supabase):
             if not forces_valides.empty:
                 fc_moy = round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
                 st.success(
-                    "📈 **Résistance moyenne calculée pour les éprouvettes"
-                    f" saisies : {fc_moy:.1f} MPa**"
-                )
-            else:
-                st.warning(
-                    "👈 Veuillez remplir la colonne **Force (kN)** pour chaque"
-                    " éprouvette."
+                    f"📈 **Résistance moyenne du lot : {fc_moy:.1f} MPa**"
                 )
 
             col_b1, col_b2 = st.columns(2)
@@ -698,8 +856,8 @@ def show(supabase):
                 ):
                     if (df_actuel["Force (kN)"] == 0).any():
                         st.error(
-                            "❌ Attention : Une ou plusieurs éprouvettes ont"
-                            " encore une force de 0.0 kN."
+                            "❌ Une ou plusieurs forces d'écrasement sont à 0.0"
+                            " kN."
                         )
                     else:
                         succes_lot = 0
@@ -724,13 +882,12 @@ def show(supabase):
                         if succes_lot == len(df_actuel):
                             del st.session_state[lot_key]
                             st.success(
-                                f"✅ Lot de {succes_lot} éprouvettes"
-                                " enregistré avec succès !"
+                                f"✅ Lot de {succes_lot} éprouvettes enregistré"
+                                " !"
                             )
                             st.rerun()
 
             with col_b2:
-                # Préparation des données pour le PV Excel
                 export_data = []
                 for _, row in df_actuel.iterrows():
                     export_data.append({
@@ -739,30 +896,30 @@ def show(supabase):
                         "section": row["_section"],
                         "force_kn": row["Force (kN)"],
                         "fc_mpa": row["Résistance Fc (MPa)"],
+                        "date_essai": sample.get("date_ecrasement", "N/A"),
+                        "age": sample.get("echeance", "28")
+                        .replace(" jours", "")
+                        .replace("j", ""),
                     })
 
                 infos_header = {
+                    "re_num": "25/260/LGV/ B/01",
+                    "dossier": "2025-260-05985-2025-0247",
                     "client": "TGCC",
-                    "projet": "LGV CASA",
-                    "num_bl": sample.get("num_bl", "N/A"),
+                    "num_bl": sample.get("num_bl", "15479"),
                     "ouvrage": sample.get("ouvrage", "N/A"),
-                    "classe_beton": sample.get("classe_beton", "N/A"),
-                    "echeance": sample.get("echeance", "N/A"),
-                    "date_coulee": sample.get("date_coulee", "N/A"),
-                    "date_ecrasement": sample.get("date_ecrasement", "N/A"),
-                    "affaissement": sample.get("affaissement", "N/A"),
-                    "temperature": sample.get("temperature", "N/A"),
-                    "technicien": tech_global,
+                    "classe_beton": sample.get("classe_beton", "C30/37"),
+                    "date_coulee": sample.get("date_coulee", "02/06/2025"),
+                    "affaissement": sample.get("affaissement", "200"),
+                    "temperature": sample.get("temperature", "31"),
                     "observations": obs_globale,
                 }
 
                 excel_file = generer_pv_excel(export_data, infos_header)
-                filename = (
-                    f"PV_Ecrasement_TGCC_LGV_CASA_{sample.get('num_bl', 'BL')}_{sample.get('echeance', '28j')}.xlsx"
-                )
+                filename = f"PV_Ecrasement_LPEE_{sample.get('num_bl', 'BL')}.xlsx"
 
                 st.download_button(
-                    label="📄 Télécharger le PV d'écrasement (Excel A4)",
+                    label="📄 Télécharger le PV d'écrasement (Format LPEE)",
                     data=excel_file,
                     file_name=filename,
                     mime=(
@@ -771,12 +928,11 @@ def show(supabase):
                     use_container_width=True,
                 )
 
-    # =========================================================
-    # HISTORIQUE ET SUIVI GLOBAL
-    # =========================================================
+    # ---------------------------------------------------------
+    # HISTORIQUE
+    # ---------------------------------------------------------
     with tab_hist:
         st.subheader("📋 Historique Général des Contrôles de Béton")
-
         try:
             res_all = (
                 supabase.table("suivi_controle_beton")
@@ -786,30 +942,8 @@ def show(supabase):
             )
             if res_all.data:
                 df_all = pd.DataFrame(res_all.data)
-                cols_display = [
-                    "id",
-                    "num_bl",
-                    "ouvrage",
-                    "classe_beton",
-                    "date_coulee",
-                    "echeance",
-                    "date_ecrasement",
-                    "repere_eprouvette",
-                    "forme",
-                    "force_kn",
-                    "fc_mpa",
-                    "technicien",
-                ]
-                cols_valid = [c for c in cols_display if c in df_all.columns]
-                st.dataframe(
-                    df_all[cols_valid],
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                st.dataframe(df_all, use_container_width=True, hide_index=True)
             else:
-                st.info(
-                    "Aucun enregistrement d'écrasement dans la base de"
-                    " données."
-                )
+                st.info("Aucun enregistrement d'écrasement dans la base.")
         except Exception as e:
-            st.error(f"Erreur lors du chargement de l'historique : {e}")
+            st.error(f"Erreur lors du chargement : {e}")
