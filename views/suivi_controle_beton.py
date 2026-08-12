@@ -44,11 +44,16 @@ def show(supabase):
         choix_label_p = st.selectbox("Sélectionner la fiche de bétonnage :", list(options_beton.keys()), key="prog_beton_select")
         beton_p = options_beton[choix_label_p]
 
-        # Récupération stricte et dynamique des champs
+        # Récupération dynamique des champs
         b_id = beton_p.get("id")
         num_bl_p = str(beton_p.get("num_bl") or "N/A")
         ouvrage_p = str(beton_p.get("ouvrage") or "N/A")
         classe_beton_p = str(beton_p.get("classe_beton") or beton_p.get("classe") or "N/A")
+        
+        # Récupération de l'affaissement et de la température depuis suivi_betonnage
+        affaissement_p = beton_p.get("affaissement") or beton_p.get("slump") or "N/A"
+        temp_beton_p = beton_p.get("temperature") or beton_p.get("temp_beton") or "N/A"
+
         date_coulee_raw = beton_p.get("date_coulee") or beton_p.get("date_livraison") or str(date.today())
         
         try:
@@ -57,9 +62,9 @@ def show(supabase):
             date_coulee_p = date.today()
 
         st.markdown("---")
-        col_p1, col_p2, col_p3 = st.columns(3)
         
-        # Ajout de clés uniques basées sur b_id pour forcer le rafraîchissement Streamlit
+        # Ligne 1 : Informations générales
+        col_p1, col_p2, col_p3 = st.columns(3)
         with col_p1:
             st.text_input("N° Bon de Livraison (BL)", value=num_bl_p, disabled=True, key=f"p_bl_{b_id}")
         with col_p2:
@@ -67,8 +72,17 @@ def show(supabase):
         with col_p3:
             st.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
 
+        # Ligne 2 : Affichage de l'affaissement et de la température de béton frais
+        st.markdown("##### 🌡️ Données Béton Frais (du prélèvement)")
+        col_frais1, col_frais2 = st.columns(2)
+        with col_frais1:
+            st.metric("Affaissement (Slump)", f"{affaissement_p} cm" if str(affaissement_p).replace('.', '', 1).isdigit() else str(affaissement_p))
+        with col_frais2:
+            st.metric("Température du Béton Frais", f"{temp_beton_p} °C" if str(temp_beton_p).replace('.', '', 1).isdigit() else str(temp_beton_p))
+
         st.markdown("---")
         
+        # Ligne 3 : Programmation de l'échéance
         col_e1, col_e2, col_e3, col_e4 = st.columns(4)
         with col_e1:
             echeance_p = st.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], index=2, key=f"p_echeance_{b_id}")
@@ -107,6 +121,8 @@ def show(supabase):
                     "num_bl": num_bl_p,
                     "ouvrage": ouvrage_p,
                     "classe_beton": classe_beton_p,
+                    "affaissement": str(affaissement_p),
+                    "temp_beton": str(temp_beton_p),
                     "date_coulee": str(date_coulee_p),
                     "echeance": echeance_p,
                     "date_ecrasement": str(date_ecrasement_prevue),
@@ -211,7 +227,7 @@ def show(supabase):
             if res_all.data:
                 df_all = pd.DataFrame(res_all.data)
                 cols_display = [
-                    "id", "num_bl", "ouvrage", "classe_beton", "date_coulee", 
+                    "id", "num_bl", "ouvrage", "classe_beton", "affaissement", "temp_beton", "date_coulee", 
                     "echeance", "date_ecrasement", "repere_eprouvette", "statut",
                     "masse", "force_kn", "fc_mpa", "technicien"
                 ]
