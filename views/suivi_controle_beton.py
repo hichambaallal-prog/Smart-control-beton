@@ -272,7 +272,7 @@ def show(supabase):
 
             st.markdown("##### 📝 Saisie des mesures pour le lot")
 
-            # Construction du DataFrame mis à jour
+            # Construction du DataFrame
             rows_list = []
             for ep in lot_selected:
                 sec = float(ep.get("section") or 176.71)
@@ -283,21 +283,21 @@ def show(supabase):
                     "ID": ep["id"],
                     "Repère": ep.get("repere_eprouvette", f"EP-{ep['id']}"),
                     "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
-                    "Section (cm²)": sec,  # Caché, conservé pour le calcul
+                    "_section": sec,  # Champ masqué pour le calcul
                     "Force (kN)": f_kn,
                     "Résistance Fc (MPa)": fc
                 })
 
             df_saisie = pd.DataFrame(rows_list)
 
-            # Éditeur de données
+            # Éditeur de données avec exclusion explicite de la section
             edited_df = st.data_editor(
                 df_saisie,
                 column_config={
                     "ID": st.column_config.NumberColumn("ID", disabled=True),
                     "Repère": st.column_config.TextColumn("Repère", disabled=True),
                     "Forme d'éprouvette": st.column_config.TextColumn("Forme d'éprouvette", disabled=True),
-                    "Section (cm²)": None,  # Masque la colonne de la vue
+                    "_section": None,  # Masqué de l'interface
                     "Force (kN)": st.column_config.NumberColumn(
                         "⚡ Force (kN)", 
                         help="Saisissez la force de rupture lue sur la presse", 
@@ -317,9 +317,9 @@ def show(supabase):
                 key="data_editor_ecrasement"
             )
 
-            # Recalcul dynamique de Fc en cas de saisie sur la force
+            # Recalcul dynamique de Fc
             edited_df["Résistance Fc (MPa)"] = edited_df.apply(
-                lambda row: round((row["Force (kN)"] * 10.0) / row["Section (cm²)"], 2) if row["Section (cm²)"] > 0 and row["Force (kN)"] > 0 else 0.0,
+                lambda row: round((row["Force (kN)"] * 10.0) / row["_section"], 2) if row["_section"] > 0 and row["Force (kN)"] > 0 else 0.0,
                 axis=1
             )
 
