@@ -51,8 +51,11 @@ def show(supabase):
         classe_beton_p = str(beton_p.get("classe_beton") or beton_p.get("classe") or "N/A")
         
         # Récupération automatique de l'affaissement et de la température
-        affaissement_p = str(beton_p.get("affaissement") or beton_p.get("slump") or "N/A")
+        affaissement_raw = str(beton_p.get("affaissement") or beton_p.get("slump") or "N/A")
         temp_beton_p = str(beton_p.get("temperature") or beton_p.get("temp_beton") or "N/A")
+
+        # Mise en forme de l'affaissement en mm
+        affaissement_p = f"{affaissement_raw} mm" if affaissement_raw != "N/A" else "N/A"
 
         date_coulee_raw = beton_p.get("date_coulee") or beton_p.get("date_livraison") or str(date.today())
         
@@ -72,10 +75,10 @@ def show(supabase):
         with col_p3:
             st.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
 
-        # Ligne 2 : Affaissement et Température remplis automatiquement
+        # Ligne 2 : Affaissement (mm) et Température (°C) remplis automatiquement
         col_p4, col_p5 = st.columns(2)
         with col_p4:
-            st.text_input("Affaissement / Slump (cm)", value=f"{affaissement_p} cm" if affaissement_p != "N/A" else "N/A", disabled=True, key=f"p_aff_{b_id}")
+            st.text_input("Affaissement / Slump (mm)", value=affaissement_p, disabled=True, key=f"p_aff_{b_id}")
         with col_p5:
             st.text_input("Température Béton Frais (°C)", value=f"{temp_beton_p} °C" if temp_beton_p != "N/A" else "N/A", disabled=True, key=f"p_temp_{b_id}")
 
@@ -99,9 +102,22 @@ def show(supabase):
 
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            forme_p = st.selectbox("Type / Forme d'éprouvette", ["Cylindrique 15x30", "Cubique 15x15", "Cylindrique 11x22"], key=f"p_forme_{b_id}")
+            forme_p = st.selectbox(
+                "Type / Forme d'éprouvette", 
+                ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200", "Cubique 150x150"], 
+                key=f"p_forme_{b_id}"
+            )
         with col_f2:
-            sect_def = 176.7 if "15x30" in forme_p else (225.0 if "15x15" in forme_p else 95.03)
+            # Calcul dynamique de la section théorique selon la forme choisie (en cm²)
+            if "150x300" in forme_p:
+                sect_def = 176.71
+            elif "160x320" in forme_p:
+                sect_def = 201.06
+            elif "100x200" in forme_p:
+                sect_def = 78.54
+            else:  # Cubique 150x150
+                sect_def = 225.00
+
             section_p = st.number_input("Section Théorique (cm²)", value=sect_def, format="%.2f", key=f"p_section_{b_id}")
 
         st.markdown("##### 🏷️ Repères des éprouvettes créées")
@@ -181,7 +197,7 @@ def show(supabase):
             col_in1, col_in2, col_in3 = st.columns(3)
 
             with col_in1:
-                section_val = float(item_saisie.get("section", 176.7))
+                section_val = float(item_saisie.get("section", 176.71))
                 section_reel = st.number_input("Section mesurée (cm²)", value=section_val, format="%.2f", key=f"s_section_{item_id}")
                 masse_g = st.number_input("Masse de l'éprouvette (g)", value=12500.0, step=10.0, key=f"s_masse_{item_id}")
 
