@@ -1,6 +1,214 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime, timedelta
+import io
+
+# Importations openpyxl pour le style et la mise en page A4 Excel
+import openpyxl
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+
+
+def generer_pv_excel(lot_data, infos_header):
+    """
+    Génère un fichier Excel mis en page au format A4 Portrait pour impression.
+    - Client : TGCC
+    - Projet : LGV CASA
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "PV Écrasement"
+
+    # --- CONFIGURATION IMPRESSION A4 PORTRAIT ---
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+    # Marges réduites
+    ws.margins.left = 0.5
+    ws.margins.right = 0.5
+    ws.margins.top = 0.6
+    ws.margins.bottom = 0.6
+
+    # --- STYLES ---
+    font_title = Font(name="Arial", size=15, bold=True, color="1F497D")
+    font_subtitle = Font(name="Arial", size=10, italic=True, color="595959")
+    font_header = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+    font_bold = Font(name="Arial", size=10, bold=True)
+    font_norm = Font(name="Arial", size=10)
+    
+    fill_navy = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
+    fill_sub_header = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+    fill_zebra = PatternFill(start_color="F9FAFB", end_color="F9FAFB", fill_type="solid")
+
+    thin_border_side = Side(border_style="thin", color="D9D9D9")
+    thick_bottom_side = Side(border_style="medium", color="1F497D")
+    
+    border_all = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+    border_box = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+
+    align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    align_left = Alignment(horizontal="left", vertical="center")
+    align_right = Alignment(horizontal="right", vertical="center")
+
+    # --- ENTÊTE DU DOCUMENT / TITRE ---
+    ws.merge_cells("A1:F1")
+    ws["A1"] = "LABORATOIRE DE CONTRÔLE DE QUALITÉ DES BÉTONS"
+    ws["A1"].font = font_title
+    ws["A1"].alignment = align_center
+
+    ws.merge_cells("A2:F2")
+    ws["A2"] = "PROCÈS-VERBAL D'ESSAI D'ÉCRASEMENT D'ÉPROUVETTES DE BÉTON (NF EN 12390-3)"
+    ws["A2"].font = Font(name="Arial", size=11, bold=True, color="333333")
+    ws["A2"].alignment = align_center
+
+    ws.row_dimensions[1].height = 25
+    ws.row_dimensions[2].height = 18
+
+    # Ligne de séparation
+    for col in range(1, 7):
+        ws.cell(row=3, column=col).border = Border(bottom=thick_bottom_side)
+
+    # --- BLOC INFORMATIONS PROJET & CLIENT (TGCC / LGV CASA) ---
+    ws.merge_cells("A5:F5")
+    ws["A5"] = " 📌 INFORMATIONS GÉNÉRALES DU PROJET & PRÉLÈVEMENT"
+    ws["A5"].font = font_header
+    ws["A5"].fill = fill_navy
+    ws["A5"].alignment = align_left
+    ws.row_dimensions[5].height = 20
+
+    info_grid = [
+        ("Client :", infos_header.get("client", "TGCC"), "Projet :", infos_header.get("projet", "LGV CASA")),
+        ("N° Bon de Livraison (BL) :", infos_header.get("num_bl", "N/A"), "Ouvrage / Élément :", infos_header.get("ouvrage", "N/A")),
+        ("Classe de Béton Spécifiée :", infos_header.get("classe_beton", "N/A"), "Échéance Visée :", infos_header.get("echeance", "N/A")),
+        ("Date de Coulée :", str(infos_header.get("date_coulee", "N/A")), "Date d'Écrasement :", str(infos_header.get("date_ecrasement", "N/A"))),
+        ("Affaissement / Slump :", str(infos_header.get("affaissement", "N/A")), "Température Béton :", str(infos_header.get("temperature", "N/A"))),
+        ("Opérateur / Technicien :", infos_header.get("technicien", "Technicien LPEE"), "Observations :", infos_header.get("observations", "-"))
+    ]
+
+    row_idx = 6
+    for label1, val1, label2, val2 in info_grid:
+        ws.cell(row=row_idx, column=1, value=label1).font = font_bold
+        ws.cell(row=row_idx, column=1).alignment = align_left
+        ws.cell(row=row_idx, column=1).fill = fill_sub_header
+
+        ws.cell(row=row_idx, column=2, value=val1).font = font_norm
+        ws.cell(row=row_idx, column=2).alignment = align_left
+
+        ws.cell(row=row_idx, column=4, value=label2).font = font_bold
+        ws.cell(row=row_idx, column=4).alignment = align_left
+        ws.cell(row=row_idx, column=4).fill = fill_sub_header
+
+        ws.merge_cells(start_row=row_idx, start_column=5, end_row=row_idx, end_column=6)
+        ws.cell(row=row_idx, column=5, value=val2).font = font_norm
+        ws.cell(row=row_idx, column=5).alignment = align_left
+
+        for c in range(1, 7):
+            ws.cell(row=row_idx, column=c).border = border_all
+        
+        ws.row_dimensions[row_idx].height = 18
+        row_idx += 1
+
+    row_idx += 1 # Espace
+
+    # --- TABLEAU DES RÉSULTATS D'ÉCRASEMENT ---
+    ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=6)
+    ws.cell(row=row_idx, column=1, value=" 💥 RÉSULTATS DES ESSAIS DE RUPTURE SUR ÉPROUVETTES").font = font_header
+    ws.cell(row=row_idx, column=1).fill = fill_navy
+    ws.cell(row=row_idx, column=1).alignment = align_left
+    ws.row_dimensions[row_idx].height = 20
+    row_idx += 1
+
+    headers = ["N°", "Repère Éprouvette", "Type / Forme", "Section (cm²)", "Force F (kN)", "Résistance Fc (MPa)"]
+    for col_i, h in enumerate(headers, 1):
+        cell = ws.cell(row=row_idx, column=col_i, value=h)
+        cell.font = font_header
+        cell.fill = fill_navy
+        cell.alignment = align_center
+        cell.border = border_all
+    
+    ws.row_dimensions[row_idx].height = 22
+    row_idx += 1
+
+    start_data_row = row_idx
+    for i, item in enumerate(lot_data, 1):
+        sec = float(item.get("section") or 176.71)
+        f_kn = float(item.get("force_kn") or 0.0)
+        fc_mpa = float(item.get("fc_mpa") or 0.0)
+
+        ws.cell(row=row_idx, column=1, value=i).alignment = align_center
+        ws.cell(row=row_idx, column=2, value=str(item.get("repere_eprouvette", ""))).alignment = align_left
+        ws.cell(row=row_idx, column=3, value=str(item.get("forme", ""))).alignment = align_center
+        
+        c_sec = ws.cell(row=row_idx, column=4, value=sec)
+        c_sec.number_format = "0.00"
+        c_sec.alignment = align_right
+
+        c_f = ws.cell(row=row_idx, column=5, value=f_kn)
+        c_f.number_format = "0.0"
+        c_f.alignment = align_right
+
+        c_fc = ws.cell(row=row_idx, column=6, value=fc_mpa)
+        c_fc.number_format = "0.0"
+        c_fc.alignment = align_right
+
+        # Style zebra & bordures
+        current_fill = fill_zebra if i % 2 == 0 else PatternFill(fill_type=None)
+        for c in range(1, 7):
+            cell = ws.cell(row=row_idx, column=c)
+            cell.font = font_norm
+            cell.border = border_all
+            if current_fill.fill_type:
+                cell.fill = current_fill
+
+        ws.row_dimensions[row_idx].height = 18
+        row_idx += 1
+
+    end_data_row = row_idx - 1
+
+    # --- LIGNE STATISTIQUE : MOYENNE ---
+    ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5)
+    ws.cell(row=row_idx, column=1, value="RÉSISTANCE MOYENNE DU LOT Fc,moy (MPa) :").font = font_bold
+    ws.cell(row=row_idx, column=1).alignment = align_right
+    ws.cell(row=row_idx, column=1).fill = fill_sub_header
+
+    cell_avg = ws.cell(row=row_idx, column=6, value=f"=AVERAGE(F{start_data_row}:F{end_data_row})")
+    cell_avg.font = Font(name="Arial", size=11, bold=True, color="1F497D")
+    cell_avg.number_format = "0.0"
+    cell_avg.alignment = align_right
+    cell_avg.fill = fill_sub_header
+
+    for c in range(1, 7):
+        ws.cell(row=row_idx, column=c).border = border_all
+    
+    ws.row_dimensions[row_idx].height = 22
+    row_idx += 2
+
+    # --- ZONE DE SIGNATURE ---
+    ws.cell(row=row_idx, column=1, value="Le Technicien d'Essai :").font = font_bold
+    ws.merge_cells(start_row=row_idx, start_column=4, end_row=row_idx, end_column=6)
+    ws.cell(row=row_idx, column=4, value="Le Responsable de Laboratoire / Validation :").font = font_bold
+    ws.cell(row=row_idx, column=4).alignment = align_right
+
+    # LARGOUR AUTOMATIQUE DES COLONNES AJUSTÉE AU A4 PORTRAIT
+    col_widths = {
+        'A': 6,   # N°
+        'B': 24,  # Repère Éprouvette
+        'C': 22,  # Forme
+        'D': 15,  # Section
+        'E': 15,  # Force
+        'F': 20   # Fc
+    }
+    for col_letter, width in col_widths.items():
+        ws.column_dimensions[col_letter].width = width
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
 
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
@@ -214,7 +422,7 @@ def show(supabase):
     # PHASE 2 : SAISIE GROUPÉE PAR ÉCHÉANCE / AGE
     # =========================================================
     with tab_saisie:
-        st.subheader("💥 2. Saisie Groupée des Résultats d'Écrasement")
+        st.subheader("💥 2. Saisie Groupée & Édition des PV d'Écrasement")
 
         eprouvettes_en_attente = []
         try:
@@ -243,15 +451,15 @@ def show(supabase):
                     groupes_lots[cle_groupe] = []
                 groupes_lots[cle_groupe].append(ep)
 
-            choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes à écraser :", list(groupes_lots.keys()), key="select_lot_saisie")
+            choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes :", list(groupes_lots.keys()), key="select_lot_saisie")
             lot_selected = groupes_lots[choix_lot]
 
             sample = lot_selected[0]
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
-            col_l1.metric("Ouvrage", str(sample.get("ouvrage")))
-            col_l2.metric("Classe Béton", str(sample.get("classe_beton")))
-            col_l3.metric("Échéance Visée", str(sample.get("echeance")))
-            col_l4.metric("Nombre dans le lot", f"{len(lot_selected)} éprouvettes")
+            col_l1.metric("Client", "TGCC")
+            col_l2.metric("Projet", "LGV CASA")
+            col_l3.metric("Ouvrage", str(sample.get("ouvrage")))
+            col_l4.metric("Échéance Visée", str(sample.get("echeance")))
 
             st.markdown("---")
             
@@ -263,10 +471,8 @@ def show(supabase):
 
             st.markdown("##### 📝 Saisie des mesures pour le lot")
 
-            # --- INITIALISATION ET MISE À JOUR DANS SESSION_STATE ---
             lot_key = f"df_lot_{choix_lot}"
             
-            # 1. Construction du DataFrame initial s'il n'existe pas encore dans session_state
             if lot_key not in st.session_state:
                 rows_list = []
                 for ep in lot_selected:
@@ -284,7 +490,7 @@ def show(supabase):
                     })
                 st.session_state[lot_key] = pd.DataFrame(rows_list)
 
-            # 2. Callback pour recalculer la résistance en temps réel après édition
+            # Callback pour recalculer Fc = F * 10 / S
             def update_fc():
                 changes = st.session_state.data_editor_ecrasement.get("edited_rows", {})
                 for row_idx, updated_cols in changes.items():
@@ -292,21 +498,19 @@ def show(supabase):
                         new_force = float(updated_cols["Force (kN)"] or 0.0)
                         st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
                         
-                        # Formule Fc = F * 10 / S
                         sec = float(st.session_state[lot_key].at[row_idx, "_section"])
                         if sec > 0 and new_force > 0:
                             st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1)
                         else:
                             st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = 0.0
 
-            # 3. Affichage du tableau interactif
             edited_df = st.data_editor(
                 st.session_state[lot_key],
                 column_config={
                     "ID": st.column_config.NumberColumn("ID", disabled=True),
                     "Repère": st.column_config.TextColumn("Repère", disabled=True),
                     "Forme d'éprouvette": st.column_config.TextColumn("Forme d'éprouvette", disabled=True),
-                    "_section": None,  # Masqué de l'interface
+                    "_section": None,
                     "Force (kN)": st.column_config.NumberColumn(
                         "⚡ Force (kN)", 
                         help="Saisissez la force de rupture lue sur la presse", 
@@ -327,7 +531,6 @@ def show(supabase):
                 on_change=update_fc
             )
 
-            # Résumé rapide des résultats
             df_actuel = st.session_state[lot_key]
             forces_valides = df_actuel[df_actuel["Force (kN)"] > 0]
             if not forces_valides.empty:
@@ -336,30 +539,69 @@ def show(supabase):
             else:
                 st.warning("👈 Veuillez remplir la colonne **Force (kN)** pour chaque éprouvette.")
 
-            # Bouton d'enregistrement pour TOUT LE LOT
-            if st.button("💾 Valider et Enregistrer Tout le Lot", type="primary", use_container_width=True):
-                if (df_actuel["Force (kN)"] == 0).any():
-                    st.error("❌ Attention : Une ou plusieurs éprouvettes ont encore une force de 0.0 kN. Veuillez compléter les saisies.")
-                else:
-                    succes_lot = 0
-                    for _, row in df_actuel.iterrows():
-                        update_payload = {
-                            "force_kn": float(row["Force (kN)"]),
-                            "fc_mpa": float(row["Résistance Fc (MPa)"]),
-                            "technicien": tech_global,
-                            "observations": obs_globale
-                        }
-                        try:
-                            supabase.table("suivi_controle_beton").update(update_payload).eq("id", int(row["ID"])).execute()
-                            succes_lot += 1
-                        except Exception as e:
-                            st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
+            col_b1, col_b2 = st.columns(2)
+            
+            with col_b1:
+                if st.button("💾 Valider et Enregistrer Tout le Lot", type="primary", use_container_width=True):
+                    if (df_actuel["Force (kN)"] == 0).any():
+                        st.error("❌ Attention : Une ou plusieurs éprouvettes ont encore une force de 0.0 kN.")
+                    else:
+                        succes_lot = 0
+                        for _, row in df_actuel.iterrows():
+                            update_payload = {
+                                "force_kn": float(row["Force (kN)"]),
+                                "fc_mpa": float(row["Résistance Fc (MPa)"]),
+                                "technicien": tech_global,
+                                "observations": obs_globale
+                            }
+                            try:
+                                supabase.table("suivi_controle_beton").update(update_payload).eq("id", int(row["ID"])).execute()
+                                succes_lot += 1
+                            except Exception as e:
+                                st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
 
-                    if succes_lot == len(df_actuel):
-                        # Réinitialisation du session_state du lot après sauvegarde réussie
-                        del st.session_state[lot_key]
-                        st.success(f"✅ Lot de {succes_lot} éprouvettes enregistré avec succès !")
-                        st.rerun()
+                        if succes_lot == len(df_actuel):
+                            del st.session_state[lot_key]
+                            st.success(f"✅ Lot de {succes_lot} éprouvettes enregistré avec succès !")
+                            st.rerun()
+
+            with col_b2:
+                # Préparation des données pour le PV Excel
+                export_data = []
+                for _, row in df_actuel.iterrows():
+                    export_data.append({
+                        "repere_eprouvette": row["Repère"],
+                        "forme": row["Forme d'éprouvette"],
+                        "section": row["_section"],
+                        "force_kn": row["Force (kN)"],
+                        "fc_mpa": row["Résistance Fc (MPa)"]
+                    })
+
+                infos_header = {
+                    "client": "TGCC",
+                    "projet": "LGV CASA",
+                    "num_bl": sample.get("num_bl", "N/A"),
+                    "ouvrage": sample.get("ouvrage", "N/A"),
+                    "classe_beton": sample.get("classe_beton", "N/A"),
+                    "echeance": sample.get("echeance", "N/A"),
+                    "date_coulee": sample.get("date_coulee", "N/A"),
+                    "date_ecrasement": sample.get("date_ecrasement", "N/A"),
+                    "affaissement": sample.get("affaissement", "N/A"),
+                    "temperature": sample.get("temperature", "N/A"),
+                    "technicien": tech_global,
+                    "observations": obs_globale
+                }
+
+                excel_file = generer_pv_excel(export_data, infos_header)
+                filename = f"PV_Ecrasement_TGCC_LGV_CASA_{sample.get('num_bl', 'BL')}_{sample.get('echeance', '28j')}.xlsx"
+                
+                st.download_button(
+                    label="📄 Télécharger le PV d'écrasement (Excel A4)",
+                    data=excel_file,
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
 
     # =========================================================
     # HISTORIQUE ET SUIVI GLOBAL
