@@ -118,7 +118,8 @@ def show(supabase):
             else:  # Cubique 150x150
                 sect_def = 225.00
 
-            section_p = st.number_input("Section Théorique (cm²)", value=sect_def, format="%.2f", key=f"p_section_{b_id}")
+            # Champ désactivé (désormais non modifiable)
+            section_p = st.number_input("Section Théorique (cm²)", value=sect_def, format="%.2f", disabled=True, key=f"p_section_{b_id}")
 
         st.markdown("##### 🏷️ Repères des éprouvettes créées")
         reperes_p = []
@@ -143,7 +144,7 @@ def show(supabase):
                     "date_ecrasement": str(date_ecrasement_prevue),
                     "repere_eprouvette": rep,
                     "forme": forme_p,
-                    "section": float(section_p),
+                    "section": float(sect_def),
                     "statut": "Programmé"
                 }
                 try:
