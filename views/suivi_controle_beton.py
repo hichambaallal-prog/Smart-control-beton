@@ -7,7 +7,12 @@ import streamlit as st
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.page_break import PageMargins  # Import corrigé pour les marges
+
+# Importation sécurisée de PageMargins selon la version d'openpyxl
+try:
+    from openpyxl.worksheet.margins import PageMargins
+except ImportError:
+    from openpyxl.worksheet.page_break import PageMargins
 
 
 def generer_pv_excel(lot_data, infos_header):
@@ -27,7 +32,7 @@ def generer_pv_excel(lot_data, infos_header):
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
-    # Marges réduites corrigées
+    # Marges réduites sécurisées
     ws.page_margins = PageMargins(
         left=0.5, right=0.5, top=0.6, bottom=0.6, header=0.3, footer=0.3
     )
