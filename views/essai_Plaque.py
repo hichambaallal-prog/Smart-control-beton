@@ -8,7 +8,7 @@ def show(supabase):
     # ---------------------------------------------------------
     # 1. FORMULAIRE DE SAISIE
     # ---------------------------------------------------------
-    st.subheader("Saisie d'un essai")
+    st.subheader("📝 Saisie d'un nouvel essai")
 
     col1, col2, col3 = st.columns(3)
 
@@ -21,7 +21,7 @@ def show(supabase):
     with col2:
         norme = st.selectbox("Norme de référence", ["NF P 94-117-1", "LPEE-CTR-CSB"], key="plaque_norme")
         pk_profil = st.text_input("PK / Profil", value="PK 1+200", key="plaque_pk")
-        couche = st.selectbox("Couche testée", ["Forme (PST)", "Fondation (GNT)", "Base", "Soustraitment"], key="plaque_couche")
+        couche = st.selectbox("Couche testée", ["Forme (PST)", "Fondation (GNT)", "Base", "Sous-traitement"], key="plaque_couche")
         nature_materiau = st.text_input("Nature du matériau", value="GNT 0/31.5 Classée B2", key="plaque_mat")
 
     with col3:
@@ -43,15 +43,17 @@ def show(supabase):
     res_col1, res_col2, res_col3 = st.columns(3)
     res_col1.metric("EV1 (MPa)", f"{ev1:.2f}")
     res_col2.metric("EV2 (MPa)", f"{ev2:.2f}")
-    res_col3.metric("Coefficient K (EV2/EV1)", f"{k_ratio:.2f}")
+    
+    # Indicateur visuel sur le ratio K
+    k_delta = "Conforme (K ≤ 2.0)" if k_ratio <= 2.0 else "Attention (K > 2.0)"
+    res_col3.metric("Coefficient K (EV2/EV1)", f"{k_ratio:.2f}", delta=k_delta, delta_color="normal" if k_ratio <= 2.0 else "inverse")
 
     observations = st.text_area("Observations / Remarques", value="Portance conforme aux exigences du CPT.", key="plaque_obs")
 
     # ---------------------------------------------------------
-    # 3. ENREGISTREMENT SÉCURISÉ (FILTRAGE DYNAMIQUE DES COLONNES)
+    # 3. ENREGISTREMENT SÉCURISÉ
     # ---------------------------------------------------------
-    if st.button("💾 Enregistrer l'essai", key="btn_enregistrer_plaque"):
-        # Dictionnaire complet de toutes les données saisies
+    if st.button("💾 Enregistrer l'essai", key="btn_enregistrer_plaque", type="primary", use_container_width=True):
         payload = {
             "date_essai": str(date_essai),
             "client": client,
@@ -59,7 +61,7 @@ def show(supabase):
             "emplacement": emplacement,
             "norme": norme,
             "pk_profil": pk_profil,
-            "pkl": pk_profil, # Pour compatibilité
+            "pkl": pk_profil,
             "couche": couche,
             "nature_materiau": nature_materiau,
             "z1": float(z1),
@@ -73,46 +75,37 @@ def show(supabase):
         }
 
         try:
-            # 1. On interroge Supabase avec 1 ligne pour détecter les colonnes réellement existantes
             sample_query = supabase.table("essais_plaque").select("*").limit(1).execute()
             
-            # 2. Si la table a des colonnes retournées ou définies dans le premier enregistrement
             if sample_query.data and len(sample_query.data) > 0:
                 valid_columns = set(sample_query.data[0].keys())
-                # Filtrer le payload pour ne garder QUE les colonnes existantes
                 safe_payload = {k: v for k, v in payload.items() if k in valid_columns}
             else:
-                # Si la table est totalement vide, on fait un essai en retirant les clés problématiques récurrentes si besoin
                 safe_payload = payload
 
-            # 3. Insertion
             supabase.table("essais_plaque").insert(safe_payload).execute()
             st.success("✅ Essai enregistré avec succès !")
             st.rerun()
 
         except Exception as e:
-            err_msg = str(e)
-            st.error(f"Erreur d'enregistrement : {err_msg}")
-            st.info("💡 Résolution rapide : Exécutez le script SQL ci-dessous dans Supabase SQL Editor pour ajouter toutes les colonnes manquantes.")
+            st.error(f"Erreur lors de l'enregistrement : {e}")
 
     # ---------------------------------------------------------
-    # 4. HISTORIQUE & AFFICHER LA SYNTHÈSE
+    # 4. HISTORIQUE DES ESSAIS
     # ---------------------------------------------------------
     st.markdown("---")
-    st.subheader("📋 Historique des Essais à la Plaque Enregistrés")
+    st.subheader("📋 Historique des Essais Enregistrés")
 
     try:
         res = supabase.table("essais_plaque").select("*").order("id", desc=True).execute()
         if res.data and len(res.data) > 0:
             df = pd.DataFrame(res.data)
             
-            # Nettoyage des colonnes techniques
-            cols_to_drop = [c for c in ["id", "created_at"] if c in df.columns]
+            # Nettoyage des colonnes techniques d'affichage
+            cols_to_drop = [c for c in ["created_at"] if c in df.columns]
             df_display = df.drop(columns=cols_to_drop)
 
-            # Re-numérotation lisible
-            df_display.index = range(1, len(df_display) + 1)
-            st.dataframe(df_display, use_container_width=True)
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
         else:
             st.info("Aucun essai à la plaque n'a encore été enregistré.")
     except Exception as e:
