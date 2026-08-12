@@ -134,7 +134,8 @@ def show(supabase):
                     "k": float(k_val)
                 }
 
-                supabase.table("essai_plaque").insert(data_payload).execute()
+                # Correction : table "essais_plaque" avec un 's'
+                supabase.table("essais_plaque").insert(data_payload).execute()
                 st.success("✅ Essai à la plaque enregistré avec succès !")
                 st.rerun()
 
@@ -148,7 +149,8 @@ def show(supabase):
     st.markdown("### 📋 Historique des Essais à la Plaque Enregistrés")
 
     try:
-        res = supabase.table("essai_plaque").select("*").order("date_essai", desc=True).execute()
+        # Correction : table "essais_plaque" avec un 's'
+        res = supabase.table("essais_plaque").select("*").order("date_essai", desc=True).execute()
         data = res.data if res else []
 
         if data:
@@ -197,7 +199,6 @@ def show(supabase):
                 with col_ed:
                     with st.expander("📝 Modifier cet essai (Tous les champs)"):
                         with st.form("edit_form_saisie_complet"):
-                            # Conversion sécurisée de la date existante
                             try:
                                 def_date_essai = datetime.strptime(str(selected_item.get("date_essai", date.today())), "%Y-%m-%d").date()
                             except:
@@ -218,12 +219,12 @@ def show(supabase):
                             
                             if st.form_submit_button("💾 Enregistrer toutes les modifications"):
                                 try:
-                                    # Recalcul automatique de EV1, EV2 et K
                                     calc_ev1 = round(112.5 / (new_z1 * 2), 2) if new_z1 > 0 else 0.0
                                     calc_ev2 = round(90.0 / (new_z2 * 2), 2) if new_z2 > 0 else 0.0
                                     calc_k = round(calc_ev2 / calc_ev1, 2) if calc_ev1 > 0 else 0.0
 
-                                    supabase.table("essai_plaque").update({
+                                    # Correction : table "essais_plaque" avec un 's'
+                                    supabase.table("essais_plaque").update({
                                         "date_essai": str(new_date_essai),
                                         "technicien": new_technicien,
                                         "couche": new_couche,
@@ -245,7 +246,8 @@ def show(supabase):
                     st.markdown("##### ⚠️ Suppression")
                     if st.button("🗑️ Supprimer définitivement", type="primary", key="btn_supprimer_plaque_admin"):
                         try:
-                            supabase.table("essai_plaque").delete().eq("id", selected_item["id"]).execute()
+                            # Correction : table "essais_plaque" avec un 's'
+                            supabase.table("essais_plaque").delete().eq("id", selected_item["id"]).execute()
                             st.success("Essai supprimé avec succès.")
                             st.rerun()
                         except Exception as e:
