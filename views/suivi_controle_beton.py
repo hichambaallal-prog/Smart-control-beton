@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # Création de deux onglets distincts
+    # Création de trois onglets distincts
     tab_prog, tab_saisie, tab_hist = st.tabs([
         "📅 Phase 1 : Programmation", 
         "💥 Phase 2 : Saisie des Écrasements", 
@@ -31,7 +31,7 @@ def show(supabase):
         return
 
     options_beton = {
-        f"BL: {b.get('num_bl', 'N/A')} | Ouvrage: {b.get('ouvrage', 'N/A')} | Date: {b.get('date_coulee', b.get('date_livraison', 'N/A'))} | Classe: {b.get('classe_beton', b.get('classe', 'N/A'))}": b
+        f"ID #{b['id']} | BL: {b.get('num_bl', 'N/A')} | Ouvrage: {b.get('ouvrage', 'N/A')} | Date: {b.get('date_coulee', b.get('date_livraison', 'N/A'))} | Classe: {b.get('classe_beton', b.get('classe', 'N/A'))}": b
         for b in betonnages_preleves
     }
 
@@ -44,8 +44,11 @@ def show(supabase):
         choix_label_p = st.selectbox("Sélectionner la fiche de bétonnage :", list(options_beton.keys()), key="prog_beton_select")
         beton_p = options_beton[choix_label_p]
 
-        # Classe dynamique issue du suivi de bétonnage
-        classe_beton_p = beton_p.get("classe_beton") or beton_p.get("classe") or "C25/30"
+        # Récupération stricte et dynamique des champs
+        b_id = beton_p.get("id")
+        num_bl_p = str(beton_p.get("num_bl") or "N/A")
+        ouvrage_p = str(beton_p.get("ouvrage") or "N/A")
+        classe_beton_p = str(beton_p.get("classe_beton") or beton_p.get("classe") or "N/A")
         date_coulee_raw = beton_p.get("date_coulee") or beton_p.get("date_livraison") or str(date.today())
         
         try:
@@ -53,53 +56,56 @@ def show(supabase):
         except Exception:
             date_coulee_p = date.today()
 
+        st.markdown("---")
         col_p1, col_p2, col_p3 = st.columns(3)
+        
+        # Ajout de clés uniques basées sur b_id pour forcer le rafraîchissement Streamlit
         with col_p1:
-            st.text_input("N° Bon de Livraison (BL)", value=str(beton_p.get("num_bl", "")), disabled=True, key="p_bl")
+            st.text_input("N° Bon de Livraison (BL)", value=num_bl_p, disabled=True, key=f"p_bl_{b_id}")
         with col_p2:
-            st.text_input("Ouvrage / Élément", value=str(beton_p.get("ouvrage", "")), disabled=True, key="p_ouv")
+            st.text_input("Ouvrage / Élément", value=ouvrage_p, disabled=True, key=f"p_ouv_{b_id}")
         with col_p3:
-            st.text_input("Classe de Béton Spécifiée", value=str(classe_beton_p), disabled=True, key="p_classe")
+            st.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
 
         st.markdown("---")
         
         col_e1, col_e2, col_e3, col_e4 = st.columns(4)
         with col_e1:
-            echeance_p = st.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], index=2, key="p_echeance")
+            echeance_p = st.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], index=2, key=f"p_echeance_{b_id}")
         
         jours_dict = {"3 jours": 3, "7 jours": 7, "28 jours": 28, "90 jours": 90}
         nb_j = jours_dict.get(echeance_p, 28)
         date_prevue_auto = date_coulee_p + timedelta(days=nb_j)
 
         with col_e2:
-            st.date_input("Date de Coulée", value=date_coulee_p, disabled=True, key="p_date_coul")
+            st.date_input("Date de Coulée", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
         with col_e3:
-            date_ecrasement_prevue = st.date_input("Date d'Écrasement Prévue", value=date_prevue_auto, key="p_date_ecras")
+            date_ecrasement_prevue = st.date_input("Date d'Écrasement Prévue", value=date_prevue_auto, key=f"p_date_ecras_{b_id}")
         with col_e4:
-            nb_eprouvettes_p = st.number_input("Nombre d'éprouvettes", min_value=1, max_value=6, value=2, step=1, key="p_nb_ep")
+            nb_eprouvettes_p = st.number_input("Nombre d'éprouvettes", min_value=1, max_value=6, value=2, step=1, key=f"p_nb_ep_{b_id}")
 
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            forme_p = st.selectbox("Type / Forme d'éprouvette", ["Cylindrique 15x30", "Cubique 15x15", "Cylindrique 11x22"], key="p_forme")
+            forme_p = st.selectbox("Type / Forme d'éprouvette", ["Cylindrique 15x30", "Cubique 15x15", "Cylindrique 11x22"], key=f"p_forme_{b_id}")
         with col_f2:
             sect_def = 176.7 if "15x30" in forme_p else (225.0 if "15x15" in forme_p else 95.03)
-            section_p = st.number_input("Section Théorique (cm²)", value=sect_def, format="%.2f", key="p_section")
+            section_p = st.number_input("Section Théorique (cm²)", value=sect_def, format="%.2f", key=f"p_section_{b_id}")
 
         st.markdown("##### 🏷️ Repères des éprouvettes créées")
         reperes_p = []
         cols_rep = st.columns(int(nb_eprouvettes_p))
         for i in range(int(nb_eprouvettes_p)):
             with cols_rep[i]:
-                rep_val = st.text_input(f"Repère #{i+1}", value=f"E{i+1}-{echeance_p.replace(' ', '')}", key=f"prog_rep_{i}")
+                rep_val = st.text_input(f"Repère #{i+1}", value=f"E{i+1}-{echeance_p.replace(' ', '')}", key=f"prog_rep_{b_id}_{i}")
                 reperes_p.append(rep_val)
 
-        if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key="btn_save_prog"):
+        if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}"):
             succes_cnt = 0
             for rep in reperes_p:
                 payload_prog = {
-                    "betonnage_id": beton_p.get("id"),
-                    "num_bl": beton_p.get("num_bl"),
-                    "ouvrage": beton_p.get("ouvrage"),
+                    "betonnage_id": b_id,
+                    "num_bl": num_bl_p,
+                    "ouvrage": ouvrage_p,
                     "classe_beton": classe_beton_p,
                     "date_coulee": str(date_coulee_p),
                     "echeance": echeance_p,
@@ -107,7 +113,7 @@ def show(supabase):
                     "repere_eprouvette": rep,
                     "forme": forme_p,
                     "section": float(section_p),
-                    "statut": "Programmé"  # Statut pour indiquer qu'il attend l'écrasement
+                    "statut": "Programmé"
                 }
                 try:
                     res = supabase.table("suivi_controle_beton").insert(payload_prog).execute()
@@ -126,12 +132,10 @@ def show(supabase):
     with tab_saisie:
         st.subheader("💥 2. Saisie des Résultats d'Écrasement")
 
-        # Récupération des éprouvettes programmées ou en attente
         eprouvettes_en_attente = []
         try:
             res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
             if res_att.data:
-                # Filtrer celles qui n'ont pas encore de force saisie ou statut 'Programmé'
                 eprouvettes_en_attente = [
                     e for e in res_att.data 
                     if e.get("force_kn") is None or e.get("statut") == "Programmé" or float(e.get("force_kn", 0)) == 0
@@ -140,7 +144,7 @@ def show(supabase):
             st.error(f"Erreur de chargement des essais en attente : {e}")
 
         if not eprouvettes_en_attente:
-            st.info("👍 Aucune éprouvette en attente d'écrasement. Tout est à jour !")
+            st.info("👍 Aucune éprouvette en attente d'écrasement.")
         else:
             options_saisie = {
                 f"ID #{e['id']} | BL: {e.get('num_bl')} | Repère: {e.get('repere_eprouvette')} | Échéance: {e.get('echeance')} ({e.get('date_ecrasement')})": e
@@ -149,6 +153,7 @@ def show(supabase):
 
             selected_saisie_label = st.selectbox("Sélectionner l'éprouvette à écraser :", list(options_saisie.keys()), key="saisie_select")
             item_saisie = options_saisie[selected_saisie_label]
+            item_id = item_saisie["id"]
 
             st.markdown("---")
             col_s1, col_s2, col_s3, col_s4 = st.columns(4)
@@ -162,23 +167,22 @@ def show(supabase):
 
             with col_in1:
                 section_val = float(item_saisie.get("section", 176.7))
-                section_reel = st.number_input("Section mesurée (cm²)", value=section_val, format="%.2f", key="s_section")
-                masse_g = st.number_input("Masse de l'éprouvette (g)", value=12500.0, step=10.0, key="s_masse")
+                section_reel = st.number_input("Section mesurée (cm²)", value=section_val, format="%.2f", key=f"s_section_{item_id}")
+                masse_g = st.number_input("Masse de l'éprouvette (g)", value=12500.0, step=10.0, key=f"s_masse_{item_id}")
 
             with col_in2:
-                force_kn = st.number_input("Force de rupture (kN)", value=500.0, step=5.0, format="%.1f", key="s_force")
-                tech_saisie = st.text_input("Technicien / Opérateur", value="Technicien LPEE", key="s_tech")
+                force_kn = st.number_input("Force de rupture (kN)", value=500.0, step=5.0, format="%.1f", key=f"s_force_{item_id}")
+                tech_saisie = st.text_input("Technicien / Opérateur", value="Technicien LPEE", key=f"s_tech_{item_id}")
 
-            # Calcul Fc (MPa) = Force (kN) * 10 / Section (cm²)
             fc_calc = round((force_kn * 10.0) / section_reel, 2) if section_reel > 0 else 0.0
 
             with col_in3:
                 st.markdown("##### Résultat du calcul")
                 st.metric("Résistance Fc", f"{fc_calc:.2f} MPa")
 
-            obs_saisie = st.text_area("Observations / Mode de rupture", value="Rupture satisfaisante (NF EN 12390-3).", key="s_obs")
+            obs_saisie = st.text_area("Observations / Mode de rupture", value="Rupture satisfaisante (NF EN 12390-3).", key=f"s_obs_{item_id}")
 
-            if st.button("💾 Valider et Enregistrer l'Écrasement", type="primary", use_container_width=True, key="btn_save_saisie"):
+            if st.button("💾 Valider et Enregistrer l'Écrasement", type="primary", use_container_width=True, key=f"btn_save_saisie_{item_id}"):
                 update_payload = {
                     "section": section_reel,
                     "masse": masse_g,
@@ -186,11 +190,11 @@ def show(supabase):
                     "fc_mpa": fc_calc,
                     "technicien": tech_saisie,
                     "observations": obs_saisie,
-                    "statut": "Écrasé"  # Marqué comme terminé
+                    "statut": "Écrasé"
                 }
 
                 try:
-                    supabase.table("suivi_controle_beton").update(update_payload).eq("id", item_saisie["id"]).execute()
+                    supabase.table("suivi_controle_beton").update(update_payload).eq("id", item_id).execute()
                     st.success(f"✅ Écrasement validé pour {item_saisie.get('repere_eprouvette')} : Fc = {fc_calc} MPa !")
                     st.rerun()
                 except Exception as e:
