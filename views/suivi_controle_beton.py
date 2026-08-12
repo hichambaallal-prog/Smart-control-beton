@@ -213,7 +213,8 @@ def show(supabase):
 
             with col_in1:
                 section_val = float(item_saisie.get("section", 176.71))
-                section_reel = st.number_input("Section mesurée (cm²)", value=section_val, format="%.2f", key=f"s_section_{item_id}")
+                # SECTION DÉSACTIVÉE (disabled=True)
+                section_reel = st.number_input("Section mesurée (cm²)", value=section_val, format="%.2f", disabled=True, key=f"s_section_{item_id}")
                 masse_g = st.number_input("Masse de l'éprouvette (g)", value=12500.0, step=10.0, key=f"s_masse_{item_id}")
 
             with col_in2:
