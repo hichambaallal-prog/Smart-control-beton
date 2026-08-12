@@ -272,26 +272,32 @@ def show(supabase):
 
             st.markdown("##### 📝 Saisie des mesures pour le lot")
 
-            # Initialisation de la force à 0.0
-            df_saisie = pd.DataFrame([
-                {
+            # Construction du DataFrame mis à jour
+            rows_list = []
+            for ep in lot_selected:
+                sec = float(ep.get("section") or 176.71)
+                f_kn = float(ep.get("force_kn") or 0.0)
+                fc = round((f_kn * 10.0) / sec, 2) if sec > 0 and f_kn > 0 else 0.0
+                
+                rows_list.append({
                     "ID": ep["id"],
                     "Repère": ep.get("repere_eprouvette", f"EP-{ep['id']}"),
-                    "Section (cm²)": float(ep.get("section", 176.71)),
-                    "Masse (g)": float(ep.get("masse") or 12500.0),
-                    "Force (kN)": 0.0,
-                }
-                for ep in lot_selected
-            ])
+                    "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
+                    "Section (cm²)": sec,  # Caché, conservé pour le calcul
+                    "Force (kN)": f_kn,
+                    "Résistance Fc (MPa)": fc
+                })
 
-            # Éditeur de données configuré pour 1 chiffre après la virgule (format="%.1f")
+            df_saisie = pd.DataFrame(rows_list)
+
+            # Éditeur de données
             edited_df = st.data_editor(
                 df_saisie,
                 column_config={
                     "ID": st.column_config.NumberColumn("ID", disabled=True),
                     "Repère": st.column_config.TextColumn("Repère", disabled=True),
-                    "Section (cm²)": st.column_config.NumberColumn("Section (cm²)", format="%.2f"),
-                    "Masse (g)": st.column_config.NumberColumn("Masse (g)", min_value=1000.0, max_value=30000.0, step=10.0, format="%.1f"),
+                    "Forme d'éprouvette": st.column_config.TextColumn("Forme d'éprouvette", disabled=True),
+                    "Section (cm²)": None,  # Masque la colonne de la vue
                     "Force (kN)": st.column_config.NumberColumn(
                         "⚡ Force (kN)", 
                         help="Saisissez la force de rupture lue sur la presse", 
@@ -300,14 +306,19 @@ def show(supabase):
                         step=0.1, 
                         format="%.1f"
                     ),
+                    "Résistance Fc (MPa)": st.column_config.NumberColumn(
+                        "💥 Résistance Fc (MPa)", 
+                        disabled=True, 
+                        format="%.1f"
+                    ),
                 },
                 use_container_width=True,
                 hide_index=True,
                 key="data_editor_ecrasement"
             )
 
-            # Calcul en temps réel des résistances Fc
-            edited_df["Fc (MPa)"] = edited_df.apply(
+            # Recalcul dynamique de Fc en cas de saisie sur la force
+            edited_df["Résistance Fc (MPa)"] = edited_df.apply(
                 lambda row: round((row["Force (kN)"] * 10.0) / row["Section (cm²)"], 2) if row["Section (cm²)"] > 0 and row["Force (kN)"] > 0 else 0.0,
                 axis=1
             )
@@ -315,7 +326,7 @@ def show(supabase):
             # Résumé rapide des résultats
             forces_valides = edited_df[edited_df["Force (kN)"] > 0]
             if not forces_valides.empty:
-                fc_moy = round(forces_valides["Fc (MPa)"].mean(), 2)
+                fc_moy = round(forces_valides["Résistance Fc (MPa)"].mean(), 2)
                 st.success(f"📈 **Résistance moyenne calculée pour les éprouvettes saisies : {fc_moy:.1f} MPa**")
             else:
                 st.warning("👈 Veuillez remplir la colonne **Force (kN)** pour chaque éprouvette.")
@@ -328,10 +339,8 @@ def show(supabase):
                     succes_lot = 0
                     for _, row in edited_df.iterrows():
                         update_payload = {
-                            "section": float(row["Section (cm²)"]),
-                            "masse": float(row["Masse (g)"]),
                             "force_kn": float(row["Force (kN)"]),
-                            "fc_mpa": float(row["Fc (MPa)"]),
+                            "fc_mpa": float(row["Résistance Fc (MPa)"]),
                             "technicien": tech_global,
                             "observations": obs_globale
                         }
@@ -357,8 +366,8 @@ def show(supabase):
                 df_all = pd.DataFrame(res_all.data)
                 cols_display = [
                     "id", "num_bl", "ouvrage", "classe_beton", "date_coulee", 
-                    "echeance", "date_ecrasement", "repere_eprouvette",
-                    "masse", "force_kn", "fc_mpa", "technicien"
+                    "echeance", "date_ecrasement", "repere_eprouvette", "forme",
+                    "force_kn", "fc_mpa", "technicien"
                 ]
                 cols_valid = [c for c in cols_display if c in df_all.columns]
                 st.dataframe(df_all[cols_valid], use_container_width=True, hide_index=True)
