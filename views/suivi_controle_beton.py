@@ -93,10 +93,16 @@ def show(supabase):
         nb_j = jours_dict.get(echeance_p, 28)
         date_prevue_auto = date_coulee_p + timedelta(days=nb_j)
 
+        echeance_key_clean = echeance_p.replace(' ', '_')
+
         with col_e2:
             st.date_input("Date de Coulée", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
         with col_e3:
-            date_ecrasement_prevue = st.date_input("Date d'Écrasement Prévue", value=date_prevue_auto, key=f"p_date_ecras_{b_id}")
+            date_ecrasement_prevue = st.date_input(
+                "Date d'Écrasement Prévue", 
+                value=date_prevue_auto, 
+                key=f"p_date_ecras_{b_id}_{echeance_key_clean}"
+            )
         with col_e4:
             nb_eprouvettes_p = st.number_input("Nombre d'éprouvettes", min_value=1, max_value=6, value=2, step=1, key=f"p_nb_ep_{b_id}")
 
@@ -133,7 +139,11 @@ def show(supabase):
         cols_rep = st.columns(int(nb_eprouvettes_p))
         for i in range(int(nb_eprouvettes_p)):
             with cols_rep[i]:
-                rep_val = st.text_input(f"Repère #{i+1}", value=f"E{i+1}-{echeance_p.replace(' ', '')}", key=f"prog_rep_{b_id}_{i}")
+                rep_val = st.text_input(
+                    f"Repère #{i+1}", 
+                    value=f"E{i+1}-{echeance_p.replace(' ', '')}", 
+                    key=f"prog_rep_{b_id}_{echeance_key_clean}_{i}"
+                )
                 reperes_p.append(rep_val)
 
         if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}"):
@@ -144,15 +154,12 @@ def show(supabase):
                     "num_bl": num_bl_p,
                     "ouvrage": ouvrage_p,
                     "classe_beton": classe_beton_p,
-                    "affaissement": affaissement_p,
-                    "temp_beton": temp_beton_p,
                     "date_coulee": str(date_coulee_p),
                     "echeance": echeance_p,
                     "date_ecrasement": str(date_ecrasement_prevue),
                     "repere_eprouvette": rep,
                     "forme": forme_p,
-                    "section": float(sect_def),
-                    "statut": "Programmé"
+                    "section": float(sect_def)
                 }
                 try:
                     res = supabase.table("suivi_controle_beton").insert(payload_prog).execute()
@@ -177,7 +184,7 @@ def show(supabase):
             if res_att.data:
                 eprouvettes_en_attente = [
                     e for e in res_att.data 
-                    if e.get("force_kn") is None or e.get("statut") == "Programmé" or float(e.get("force_kn", 0)) == 0
+                    if e.get("force_kn") is None or float(e.get("force_kn", 0)) == 0
                 ]
         except Exception as e:
             st.error(f"Erreur de chargement des essais en attente : {e}")
@@ -228,8 +235,7 @@ def show(supabase):
                     "force_kn": force_kn,
                     "fc_mpa": fc_calc,
                     "technicien": tech_saisie,
-                    "observations": obs_saisie,
-                    "statut": "Écrasé"
+                    "observations": obs_saisie
                 }
 
                 try:
@@ -250,8 +256,8 @@ def show(supabase):
             if res_all.data:
                 df_all = pd.DataFrame(res_all.data)
                 cols_display = [
-                    "id", "num_bl", "ouvrage", "classe_beton", "affaissement", "temp_beton", "date_coulee", 
-                    "echeance", "date_ecrasement", "repere_eprouvette", "statut",
+                    "id", "num_bl", "ouvrage", "classe_beton", "date_coulee", 
+                    "echeance", "date_ecrasement", "repere_eprouvette",
                     "masse", "force_kn", "fc_mpa", "technicien"
                 ]
                 cols_valid = [c for c in cols_display if c in df_all.columns]
