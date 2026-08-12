@@ -7,6 +7,7 @@ import streamlit as st
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.page_break import PageMargins  # Import corrigé pour les marges
 
 
 def generer_pv_excel(lot_data, infos_header):
@@ -26,11 +27,10 @@ def generer_pv_excel(lot_data, infos_header):
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
-    # Marges réduites
-    ws.margins.left = 0.5
-    ws.margins.right = 0.5
-    ws.margins.top = 0.6
-    ws.margins.bottom = 0.6
+    # Marges réduites corrigées
+    ws.page_margins = PageMargins(
+        left=0.5, right=0.5, top=0.6, bottom=0.6, header=0.3, footer=0.3
+    )
 
     # --- STYLES ---
     font_title = Font(name="Arial", size=14, bold=True, color="1F497D")
@@ -278,9 +278,9 @@ def generer_pv_excel(lot_data, infos_header):
     ).font = font_bold
     ws.cell(row=row_idx, column=4).alignment = align_right
 
-    # LARGOUR AUTOMATIQUE DES COLONNES AJUSTÉE AU A4 PORTRAIT
+    # LARGEUR AUTOMATIQUE DES COLONNES
     col_widths = {
-        "A": 6,  # N°
+        "A": 6,   # N°
         "B": 24,  # Repère Éprouvette
         "C": 22,  # Forme
         "D": 15,  # Section
@@ -686,7 +686,7 @@ def show(supabase):
 
             lot_key = f"df_lot_{choix_lot}"
 
-            # Initialisation de st.session_state pour ce lot précis
+            # Initialisation de st.session_state pour ce lot
             if lot_key not in st.session_state:
                 rows_list = []
                 for ep in lot_selected:
@@ -712,7 +712,7 @@ def show(supabase):
                     })
                 st.session_state[lot_key] = pd.DataFrame(rows_list)
 
-            # Callback corrigé pour la mise à jour de la résistance Fc
+            # Callback pour mise à jour de Fc
             def update_fc():
                 changes = st.session_state.data_editor_ecrasement.get(
                     "edited_rows", {}
@@ -822,7 +822,7 @@ def show(supabase):
                             st.rerun()
 
             with col_b2:
-                # Préparation des données pour le PV Excel
+                # Données pour PV Excel
                 export_data = []
                 for _, row in df_actuel.iterrows():
                     export_data.append({
@@ -893,10 +893,29 @@ def show(supabase):
                     "technicien",
                 ]
                 cols_valid = [c for c in cols_display if c in df_all.columns]
+                df_export = df_all[cols_valid]
+
+                # Affichage du tableau d'historique
                 st.dataframe(
-                    df_all[cols_valid],
+                    df_export,
                     use_container_width=True,
                     hide_index=True,
+                )
+
+                st.markdown("---")
+
+                # Bouton de téléchargement Excel pour l'Historique Complet
+                output_hist = io.BytesIO()
+                with pd.ExcelWriter(output_hist, engine="openpyxl") as writer:
+                    df_export.to_excel(writer, sheet_name="Historique", index=False)
+                output_hist.seek(0)
+
+                st.download_button(
+                    label="📊 Télécharger l'historique complet (Excel)",
+                    data=output_hist,
+                    file_name=f"Historique_Ecrasements_Beton_{date.today()}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
                 )
             else:
                 st.info(
