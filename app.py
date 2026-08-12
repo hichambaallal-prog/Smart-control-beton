@@ -1,490 +1,109 @@
+import os
 import streamlit as st
-import pandas as pd
-from datetime import date, datetime
 from supabase import create_client, Client
-import io
 
-# Configuration globale de la page
-st.set_page_config(page_title="LPEE CTR-CSB - LGV CASA SUD", layout="wide")
+# 1. Configuration de la page Streamlit
+st.set_page_config(
+    page_title="LPEE - CTR-CSB",
+    page_icon="🏗️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# ==============================================================================
-# 🔐 1. GESTION DU MOT DE PASSE ET AUTHENTIFICATION
-# ==============================================================================
-MOT_DE_PASSE_ACCES = "lpee2026"
-MOT_DE_PASSE_ADMIN = "admin2026"  # Mot de passe administrateur pour modifier/supprimer
-
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-if "admin_authenticated" not in st.session_state:
-    st.session_state["admin_authenticated"] = False
-
-# ==============================================================================
-# 🖨️ FONCTION D'EXPORT EXCEL PROFESSIONNEL (SÉCURISÉE CONTRE LES ERREURS DE TYPE)
-# ==============================================================================
-def generer_excel_recap(df_data, titre_rapport):
-    output = io.BytesIO()
-    writer = pd.ExcelWriter(output, engine='xlsxwriter')
-    
-    # Écriture des données à partir de la ligne 6 pour laisser de la place à l'en-tête
-    df_data.to_excel(writer, index=False, sheet_name='Recap', startrow=5)
-    
-    workbook = writer.book
-    worksheet = writer.sheets['Recap']
-    
-    # Configuration Impression A4 Portrait et ajustement automatique à 1 page de large
-    worksheet.set_paper(9)  # Format A4
-    worksheet.set_portrait() # Orientation Portrait
-    worksheet.fit_to_pages(1, 0)  # 1 page de large, hauteur automatique
-    worksheet.set_print_scale(70)  # Échelle d'impression optimisée pour portrait
-    
-    # Marges de la page pour l'impression (en pouces)
-    worksheet.set_margins(left=0.4, right=0.4, top=0.5, bottom=0.5)
-    
-    # --- Définition des Styles et Couleurs ---
-    fmt_titre = workbook.add_format({
-        'bold': True, 
-        'font_size': 12, 
-        'align': 'center', 
-        'valign': 'vcenter',
-        'font_color': '#1B365D',
-        'border': 1,
-        'bg_color': '#F2F4F8'
-    })
-    
-    fmt_sous_titre = workbook.add_format({
-        'bold': True, 
-        'font_size': 9, 
-        'align': 'center', 
-        'valign': 'vcenter',
-        'font_color': '#555555'
-    })
-    
-    fmt_entete = workbook.add_format({
-        'bold': True,
-        'font_size': 9,
-        'font_color': '#FFFFFF',
-        'bg_color': '#1B365D',  # Bleu marine professionnel
-        'align': 'center',
-        'valign': 'vcenter',
-        'border': 1,
-        'text_wrap': True
-    })
-    
-    fmt_cellule = workbook.add_format({
-        'font_size': 9,
-        'valign': 'vcenter',
-        'align': 'center',
-        'border': 1,
-        'text_wrap': True
-    })
-    
-    fmt_signature = workbook.add_format({
-        'bold': True,
-        'font_size': 9,
-        'align': 'center',
-        'valign': 'vcenter',
-        'border': 1,
-        'bg_color': '#FAFAFA'
-    })
-
-    # Détermination dynamique de la dernière colonne pour les fusions d'en-tête
-    max_col_idx = max(len(df_data.columns) - 1, 1)
-    
-    # Insertion d'un en-tête fusionné adapté au format portrait
-    worksheet.merge_range(1, 0, 1, max_col_idx, "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - LGV CASA SUD", fmt_sous_titre)
-    worksheet.merge_range(2, 0, 2, max_col_idx, titre_rapport, fmt_titre)
-    
-    # Application des styles sur les en-têtes du tableau (Ligne 6, index 5)
-    for col_num, value in enumerate(df_data.columns.values):
-        worksheet.write(5, col_num, value, fmt_entete)
-    worksheet.set_row(5, 28) # Hauteur de l'en-tête du tableau
-        
-    # Application des styles sur les cellules de données
-    for row_idx in range(len(df_data)):
-        worksheet.set_row(6 + row_idx, 22) # Hauteur des lignes de données
-        for col_idx in range(len(df_data.columns)):
-            valeur_cellule = df_data.iloc[row_idx, col_idx]
-            if pd.isna(valeur_cellule):
-                valeur_cellule = ""
-            worksheet.write(6 + row_idx, col_idx, valeur_cellule, fmt_cellule)
-
-    # --- AJUSTEMENT SÉCURISÉ DES COLONNES ---
-    for i, col in enumerate(df_data.columns):
-        valeurs_str = [str(val) if pd.notna(val) else "" for val in df_data[col]]
-        max_val_len = max([len(v) for v in valeurs_str]) if valeurs_str else 0
-        max_len = max(max_val_len, len(str(col))) + 3
-        worksheet.set_column(i, i, max(max_len, 11))
-
-    # Blocs de Signature en bas du document proprement répartis
-    derniere_ligne = len(df_data) + 9
-    milieu_col = max_col_idx // 2
-    
-    worksheet.merge_range(derniere_ligne, 0, derniere_ligne, min(milieu_col, max_col_idx), "Responsable d'Essai LPEE", fmt_signature)
-    worksheet.merge_range(derniere_ligne, milieu_col + 1, derniere_ligne, max_col_idx, "Chef du Laboratoire LGV CASA SUD", fmt_signature)
-    
-    writer.close()
-    return output.getvalue()
+# 2. Gestion des rôles
+if "role" not in st.session_state:
+    st.session_state.role = None  # Peut être None, "user", ou "admin"
 
 # --- ÉCRAN DE CONNEXION ---
-if not st.session_state["authenticated"]:
-    col_g, col_c, col_d = st.columns([1, 2, 1])
-    
-    with col_c:
-        url_image_al_boraq = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/ONCF_Al_boraq.jpeg/1280px-ONCF_Al_boraq.jpeg"
-        st.image(url_image_al_boraq, caption="Projet LGV CASA SUD - LPEE CTR-CSB", use_container_width=True)
+if st.session_state.role is None:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.title("🔐 Accès Restreint - LPEE")
+        st.caption("Veuillez saisir le mot de passe.")
         
-        st.title("🔒 Connexion au Portail")
-        st.markdown("##### **LPEE - CTR-CSB** | Projet : **LGV CASA SUD** | Client : **TGCC**")
-        st.markdown("---")
+        password = st.text_input("Mot de passe", type="password")
         
-        pwd_input = st.text_input("Veuillez saisir le mot de passe :", type="password")
-        
-        if st.button("Se connecter", type="primary", use_container_width=True):
-            if pwd_input == MOT_DE_PASSE_ACCES:
-                st.session_state["authenticated"] = True
-                st.success("Accès autorisé !")
+        if st.button("Se connecter", use_container_width=True):
+            if password == "ctr2026": 
+                st.session_state.role = "user"
+                st.rerun()
+            elif password == "admin2026":  # <-- MOT DE PASSE ADMIN
+                st.session_state.role = "admin"
                 st.rerun()
             else:
                 st.error("❌ Mot de passe incorrect.")
     st.stop()
 
-# ==============================================================================
-# ⚙️ 2. CONNEXION SUPABASE & MENU LATÉRAL
-# ==============================================================================
-URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
-CLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxaWpzdnh5cmR5bWNucWx1aXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NDIwMjIsImV4cCI6MjEwMTUxODAyMn0.xjYXfGqea7P8kK8df9ootEJywCz-zoOzt8LESNRo2i0"
-
+# ==========================================
+# 3. CODE PRINCIPAL (Affiché si connecté)
+# ==========================================
 try:
-    supabase: Client = create_client(URL, CLE)
-except Exception as e:
-    st.error(f"Erreur Supabase : {e}")
+    from views import suivi_Betonnage, essai_Plaque, synthese_Beton, synthese_plaque
+except ImportError as e:
+    st.error(f"❌ Erreur lors de l'importation des vues : {e}")
     st.stop()
 
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    supabase = None
+    st.error(f"❌ Erreur de connexion Supabase : {e}")
+
+# Affichage du rôle dans la sidebar
 with st.sidebar:
-    st.title("🏢 LPEE - CTR-CSB")
-    st.caption("Projet : **LGV CASA SUD** | Client : **TGCC**")
-    st.write("---")
+    st.title("LPEE - CTR-CSB")
+    st.info(f"Connecté en tant que : **{st.session_state.role.upper()}**")
+    st.markdown("---")
     
     page = st.radio(
-        "📌 Menu Principal",
-        [
-            "🏠 Accueil", 
-            "🪨 Essai à la Plaque", 
-            "🏗️ Suivi de Bétonnage",
-            "📊 Synthèse Béton"
-        ]
+        "Menu Principal",
+        ["Accueil", "Essai à la Plaque", "Synthèse Plaque", "Suivi de Bétonnage", "Synthèse Béton"]
     )
     
-    st.write("---")
-    if st.button("🚪 Déconnexion", type="secondary", use_container_width=True):
-        st.session_state["authenticated"] = False
-        st.session_state["admin_authenticated"] = False
+    st.markdown("---")
+    if st.button("🚪 Déconnexion", use_container_width=True):
+        st.session_state.role = None
         st.rerun()
 
-# ==============================================================================
-# 📄 3. CONTENU DES PAGES
-# ==============================================================================
-
-# ------------------------------------------------------------------------------
-# PAGE 1 : ACCUEIL
-# ------------------------------------------------------------------------------
-if page == "🏠 Accueil":
-    st.title("👋 Bienvenue sur le Portail de Contrôle Qualité")
-    st.subheader("Laboratoire Public d'Essais et d'Études (LPEE)")
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.markdown("""
-        Ce portail vous permet de gérer les essais :
-        * **🪨 Essai à la Plaque :** Calculs EV1, EV2 et rapport k.
-        * **🏗️ Suivi de Bétonnage :** Gestion des bons de livraison et prélèvements.
-        * **📊 Synthèse Béton :** Bilan journalier et mensuel détaillé.
-        """)
+# Routage des vues
+if page == "Accueil":
+    st.title("🚄 Accueil - LGV CASA SUD")
+    st.markdown("### Plateforme de Suivi et Contrôle Qualité - LPEE")
+    
+    st.markdown("---")
+    
+    # Affichage sécurisé de la photo Al Boraq (avec le nom exact du fichier sur GitHub)
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.info("**Projet :** LGV CASA SUD\n\n**Client :** TGCC\n\n**Centrale :** TG PREFA")
-
-# ------------------------------------------------------------------------------
-# PAGE 2 : ESSAI À LA PLAQUE
-# ------------------------------------------------------------------------------
-elif page == "🪨 Essai à la Plaque":
-    st.title("🪨 Contrôle de Portance - Essai à la Plaque")
-    st.info("Module d'essai à la plaque.") 
-
-# ------------------------------------------------------------------------------
-# PAGE 3 : SUIVI DE BÉTONNAGE
-# ------------------------------------------------------------------------------
-elif page == "🏗️ Suivi de Bétonnage":
-    st.title("🏗️ Suivi et Contrôle Qualité Béton")
-    
-    try:
-        resp_beton = supabase.table("suivi_beton").select("*").execute()
-        data_all_beton = resp_beton.data or []
-    except Exception:
-        data_all_beton = []
-
-    date_b = st.date_input("📅 Date de livraison :", value=date.today())
-    str_date_b = date_b.strftime("%d/%m/%Y")
-
-    st.subheader(f"📝 Saisie d'un contrôle ({str_date_b})")
-
-    col_h1, col_h2, col_h3 = st.columns(3)
-    with col_h1: technicien = st.text_input("👤 Nom du Technicien LPEE", value="Agent LPEE")
-    with col_h2: client_b = st.text_input("🏢 Client", value="TGCC", disabled=True)
-    with col_h3: centrale_b = st.text_input("🏭 Centrale à Béton", value="TG PREFA")
-
-    st.markdown("---")
-    c_b1, c_b2, c_b3 = st.columns(3)
-    
-    with c_b1:
-        bl_num = st.text_input("N° BL", value="BL-2026-001")
-        ouvrage = st.text_input("Ouvrage", value="Voile / Semelle")
-        quantite_m3 = st.number_input("Quantité (m³)", value=8.0, step=0.5)
-
-    with c_b2:
-        t_prod_fin = st.time_input("🕒 Heure de fin de production", value=datetime.strptime("08:30", "%H:%M").time())
-        t_chantier = st.time_input("🏁 Heure d'arrivée au chantier", value=datetime.strptime("09:15", "%H:%M").time())
-        classe_b = st.selectbox("Classe", ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50"])
-
-    with c_b3:
-        meteo = st.selectbox("Météo", ["Ensoleillé ☀️", "Nuageux ⛅", "Pluie 🌧️", "Vent fort 💨", "Chaleur extrême 🔴"])
-        temp_beton = st.number_input("🌡️ Température du béton (°C)", value=20.0, step=0.5)
-        temp_ambiante = st.number_input("🌤️ Température ambiante (°C)", value=25.0, step=0.5)
-        affaisse = st.number_input("Affaissement (mm)", value=150.0, step=10.0)
-        
-        prelev = st.selectbox("Prélèvement", ["OUI - Conforme (NF EN 12390-2)", "NON", "Sans objet"])
-        is_disabled = (prelev == "NON")
-        nb_ep = st.number_input("Nb d'éprouvettes", min_value=0, max_value=12, value=0 if is_disabled else 6, disabled=is_disabled)
-
-    obs_b = st.text_area("Observations", value="Béton conforme")
-
-    if st.button("💾 Enregistrer", type="primary"):
-        row_b = {
-            "date_livraison": str_date_b, 
-            "technicien": technicien, 
-            "client": client_b, 
-            "centrale_beton": centrale_b,
-            "bl_num": bl_num, 
-            "ouvrage": ouvrage, 
-            "heure_arrivee": t_prod_fin.strftime("%H h %M min"), 
-            "heure_fin_coulage": t_chantier.strftime("%H h %M min"),
-            "quantite_m3": float(quantite_m3), 
-            "classe_beton": classe_b, 
-            "meteo": meteo, 
-            "temperature_beton": float(temp_beton), 
-            "temperature_ambiante": float(temp_ambiante), 
-            "affaissement": float(affaisse), 
-            "prelevement": prelev, 
-            "nb_eprouvettes": int(nb_ep), 
-            "observations": obs_b
-        }
-        try:
-            supabase.table("suivi_beton").insert(row_b).execute()
-            st.success("✅ Enregistré !")
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ Erreur détaillée Supabase : {e}")
-
-    st.markdown("---")
-    st.subheader("📋 Historique")
-    
-    if data_all_beton:
-        df_hist = pd.DataFrame(data_all_beton)
-        if "created_at" in df_hist.columns:
-            df_hist = df_hist.drop(columns=["created_at"])
-        st.dataframe(df_hist, use_container_width=True, hide_index=True)
-
-        st.markdown("#### 🔐 Espace Administrateur : Modifier ou Supprimer un enregistrement")
-        
-        if not st.session_state["admin_authenticated"]:
-            col_adm1, col_adm2 = st.columns([2, 1])
-            with col_adm1:
-                pwd_admin_input = st.text_input("Mot de passe Administrateur requis pour Modifier/Supprimer :", type="password", key="pwd_admin")
-            with col_adm2:
-                st.write("")
-                st.write("")
-                if st.button("Valider Admin"):
-                    if pwd_admin_input == MOT_DE_PASSE_ADMIN:
-                        st.session_state["admin_authenticated"] = True
-                        st.success("Mode administrateur activé !")
-                        st.rerun()
-                    else:
-                        st.error("❌ Mot de passe administrateur incorrect.")
+        image_path = os.path.join(os.path.dirname(__file__), "al_boraq.jpg.jpg")
+        if os.path.exists(image_path):
+            st.image(
+                image_path, 
+                caption="Al Boraq - Ligne à Grande Vitesse - Projet LGV CASA SUD", 
+                use_container_width=True
+            )
         else:
-            st.success("🔓 Mode Administrateur Actif")
-            if st.button("Verrouiller l'accès admin"):
-                st.session_state["admin_authenticated"] = False
-                st.rerun()
-
-            ids_disponibles = [item["id"] for item in data_all_beton if "id" in item]
-            id_selectionne = st.selectbox("Sélectionnez l'ID de l'enregistrement à modifier ou supprimer :", ids_disponibles)
-            
-            enregistrement_actuel = next((item for item in data_all_beton if item["id"] == id_selectionne), None)
-            
-            if enregistrement_actuel:
-                col_act1, col_act2 = st.columns(2)
-                
-                with col_act1:
-                    st.markdown("##### ✏️ Modifier l'enregistrement")
-                    with st.form("form_modification"):
-                        mod_date = st.text_input("Date de livraison (jj/mm/aaaa)", value=enregistrement_actuel.get("date_livraison", ""))
-                        mod_bl = st.text_input("N° BL", value=enregistrement_actuel.get("bl_num", ""))
-                        mod_ouvrage = st.text_input("Ouvrage", value=enregistrement_actuel.get("ouvrage", ""))
-                        mod_classe = st.text_input("Classe de béton", value=enregistrement_actuel.get("classe_beton", ""))
-                        mod_qte = st.number_input("Quantité (m³)", value=float(enregistrement_actuel.get("quantite_m3", 0.0)))
-                        mod_aff = st.number_input("Affaissement (mm)", value=float(enregistrement_actuel.get("affaissement", 0.0)))
-                        mod_obs = st.text_area("Observations", value=enregistrement_actuel.get("observations", ""))
-                        
-                        submit_modif = st.form_submit_button("Mettre à jour", type="primary")
-                        if submit_modif:
-                            donnees_maj = {
-                                "date_livraison": mod_date,
-                                "bl_num": mod_bl,
-                                "ouvrage": mod_ouvrage,
-                                "classe_beton": mod_classe,
-                                "quantite_m3": mod_qte,
-                                "affaissement": mod_aff,
-                                "observations": mod_obs
-                            }
-                            try:
-                                supabase.table("suivi_beton").update(donnees_maj).eq("id", id_selectionne).execute()
-                                st.success("✅ Enregistrement mis à jour avec succès !")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"❌ Erreur lors de la mise à jour Supabase : {e}")
-
-                with col_act2:
-                    st.markdown("##### 🗑️ Supprimer l'enregistrement")
-                    st.warning(f"Attention, vous êtes sur le point de supprimer l'enregistrement ID n° **{id_selectionne}** (BL : {enregistrement_actuel.get('bl_num')}).")
-                    
-                    if st.button("🗑️ Confirmer la suppression", type="secondary"):
-                        try:
-                            supabase.table("suivi_beton").delete().eq("id", id_selectionne).execute()
-                            st.success("🗑️ Enregistrement supprimé avec succès !")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de la suppression Supabase : {e}")
-
-# ------------------------------------------------------------------------------
-# PAGE 4 : SYNTHÈSE BÉTON
-# ------------------------------------------------------------------------------
-elif page == "📊 Synthèse Béton":
-    st.title("📊 Récapitulatif et Synthèse du Bétonnage")
+            st.warning("⚠️ L'image 'al_boraq.jpg.jpg' est introuvable.")
+        
+    st.markdown("---")
     
-    try:
-        resp_beton = supabase.table("suivi_beton").select("*").execute()
-        data_all_beton = resp_beton.data or []
-    except Exception as e:
-        st.error(f"Erreur de chargement : {e}")
-        data_all_beton = []
+    # Section de présentation
+    st.markdown("""
+    Bienvenue sur l'application centralisée de gestion des contrôles qualité pour le projet **LGV CASA SUD**. 
+    
+    Utilisez le menu de navigation latéral pour accéder aux différents modules de saisie et de suivi :
+    * **🏗️ Suivi Béton :** Gestion des livraisons, fiches de contrôle, températures, affaissements et prélèvements.
+    * **🧪 Essai à la Plaque :** Saisie des essais de portance (Norme NF P 94-117-1) avec calculs automatiques des modules EV1, EV2 et du coefficient K.
+    """)
 
-    if not data_all_beton:
-        st.warning("⚠️ Aucune donnée de bétonnage n'est encore enregistrée.")
-    else:
-        df = pd.DataFrame(data_all_beton)
-        df['date_livraison_dt'] = pd.to_datetime(df['date_livraison'], format='%d/%m/%Y', errors='coerce')
-        
-        tab_jour, tab_mois = st.tabs(["📅 Bilan Journalier", "📆 Bilan Mensuel"])
-        
-        colonnes_a_afficher = {
-            "date_livraison": "Date de suivi",
-            "ouvrage": "Partie d'ouvrage",
-            "bl_num": "N° de BL",
-            "classe_beton": "Classe de béton",
-            "affaissement": "Affaissement (mm)",
-            "temperature_beton": "Temp. Béton (°C)",
-            "temperature_ambiante": "Temp. Ambiante (°C)",
-            "meteo": "Météo"
-        }
-        
-        colonnes_disponibles = {k: v for k, v in colonnes_a_afficher.items() if k in df.columns}
-        
-        classes_uniques = sorted(df['classe_beton'].dropna().unique().tolist()) if 'classe_beton' in df.columns else []
-        options_filtre_classe = ["Toutes"] + classes_uniques
-        
-        # ==========================================
-        # ONGLET 1 : BILAN JOURNALIER
-        # ==========================================
-        with tab_jour:
-            st.subheader("Filtrage par jour et par classe de béton")
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                d_jour = st.date_input("Sélectionnez une date :", value=date.today(), key="input_date_jour")
-            with col_f2:
-                classe_filtre_j = st.selectbox("Filtrer par classe de béton :", options_filtre_classe, key="filtre_classe_j")
-            
-            df_jour = df[df['date_livraison_dt'].dt.date == d_jour]
-            
-            if classe_filtre_j != "Toutes":
-                df_jour = df_jour[df_jour['classe_beton'] == classe_filtre_j]
-            
-            if df_jour.empty:
-                st.info(f"Aucun coulage enregistré pour les critères sélectionnés.")
-            else:
-                total_vol_jour = df_jour["quantite_m3"].sum()
-                total_liv_jour = df_jour["bl_num"].count()
-                
-                col1, col2 = st.columns(2)
-                col1.metric(label="Total Volume Coulé (m³)", value=f"{total_vol_jour:.2f} m³")
-                col2.metric(label="Nombre de Toupies / BL", value=total_liv_jour)
-                
-                st.markdown("#### 📄 Détail des Coulages (Chantier)")
-                recap_j_detail = df_jour[list(colonnes_disponibles.keys())].rename(columns=colonnes_disponibles)
-                
-                st.dataframe(recap_j_detail, use_container_width=True, hide_index=True)
-                
-                titre_j = f"Recapitulatif Journalier - {d_jour.strftime('%d/%m/%Y')}" + (f" ({classe_filtre_j})" if classe_filtre_j != "Toutes" else "")
-                excel_data_j = generer_excel_recap(recap_j_detail, titre_j)
-                st.download_button(
-                    label="📥 Télécharger le Bilan Journalier en Excel",
-                    data=excel_data_j,
-                    file_name=f"Recap_Journalier_{d_jour.strftime('%d-%m-%Y')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="btn_excel_j"
-                )
-
-        # ==========================================
-        # ONGLET 2 : BILAN MENSUEL
-        # ==========================================
-        with tab_mois:
-            st.subheader("Filtrage par mois, année et classe de béton")
-            col_m1, col_m2, col_m3 = st.columns(3)
-            
-            with col_m1:
-                mois_choisi = st.selectbox("Mois", range(1, 13), index=date.today().month - 1, key="select_mois")
-            with col_m2:
-                annee_choisie = st.selectbox("Année", range(2024, 2030), index=2, key="select_annee")
-            with col_m3:
-                classe_filtre_m = st.selectbox("Filtrer par classe de béton :", options_filtre_classe, key="filtre_classe_m")
-                
-            df_mois = df[
-                (df['date_livraison_dt'].dt.month == mois_choisi) & 
-                (df['date_livraison_dt'].dt.year == annee_choisie)
-            ]
-            
-            if classe_filtre_m != "Toutes":
-                df_mois = df_mois[df_mois['classe_beton'] == classe_filtre_m]
-            
-            if df_mois.empty:
-                st.info(f"Aucun coulage enregistré pour la période et la classe sélectionnées.")
-            else:
-                total_vol_mois = df_mois["quantite_m3"].sum()
-                total_liv_mois = df_mois["bl_num"].count()
-                
-                col1, col2 = st.columns(2)
-                col1.metric(label="Volume Mensuel Cumulé (m³)", value=f"{total_vol_mois:.2f} m³")
-                col2.metric(label="Nombre de Toupies / BL", value=total_liv_mois)
-                
-                st.markdown(f"#### 📄 Synthèse Détaillée pour {mois_choisi:02d}/{annee_choisie}")
-                recap_m_detail = df_mois[list(colonnes_disponibles.keys())].rename(columns=colonnes_disponibles)
-                
-                st.dataframe(recap_m_detail, use_container_width=True, hide_index=True)
-                
-                titre_m = f"Recapitulatif Mensuel - {mois_choisi:02d}/{annee_choisie}" + (f" ({classe_filtre_m})" if classe_filtre_m != "Toutes" else "")
-                excel_data_m = generer_excel_recap(recap_m_detail, titre_m)
-                st.download_button(
-                    label="📥 Télécharger le Bilan Mensuel en Excel",
-                    data=excel_data_m,
-                    file_name=f"Recap_Mensuel_{mois_choisi:02d}_{annee_choisie}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="btn_excel_m"
-                )
+elif page == "Essai à la Plaque":
+    essai_Plaque.show(supabase)
+elif page == "Synthèse Plaque":
+    synthese_plaque.show(supabase)
+elif page == "Suivi de Bétonnage":
+    suivi_Betonnage.show(supabase)
+elif page == "Synthèse Béton":
+    synthese_Beton.show(supabase)
