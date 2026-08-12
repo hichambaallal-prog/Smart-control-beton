@@ -50,37 +50,49 @@ def show(supabase):
         ouvrage_p = str(beton_p.get("ouvrage") or "N/A")
         classe_beton_p = str(beton_p.get("classe_beton") or beton_p.get("classe") or "N/A")
         
-        # Récupération sécurisée du nombre d'éprouvettes (par défaut 2 si non spécifié ou si valeur invalide)
+        # Total d'éprouvettes prévu au suivi de bétonnage (ex: 12)
         raw_nb_ep = beton_p.get("nb_eprouvettes") or beton_p.get("nombre_eprouvettes")
         try:
-            nb_ep_suivi = int(raw_nb_ep) if raw_nb_ep is not None else 2
+            total_eprouvettes_prevues = int(raw_nb_ep) if raw_nb_ep is not None else 12
         except (ValueError, TypeError):
-            nb_ep_suivi = 2
+            total_eprouvettes_prevues = 12
 
-        # Sécurisation contre l'erreur StreamlitValueAboveMaxError
-        nb_ep_max = 20
-        nb_ep_initial = max(1, min(nb_ep_suivi, nb_ep_max))
+        # ---------------------------------------------------------
+        # VÉRIFICATION DES ÉPROUVETTES DÉJÀ PROGRAMMÉES DANS SUPABASE
+        # ---------------------------------------------------------
+        eprouvettes_deja_prog = 0
+        try:
+            res_deja = supabase.table("suivi_controle_beton").select("id").eq("betonnage_id", b_id).execute()
+            if res_deja.data:
+                eprouvettes_deja_prog = len(res_deja.data)
+        except Exception:
+            eprouvettes_deja_prog = 0
+
+        # Calcul du solde disponible
+        solde_disponible = max(0, total_eprouvettes_prevues - eprouvettes_deja_prog)
 
         # Récupération automatique de l'affaissement et de la température
         affaissement_raw = str(beton_p.get("affaissement") or beton_p.get("slump") or "N/A")
         temp_beton_p = str(beton_p.get("temperature") or beton_p.get("temp_beton") or "N/A")
-
-        # Mise en forme de l'affaissement en mm
         affaissement_p = f"{affaissement_raw} mm" if affaissement_raw != "N/A" else "N/A"
 
         date_coulee_raw = beton_p.get("date_coulee") or beton_p.get("date_livraison") or str(date.today())
-        
         try:
             date_coulee_p = datetime.strptime(str(date_coulee_raw), "%Y-%m-%d").date()
         except Exception:
             date_coulee_p = date.today()
 
-        # Génération automatique du préfixe pour le repère
         ref_controle_defaut = f"REF-{b_id}-{ouvrage_p}"
 
         st.markdown("---")
         
-        # Ligne Référence de contrôle
+        # Affichage récapitulatif du quota d'éprouvettes
+        st.info(
+            f"📊 **Quota Éprouvettes :** Total prévu : **{total_eprouvettes_prevues}** | "
+            f"Déjà programmée(s) : **{eprouvettes_deja_prog}** | "
+            f"Reste disponible : **{solde_disponible}**"
+        )
+
         ref_controle_p = st.text_input(
             "🏷️ Référence de Contrôle (Préfixe du repère)", 
             value=ref_controle_defaut, 
@@ -98,7 +110,7 @@ def show(supabase):
         with col_p3:
             st.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
 
-        # Ligne 2 : Affaissement (mm) et Température (°C) remplis automatiquement
+        # Ligne 2 : Affaissement (mm) et Température (°C)
         col_p4, col_p5 = st.columns(2)
         with col_p4:
             st.text_input("Affaissement / Slump (mm)", value=affaissement_p, disabled=True, key=f"p_aff_{b_id}")
@@ -126,15 +138,24 @@ def show(supabase):
                 value=date_prevue_auto, 
                 key=f"p_date_ecras_{b_id}_{echeance_key_clean}"
             )
+
+        # Limitation stricte du number_input au solde disponible
+        min_val = 1 if solde_disponible > 0 else 0
+        val_defaut = min(2, solde_disponible) if solde_disponible > 0 else 0
+
         with col_e4:
-            nb_eprouvettes_p = st.number_input(
-                "Nombre d'éprouvettes", 
-                min_value=1, 
-                max_value=nb_ep_max, 
-                value=nb_ep_initial, 
-                step=1, 
-                key=f"p_nb_ep_{b_id}"
-            )
+            if solde_disponible == 0:
+                st.warning("⚠️ Quota atteint (12/12).")
+                nb_eprouvettes_p = 0
+            else:
+                nb_eprouvettes_p = st.number_input(
+                    "Nombre d'éprouvettes à programmer", 
+                    min_value=min_val, 
+                    max_value=solde_disponible, 
+                    value=val_defaut, 
+                    step=1, 
+                    key=f"p_nb_ep_{b_id}_{echeance_key_clean}"
+                )
 
         col_f1, col_f2 = st.columns(2)
         with col_f1:
@@ -163,45 +184,48 @@ def show(supabase):
                 key=f"p_section_{b_id}_{forme_key_clean}"
             )
 
-        st.markdown("##### 🏷️ Repères codés des éprouvettes")
-        reperes_p = []
-        cols_rep = st.columns(min(int(nb_eprouvettes_p), 6))
-        for i in range(int(nb_eprouvettes_p)):
-            col_idx = i % 6
-            with cols_rep[col_idx]:
-                rep_defaut = f"{ref_controle_p}/{i+1}"
-                rep_val = st.text_input(
-                    f"Repère #{i+1}", 
-                    value=rep_defaut, 
-                    key=f"prog_rep_{b_id}_{echeance_key_clean}_{i}"
-                )
-                reperes_p.append(rep_val)
+        if int(nb_eprouvettes_p) > 0:
+            st.markdown("##### 🏷️ Repères codés des éprouvettes")
+            reperes_p = []
+            cols_rep = st.columns(min(int(nb_eprouvettes_p), 6))
+            for i in range(int(nb_eprouvettes_p)):
+                col_idx = i % 6
+                with cols_rep[col_idx]:
+                    # Numérotation continue : si 3 éprouvettes sont déjà créées, on commence à 4 (/4, /5, /6...)
+                    num_ep = eprouvettes_deja_prog + i + 1
+                    rep_defaut = f"{ref_controle_p}/{num_ep}"
+                    rep_val = st.text_input(
+                        f"Repère #{num_ep}", 
+                        value=rep_defaut, 
+                        key=f"prog_rep_{b_id}_{echeance_key_clean}_{i}"
+                    )
+                    reperes_p.append(rep_val)
 
-        if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}"):
-            succes_cnt = 0
-            for rep in reperes_p:
-                payload_prog = {
-                    "betonnage_id": b_id,
-                    "num_bl": num_bl_p,
-                    "ouvrage": ouvrage_p,
-                    "classe_beton": classe_beton_p,
-                    "date_coulee": str(date_coulee_p),
-                    "echeance": echeance_p,
-                    "date_ecrasement": str(date_ecrasement_prevue),
-                    "repere_eprouvette": rep,
-                    "forme": forme_p,
-                    "section": float(sect_def)
-                }
-                try:
-                    res = supabase.table("suivi_controle_beton").insert(payload_prog).execute()
-                    if res.data:
-                        succes_cnt += 1
-                except Exception as err:
-                    st.error(f"Erreur lors de la programmation de {rep} : {err}")
+            if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}"):
+                succes_cnt = 0
+                for rep in reperes_p:
+                    payload_prog = {
+                        "betonnage_id": b_id,
+                        "num_bl": num_bl_p,
+                        "ouvrage": ouvrage_p,
+                        "classe_beton": classe_beton_p,
+                        "date_coulee": str(date_coulee_p),
+                        "echeance": echeance_p,
+                        "date_ecrasement": str(date_ecrasement_prevue),
+                        "repere_eprouvette": rep,
+                        "forme": forme_p,
+                        "section": float(sect_def)
+                    }
+                    try:
+                        res = supabase.table("suivi_controle_beton").insert(payload_prog).execute()
+                        if res.data:
+                            succes_cnt += 1
+                    except Exception as err:
+                        st.error(f"Erreur lors de la programmation de {rep} : {err}")
 
-            if succes_cnt > 0:
-                st.success(f"✅ {succes_cnt} éprouvette(s) programmée(s) pour le {date_ecrasement_prevue} ({echeance_p}) !")
-                st.rerun()
+                if succes_cnt > 0:
+                    st.success(f"✅ {succes_cnt} éprouvette(s) programmée(s) pour le {date_ecrasement_prevue} ({echeance_p}) !")
+                    st.rerun()
 
     # =========================================================
     # PHASE 2 : SAISIE DES RÉSULTATS D'ÉCRASEMENT
