@@ -223,7 +223,8 @@ def show(supabase):
         # Récupérer toutes les éprouvettes non encore écrasées
         eprouvettes_en_attente = []
         try:
-            res_att = supabase.table("suivi_controle_beton").select("*").order("id", asc=True).execute()
+            # Ordre croissant via desc=False pour éviter la TypeError asc=True
+            res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=False).execute()
             if res_att.data:
                 eprouvettes_en_attente = [
                     e for e in res_att.data 
