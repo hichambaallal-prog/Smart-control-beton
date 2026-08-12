@@ -22,11 +22,19 @@ def generate_excel_a4(df_filtered, filter_title="Synthèse Générale"):
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
+    # Marges adaptées A4
+    ws.page_margins.left = 0.5
+    ws.page_margins.right = 0.5
+    ws.page_margins.top = 0.75
+    ws.page_margins.bottom = 0.75
+
     # --- EN-TÊTE ET PIED DE PAGE D'IMPRESSION ---
     ws.oddHeader.left.text = "&\"Calibri,Bold\"&10LABORATOIRE LPEE - CTR-CSB\nProjet: LGV CASA SUD | Client: TGCC"
     ws.oddHeader.center.text = f"&\"Calibri,Bold\"&12SYNTHÈSE DES ESSAIS À LA PLAQUE\n{filter_title}"
     ws.oddHeader.right.text = "&\"Calibri,Regular\"&9Edité le: &D"
+    ws.oddFooter.left.text = "&\"Calibri,Italic\"&8LPEE CTR-CSB - Document officiel"
     ws.oddFooter.center.text = "&\"Calibri,Bold\"&10Page &P sur &N"
+    ws.oddFooter.right.text = "&\"Calibri,Italic\"&8NF P 94-117-1"
 
     # --- PALETTE DE COULEURS ET STYLES ---
     NAVY_HEADER = "1F4E79"
@@ -67,22 +75,22 @@ def generate_excel_a4(df_filtered, filter_title="Synthèse Générale"):
 
     ws.merge_cells("A2:G2")
     ws["A2"] = "Norme : NF P 94-117-1 (Plaque Ø 600 mm)"
-    ws["A2"].font = Font(name="Calibri", size=15, bold=True, color=NAVY_HEADER)
+    ws["A2"].font = Font(name="Calibri", size=13, bold=True, color=NAVY_HEADER)
     ws["A2"].alignment = Alignment(horizontal="center", vertical="center")
 
     ws.merge_cells("A3:G3")
     ws["A3"] = "Projet : LGV CASA SUD  |  Client : TGCC"
-    ws["A3"].font = Font(name="Calibri", size=14, bold=True, color=BLUE_SUBHEADER)
+    ws["A3"].font = Font(name="Calibri", size=12, bold=True, color=BLUE_SUBHEADER)
     ws["A3"].alignment = Alignment(horizontal="center", vertical="center")
 
     ws.merge_cells("A4:G4")
     ws["A4"] = f"SYNTHÈSE DES ESSAIS DE PORTANCE À LA PLAQUE — {filter_title.upper()}"
-    ws["A4"].font = Font(name="Calibri", size=12, italic=True, color="595959")
+    ws["A4"].font = Font(name="Calibri", size=11, italic=True, color="595959")
     ws["A4"].alignment = Alignment(horizontal="center", vertical="center")
 
     ws.row_dimensions[1].height = 26
-    ws.row_dimensions[2].height = 26
-    ws.row_dimensions[3].height = 24
+    ws.row_dimensions[2].height = 24
+    ws.row_dimensions[3].height = 22
     ws.row_dimensions[4].height = 20
     ws.row_dimensions[5].height = 8
 
@@ -108,15 +116,20 @@ def generate_excel_a4(df_filtered, filter_title="Synthèse Générale"):
         is_even = (r_idx % 2 == 0)
         current_fill = fill_zebra if is_even else PatternFill(fill_type=None)
 
-        k_val = float(row.get("k", 0.0) or 0.0)
+        try:
+            ev1_val = float(row.get("ev1", 0.0) or 0.0)
+            ev2_val = float(row.get("ev2", 0.0) or 0.0)
+            k_val = float(row.get("k", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            ev1_val, ev2_val, k_val = 0.0, 0.0, 0.0
 
         values = [
             str(row.get("date_essai", "") or ""),
             str(row.get("couche", "") or ""),
             str(row.get("emplacement", "") or ""),
             str(row.get("pk_profil", "") or ""),
-            float(row.get("ev1", 0.0) or 0.0),
-            float(row.get("ev2", 0.0) or 0.0),
+            ev1_val,
+            ev2_val,
             k_val
         ]
 
@@ -240,7 +253,7 @@ def generate_excel_a4(df_filtered, filter_title="Synthèse Générale"):
             for col in range(5, 7):
                 ws.cell(row=r, column=col).border = thin_border
 
-    # --- LARGEURS DE COLONNES ---
+    # --- LARGEURS DE COLONNES OPTIMISÉES ---
     col_widths = {
         'A': 14, 'B': 18, 'C': 20, 'D': 15,
         'E': 14, 'F': 14, 'G': 14
