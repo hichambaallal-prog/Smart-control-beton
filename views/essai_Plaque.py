@@ -1,131 +1,258 @@
 import streamlit as st
-
-# 🔒 Sécurité : Bloque l'accès si non connecté
-if not st.session_state.get("authenticated", False):
-    st.error("⛔ Accès refusé. Veuillez d'abord vous connecter sur la page d'accueil.")
-    st.stop()
-import streamlit as st
 import pandas as pd
-from datetime import date
-from supabase import create_client, Client
+from datetime import datetime, date
 
-st.set_page_config(page_title="Essai à la Plaque - LPEE CTR-CSB", layout="wide")
+def show(supabase):
+    # --- EN-TÊTE : TITRE ET NORME CÔTE À CÔTE ---
+    col_header1, col_header2 = st.columns([2, 1])
+    with col_header1:
+        st.title("🧪 Saisie - Essai à la Plaque")
+    with col_header2:
+        st.markdown(
+            "<div style='text-align: right; padding-top: 15px; font-weight: bold; color: #1F4E79; font-size: 1.1em;'>"
+            "📋 Norme : NF P 94-117-1"
+            "</div>", 
+            unsafe_allow_html=True
+        )
 
-# Connexion Supabase
-URL = "https://yqijsvxyrdymcnqluipa.supabase.co"
-# ⚠️ Remplacez la chaîne ci-dessous par votre clé ANON Supabase
-CLE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxaWpzdnh5cmR5bWNucWx1aXBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NDIwMjIsImV4cCI6MjEwMTUxODAyMn0.xjYXfGqea7P8kK8df9ootEJywCz-zoOzt8LESNRo2i0"
-
-try:
-    supabase: Client = create_client(URL, CLE)
-except Exception as e:
-    st.error(f"Erreur Supabase : {e}")
-    st.stop()
-
-# --- EN-TÊTE DU RAPPORT ---
-st.title("🪨 Contrôle de Portance - Essai à la Plaque (NF P94-117-1)")
-st.subheader("🏢 LPEE - CTR-CSB")
-
-# Chargement des données
-try:
-    resp = supabase.table("essais_plaque").select("*").execute()
-    data_all_plaque = resp.data or []
-except Exception as e:
-    st.error(f"Erreur de chargement : {e}")
-    data_all_plaque = []
-
-date_choisie_p = st.date_input("📅 Date de l'essai :", value=date.today())
-str_date_p = date_choisie_p.strftime("%d/%m/%Y")
-
-# --- FORMULAIRE DE SAISIE ---
-with st.form("form_plaque"):
-    st.markdown(f"### 📝 Saisie Essai à la Plaque ({str_date_p})")
-    
-    # Champs d'en-tête du projet VERROUILLÉS (non modifiables)
-    col_proj1, col_proj2 = st.columns(2)
-    with col_proj1:
-        projet = st.text_input("Projet", value="LGV CASA SUD", disabled=True)
-    with col_proj2:
-        client = st.text_input("Entreprise / Client", value="TGCC", disabled=True)
-        
     st.markdown("---")
-    
-    # Informations techniques et mesures
-    c1, c2, c3 = st.columns(3)
-    
-    with c1:
-        pk_emp = st.text_input("Emplacement / PK", value="PK 14+250 - Voie 1")
-        couche_elem = st.selectbox("Couche / Support", ["PFT3 (Couche de Forme)", "PST (Arase)", "Couche d'Assise", "Remblai"])
-        
-    with c2:
-        # Données de base chargement Z1 et Z2
-        z1 = st.number_input("Enfoncement 1er chargement Z1 (mm)", value=1.50, step=0.01, min_value=0.01)
-        z2 = st.number_input("Enfoncement 2ème chargement Z2 (mm)", value=0.50, step=0.01, min_value=0.01)
-        
-    with c3:
-        # Calculs automatiques des modules
-        ev1 = round(112.5 / (z1 * 2.0), 2) if z1 > 0 else 0.0
-        ev2 = round(90.0 / (z2 * 2.0), 2) if z2 > 0 else 0.0
-        rapport_calc = round(ev2 / ev1, 2) if ev1 > 0 else 0.0
-        
-        # Affichage des métriques
-        st.metric("EV1 (MPa)", value=ev1)
-        st.metric("EV2 (MPa)", value=ev2)
-        st.metric("Rapport k = EV2 / EV1", value=rapport_calc)
-        
-        is_conforme = (ev2 >= 50.0) and (rapport_calc <= 2.2)
-        statut_auto = "✅ Conforme" if is_conforme else "⚠️ Non Conforme"
-        st.info(f"Statut : **{statut_auto}**")
 
-    obs_p = st.text_area("Observations", value="RAS - Sol bien compacté")
-    
-    # Bouton d'enregistrement
-    submitted = st.form_submit_button("💾 Enregistrer l'essai à la plaque", type="primary")
-    if submitted:
-        row_p = {
-            "date_essai": str_date_p,
-            "projet": projet,
-            "client": client,
-            "pk_emplacement": pk_emp,
-            "couche_element": couche_elem,
-            "z1": float(z1),
-            "z2": float(z2),
-            "ev1": float(ev1),
-            "ev2": float(ev2),
-            "rapport_ev2_ev1": float(rapport_calc),
-            "statut": statut_auto,
-            "observations": obs_p
-        }
-        
+    # Fonction de sécurité pour éviter les erreurs NoneType
+    def safe_float(val, default=0.0):
+        if val is None:
+            return default
         try:
-            supabase.table("essais_plaque").insert(row_p).execute()
-            st.success("✅ Essai enregistré avec succès !")
-            st.rerun()
-        except Exception as e:
-            # Sécurité de secours si les colonnes 'projet', 'client', 'z1' ou 'z2' ne sont pas encore créées dans Supabase
-            row_p_fallback = {
-                "date_essai": str_date_p,
-                "pk_emplacement": pk_emp,
-                "couche_element": couche_elem,
-                "ev1": float(ev1),
-                "ev2": float(ev2),
-                "rapport_ev2_ev1": float(rapport_calc),
-                "statut": statut_auto,
-                "observations": obs_p
-            }
+            return float(val)
+        except:
+            return default
+
+    # ---------------------------------------------------------
+    # GESTION DES VALEURS EN MÉMOIRE (SESSION STATE)
+    # ---------------------------------------------------------
+    if 'ep_date' not in st.session_state:
+        st.session_state['ep_date'] = date.today()
+    if 'ep_technicien' not in st.session_state:
+        st.session_state['ep_technicien'] = ""
+    if 'ep_couche' not in st.session_state:
+        st.session_state['ep_couche'] = "Remblai"
+    if 'ep_emplacement' not in st.session_state:
+        st.session_state['ep_emplacement'] = ""
+    if 'ep_pk_profil' not in st.session_state:
+        st.session_state['ep_pk_profil'] = ""
+    if 'ep_z1' not in st.session_state:
+        st.session_state['ep_z1'] = 0.0
+    if 'ep_z2' not in st.session_state:
+        st.session_state['ep_z2'] = 0.0
+
+    couche_options = ["Remblai", "Assise", "PST", "Couche de forme"]
+    couche_idx = couche_options.index(st.session_state['ep_couche']) if st.session_state['ep_couche'] in couche_options else 0
+
+    # ---------------------------------------------------------
+    # 1. FORMULAIRE DE SAISIE
+    # ---------------------------------------------------------
+    with st.form("form_essai_plaque", clear_on_submit=False):
+        
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.text_input("Client", value="TGCC", disabled=True)
+        with col_info2:
+            st.text_input("Projet", value="LGV CASA SUD", disabled=True)
+
+        st.markdown("---")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            date_selected = st.date_input("Date de l'essai", value=st.session_state['ep_date'])
+            technicien = st.text_input("Technicien :", value=st.session_state['ep_technicien'], placeholder="Nom du technicien")
+            
+        with col2:
+            couche = st.selectbox(
+                "Type de couche", 
+                couche_options,
+                index=couche_idx
+            )
+
+        col_loc1, col_loc2 = st.columns(2)
+        with col_loc1:
+            emplacement = st.text_input("Emplacement", value=st.session_state['ep_emplacement'], placeholder="Ex: Zone Nord / Voie 1")
+        with col_loc2:
+            pk_profil = st.text_input("PK / Profil", value=st.session_state['ep_pk_profil'], placeholder="Ex: PK 12+450 / Profil 12")
+
+        st.markdown("### 📊 Données de Chargement (Enfoncements)")
+        
+        col_z1, col_z2 = st.columns(2)
+        with col_z1:
+            z1 = st.number_input("Z1 - 1er chargement (mm)", min_value=0.0, value=st.session_state['ep_z1'], step=0.01, format="%.2f")
+        with col_z2:
+            z2 = st.number_input("Z2 - 2ème chargement (mm)", min_value=0.0, value=st.session_state['ep_z2'], step=0.01, format="%.2f")
+
+        ev1 = round(112.5 / (z1 * 2), 2) if z1 > 0 else 0.0
+        ev2 = round(90.0 / (z2 * 2), 2) if z2 > 0 else 0.0
+        k_val = round(ev2 / ev1, 2) if ev1 > 0 else 0.0
+
+        st.markdown("### 📈 Résultats Calculés Automatiquement")
+        col_res1, col_res2, col_res3 = st.columns(3)
+        with col_res1:
+            st.metric("EV1 (MPa)", f"{ev1:.2f}")
+        with col_res2:
+            st.metric("EV2 (MPa)", f"{ev2:.2f}")
+        with col_res3:
+            st.metric("Coefficient K (EV2/EV1)", f"{k_val:.2f}")
+
+        st.markdown("---")
+        submitted = st.form_submit_button("💾 Enregistrer l'essai", use_container_width=True)
+
+    # ---------------------------------------------------------
+    # 2. ENREGISTREMENT DANS SUPABASE
+    # ---------------------------------------------------------
+    if submitted:
+        if z1 <= 0 or z2 <= 0:
+            st.warning("⚠️ Veuillez saisir des valeurs supérieures à 0 pour Z1 et Z2 afin d'effectuer les calculs.")
+        else:
             try:
-                supabase.table("essais_plaque").insert(row_p_fallback).execute()
-                st.success("✅ Essai enregistré avec succès !")
+                st.session_state['ep_date'] = date_selected
+                st.session_state['ep_technicien'] = technicien
+                st.session_state['ep_couche'] = couche
+                st.session_state['ep_emplacement'] = emplacement
+                st.session_state['ep_pk_profil'] = pk_profil
+                st.session_state['ep_z1'] = z1
+                st.session_state['ep_z2'] = z2
+
+                data_payload = {
+                    "date_essai": str(date_selected),
+                    "client": "TGCC",
+                    "projet": "LGV CASA SUD",
+                    "norme": "NF P 94-117-1",
+                    "technicien": technicien,
+                    "couche": couche,
+                    "emplacement": emplacement,
+                    "pk_profil": pk_profil,
+                    "z1": float(z1),
+                    "z2": float(z2),
+                    "ev1": float(ev1),
+                    "ev2": float(ev2),
+                    "k": float(k_val)
+                }
+
+                supabase.table("essai_plaque").insert(data_payload).execute()
+                st.success("✅ Essai à la plaque enregistré avec succès !")
                 st.rerun()
-            except Exception as e2:
-                st.error(f"Erreur lors de l'enregistrement : {e2}")
 
-st.markdown("---")
-st.subheader("📋 Historique des Essais à la Plaque")
+            except Exception as e:
+                st.error(f"Erreur d'enregistrement : {e}")
 
-if data_all_plaque:
-    df_p = pd.DataFrame(data_all_plaque)
-    df_p.index = range(1, len(df_p) + 1)
-    st.dataframe(df_p, use_container_width=True)
-else:
-    st.info("Aucun essai à la plaque enregistré pour le moment.")
+    # ---------------------------------------------------------
+    # 3. AFFICHAGE DES ESSAIS ENREGISTRÉS & BLOC ADMIN
+    # ---------------------------------------------------------
+    st.markdown("---")
+    st.markdown("### 📋 Historique des Essais à la Plaque Enregistrés")
+
+    try:
+        res = supabase.table("essai_plaque").select("*").order("date_essai", desc=True).execute()
+        data = res.data if res else []
+
+        if data:
+            df = pd.DataFrame(data)
+
+            cols_order = [
+                "date_essai", "couche", "emplacement", "pk_profil", 
+                "z1", "z2", "ev1", "ev2", "k", "technicien"
+            ]
+
+            cols_present = [c for c in cols_order if c in df.columns]
+            df_display = df[cols_present]
+
+            renames = {
+                "date_essai": "Date d'essai",
+                "couche": "Couche",
+                "emplacement": "Emplacement",
+                "pk_profil": "PK / Profil",
+                "z1": "Z1 (mm)",
+                "z2": "Z2 (mm)",
+                "ev1": "EV1 (MPa)",
+                "ev2": "EV2 (MPa)",
+                "k": "Coefficient K",
+                "technicien": "Technicien"
+            }
+            df_display = df_display.rename(columns=renames)
+
+            st.dataframe(
+                df_display, 
+                use_container_width=True,
+                hide_index=True
+            )
+            st.caption(f"Total des essais enregistrés : {len(df_display)}")
+
+            # --- BLOC D'ADMINISTRATION (MODIFIER / SUPPRIMER) ---
+            if st.session_state.get("role") == "admin":
+                st.markdown("---")
+                st.subheader("🛠️ Espace Administration")
+                
+                record_options = {f"ID {r['id']} - {r.get('date_essai', 'N/A')} - {r.get('pk_profil', '')}": r for r in data}
+                selected_key = st.selectbox("Sélectionner l'essai à gérer", list(record_options.keys()), key="admin_select_plaque")
+                selected_item = record_options[selected_key]
+                
+                col_ed, col_del = st.columns(2)
+                
+                with col_ed:
+                    with st.expander("📝 Modifier cet essai (Tous les champs)"):
+                        with st.form("edit_form_saisie_complet"):
+                            # Conversion sécurisée de la date existante
+                            try:
+                                def_date_essai = datetime.strptime(str(selected_item.get("date_essai", date.today())), "%Y-%m-%d").date()
+                            except:
+                                def_date_essai = date.today()
+
+                            new_date_essai = st.date_input("Date de l'essai", value=def_date_essai, key="edit_ep_date")
+                            new_technicien = st.text_input("Technicien", value=selected_item.get("technicien") or "", key="edit_ep_tech")
+                            
+                            current_couche = selected_item.get("couche") or "Remblai"
+                            idx_c = couche_options.index(current_couche) if current_couche in couche_options else 0
+                            new_couche = st.selectbox("Type de couche", couche_options, index=idx_c, key="edit_ep_couche")
+                            
+                            new_emplacement = st.text_input("Emplacement", value=selected_item.get("emplacement") or "", key="edit_ep_emp")
+                            new_pk = st.text_input("PK / Profil", value=selected_item.get("pk_profil") or "", key="edit_ep_pk")
+                            
+                            new_z1 = st.number_input("Z1 - 1er chargement (mm)", value=safe_float(selected_item.get("z1"), 0.0), step=0.01, format="%.2f", key="edit_ep_z1")
+                            new_z2 = st.number_input("Z2 - 2ème chargement (mm)", value=safe_float(selected_item.get("z2"), 0.0), step=0.01, format="%.2f", key="edit_ep_z2")
+                            
+                            if st.form_submit_button("💾 Enregistrer toutes les modifications"):
+                                try:
+                                    # Recalcul automatique de EV1, EV2 et K
+                                    calc_ev1 = round(112.5 / (new_z1 * 2), 2) if new_z1 > 0 else 0.0
+                                    calc_ev2 = round(90.0 / (new_z2 * 2), 2) if new_z2 > 0 else 0.0
+                                    calc_k = round(calc_ev2 / calc_ev1, 2) if calc_ev1 > 0 else 0.0
+
+                                    supabase.table("essai_plaque").update({
+                                        "date_essai": str(new_date_essai),
+                                        "technicien": new_technicien,
+                                        "couche": new_couche,
+                                        "emplacement": new_emplacement,
+                                        "pk_profil": new_pk,
+                                        "z1": float(new_z1),
+                                        "z2": float(new_z2),
+                                        "ev1": float(calc_ev1),
+                                        "ev2": float(calc_ev2),
+                                        "k": float(calc_k)
+                                    }).eq("id", selected_item["id"]).execute()
+                                    
+                                    st.success("Données et calculs mis à jour avec succès !")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erreur de mise à jour : {e}")
+                            
+                with col_del:
+                    st.markdown("##### ⚠️ Suppression")
+                    if st.button("🗑️ Supprimer définitivement", type="primary", key="btn_supprimer_plaque_admin"):
+                        try:
+                            supabase.table("essai_plaque").delete().eq("id", selected_item["id"]).execute()
+                            st.success("Essai supprimé avec succès.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erreur de suppression : {e}")
+
+        else:
+            st.info("Aucun essai à la plaque n'a encore été enregistré.")
+
+    except Exception as e:
+        st.error(f"Erreur lors du chargement des données : {e}")
