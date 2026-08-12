@@ -15,13 +15,16 @@ def show(supabase):
     with col1:
         date_essai = st.date_input("Date de l'essai", value=date.today(), key="plaque_date")
         client = st.text_input("Client / Organisme", value="TGCC", key="plaque_client")
-        projet = st.text_input("Chantier / Projet", value="Aménagement Boulevard Zerktouni", key="plaque_projet")
-        emplacement = st.text_input("Emplacement / Zone", value="Voie B - PK 1+200", key="plaque_empl")
-
+        projet = st.text_input("Chantier / Projet", value="LGV CASA SUD", key="plaque_projet")
+        
     with col2:
-        norme = st.selectbox("Norme de référence", ["NF P 94-117-1", "LPEE-CTR-CSB"], key="plaque_norme")
+        emplacement = st.text_input("Emplacement / Zone", value="Voie B", key="plaque_empl")
         pk_profil = st.text_input("PK / Profil", value="PK 1+200", key="plaque_pk")
-        couche = st.selectbox("Couche testée", ["Forme (PST)", "Fondation (GNT)", "Base", "Sous-traitement"], key="plaque_couche")
+        couche = st.selectbox(
+            "Couche testée", 
+            ["Assise", "Remblai", "PST", "Couche de forme", "Autre"], 
+            key="plaque_couche"
+        )
         nature_materiau = st.text_input("Nature du matériau", value="GNT 0/31.5 Classée B2", key="plaque_mat")
 
     with col3:
@@ -47,7 +50,6 @@ def show(supabase):
     res_col1.metric("EV1 (MPa)", f"{ev1:.2f}")
     res_col2.metric("EV2 (MPa)", f"{ev2:.2f}")
     
-    # Delta indicatif visuel selon les règles habituelles de conformité (ex: K <= 2.0)
     k_delta = "Conforme (K ≤ 2.0)" if k_ratio <= 2.0 else "Attention (K > 2.0)"
     res_col3.metric("Coefficient K (EV2/EV1)", f"{k_ratio:.2f}", delta=k_delta, delta_color="normal" if k_ratio <= 2.0 else "inverse")
 
@@ -62,7 +64,6 @@ def show(supabase):
             "client": client,
             "projet": projet,
             "emplacement": emplacement,
-            "norme": norme,
             "pk_profil": pk_profil,
             "pkl": pk_profil,
             "couche": couche,
