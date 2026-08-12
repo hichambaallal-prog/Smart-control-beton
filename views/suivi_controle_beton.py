@@ -107,19 +107,27 @@ def show(supabase):
                 ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200", "Cubique 150x150"], 
                 key=f"p_forme_{b_id}"
             )
-        with col_f2:
-            # Calcul dynamique de la section théorique selon la forme choisie (en cm²)
-            if "150x300" in forme_p:
-                sect_def = 176.71
-            elif "160x320" in forme_p:
-                sect_def = 201.06
-            elif "100x200" in forme_p:
-                sect_def = 78.54
-            else:  # Cubique 150x150
-                sect_def = 225.00
+        
+        # Calcul strict de la section théorique (en cm²)
+        if "150x300" in forme_p:
+            sect_def = 176.71
+        elif "160x320" in forme_p:
+            sect_def = 201.06
+        elif "100x200" in forme_p:
+            sect_def = 78.54
+        else:  # Cubique 150x150
+            sect_def = 225.00
 
-            # Champ désactivé (désormais non modifiable)
-            section_p = st.number_input("Section Théorique (cm²)", value=sect_def, format="%.2f", disabled=True, key=f"p_section_{b_id}")
+        with col_f2:
+            # Nettoyage du nom pour la clé unique afin de forcer le rafraîchissement au changement d'option
+            forme_key_clean = forme_p.replace(' ', '_').replace('x', '_')
+            st.number_input(
+                "Section Théorique (cm²)", 
+                value=sect_def, 
+                format="%.2f", 
+                disabled=True, 
+                key=f"p_section_{b_id}_{forme_key_clean}"
+            )
 
         st.markdown("##### 🏷️ Repères des éprouvettes créées")
         reperes_p = []
