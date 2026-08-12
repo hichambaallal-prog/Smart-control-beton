@@ -46,8 +46,12 @@ except ImportError as e:
 
 # Connexion à la base de données Supabase
 try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    # Récupération de l'URL depuis Secrets Streamlit
+    SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://votre-projet.supabase.co")
+    
+    # Récupération de la clé depuis Secrets ou valeur par défaut avec votre clé Publishable
+    SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1")
+    
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     supabase = None
