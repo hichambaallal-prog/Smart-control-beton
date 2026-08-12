@@ -104,7 +104,7 @@ def show(supabase):
         with col_f1:
             forme_p = st.selectbox(
                 "Type / Forme d'éprouvette", 
-                ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200", "Cubique 150x150"], 
+                ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], 
                 key=f"p_forme_{b_id}"
             )
         
@@ -115,11 +115,10 @@ def show(supabase):
             sect_def = 201.06
         elif "100x200" in forme_p:
             sect_def = 78.54
-        else:  # Cubique 150x150
-            sect_def = 225.00
+        else:
+            sect_def = 176.71
 
         with col_f2:
-            # Nettoyage du nom pour la clé unique afin de forcer le rafraîchissement au changement d'option
             forme_key_clean = forme_p.replace(' ', '_').replace('x', '_')
             st.number_input(
                 "Section Théorique (cm²)", 
