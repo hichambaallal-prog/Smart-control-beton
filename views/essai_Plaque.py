@@ -31,10 +31,13 @@ def show(supabase):
         technicien = st.text_input("Technicien LPEE", value="Agent LPEE", key="plaque_tech")
 
     # ---------------------------------------------------------
-    # 2. CALCULS AUTOMATIQUES (Norme NF P 94-117-1 : EV = 112.5 / z)
+    # 2. CALCULS AUTOMATIQUES (NF P 94-117-1)
     # ---------------------------------------------------------
-    ev1 = round(112.5 / z1, 2) if z1 > 0 else 0.0
-    ev2 = round(112.5 / z2, 2) if z2 > 0 else 0.0
+    # EV1 = 112.5 / (Z1 * 2)
+    # EV2 = 90 / (Z2 * 2)
+    # K = EV2 / EV1
+    ev1 = round(112.5 / (z1 * 2), 2) if z1 > 0 else 0.0
+    ev2 = round(90.0 / (z2 * 2), 2) if z2 > 0 else 0.0
     k_ratio = round(ev2 / ev1, 2) if ev1 > 0 else 0.0
 
     st.markdown("---")
@@ -44,7 +47,7 @@ def show(supabase):
     res_col1.metric("EV1 (MPa)", f"{ev1:.2f}")
     res_col2.metric("EV2 (MPa)", f"{ev2:.2f}")
     
-    # Indicateur visuel sur le ratio K
+    # Delta indicatif visuel selon les règles habituelles de conformité (ex: K <= 2.0)
     k_delta = "Conforme (K ≤ 2.0)" if k_ratio <= 2.0 else "Attention (K > 2.0)"
     res_col3.metric("Coefficient K (EV2/EV1)", f"{k_ratio:.2f}", delta=k_delta, delta_color="normal" if k_ratio <= 2.0 else "inverse")
 
