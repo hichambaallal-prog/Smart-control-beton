@@ -50,7 +50,7 @@ def show(supabase):
         ouvrage_p = str(beton_p.get("ouvrage") or "N/A")
         classe_beton_p = str(beton_p.get("classe_beton") or beton_p.get("classe") or "N/A")
         
-        # Récupération automatique de l'affaissement et de la température
+        # Récupération automatique de l'affaissement et de la température pour affichage
         affaissement_raw = str(beton_p.get("affaissement") or beton_p.get("slump") or "N/A")
         temp_beton_p = str(beton_p.get("temperature") or beton_p.get("temp_beton") or "N/A")
 
@@ -97,7 +97,6 @@ def show(supabase):
         with col_e2:
             st.date_input("Date de Coulée", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
         with col_e3:
-            # La clé dynamique force le recalcul instantané à chaque changement d'échéance
             echeance_key_clean = echeance_p.replace(' ', '_')
             date_ecrasement_prevue = st.date_input(
                 "Date d'Écrasement Prévue", 
@@ -151,8 +150,6 @@ def show(supabase):
                     "num_bl": num_bl_p,
                     "ouvrage": ouvrage_p,
                     "classe_beton": classe_beton_p,
-                    "affaissement": affaissement_p,
-                    "temp_beton": temp_beton_p,
                     "date_coulee": str(date_coulee_p),
                     "echeance": echeance_p,
                     "date_ecrasement": str(date_ecrasement_prevue),
@@ -257,7 +254,7 @@ def show(supabase):
             if res_all.data:
                 df_all = pd.DataFrame(res_all.data)
                 cols_display = [
-                    "id", "num_bl", "ouvrage", "classe_beton", "affaissement", "temp_beton", "date_coulee", 
+                    "id", "num_bl", "ouvrage", "classe_beton", "date_coulee", 
                     "echeance", "date_ecrasement", "repere_eprouvette", "statut",
                     "masse", "force_kn", "fc_mpa", "technicien"
                 ]
