@@ -68,7 +68,7 @@ def show(supabase):
         z2 = st.number_input("Z2 - 2ème chargement (mm)", min_value=0.01, max_value=10.0, value=default_z2, step=0.01, format="%.2f", key="plaque_z2")
         technicien = st.text_input("Technicien LPEE", value=default_tech, key="plaque_tech")
 
-    # Calculs automatiques
+    # Calculs automatiques (NF P 94-117-1)
     ev1 = round(112.5 / (z1 * 2), 2) if z1 > 0 else 0.0
     ev2 = round(90.0 / (z2 * 2), 2) if z2 > 0 else 0.0
     k_ratio = round(ev2 / ev1, 2) if ev1 > 0 else 0.0
@@ -111,7 +111,7 @@ def show(supabase):
             }
 
             try:
-                # Filtrage des colonnes valides selon la table Supabase
+                # Filtrage des colonnes valides
                 sample_query = supabase.table("essais_plaque").select("*").limit(1).execute()
                 if sample_query.data and len(sample_query.data) > 0:
                     valid_columns = set(sample_query.data[0].keys())
@@ -120,12 +120,10 @@ def show(supabase):
                     safe_payload = payload
 
                 if editing_item:
-                    # Mettre à jour la ligne existante
                     supabase.table("essais_plaque").update(safe_payload).eq("id", editing_item["id"]).execute()
                     st.success(f"✅ Essai #{editing_item['id']} mis à jour avec succès !")
                     st.session_state["edit_plaque_item"] = None
                 else:
-                    # Créer une nouvelle ligne
                     supabase.table("essais_plaque").insert(safe_payload).execute()
                     st.success("✅ Essai enregistré avec succès !")
 
@@ -141,7 +139,7 @@ def show(supabase):
                 st.rerun()
 
     # ---------------------------------------------------------
-    # 4. HISTORIQUE - COLONNES NETTOYÉES ET FILTRÉES
+    # 4. HISTORIQUE - COLONNES NETTOYÉES ET TRIÉES SELON L'ORDRE SPÉCIFIÉ
     # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📋 Historique des Essais Enregistrés")
@@ -150,23 +148,58 @@ def show(supabase):
         res = supabase.table("essais_plaque").select("*").order("id", desc=True).execute()
         if res.data and len(res.data) > 0:
             df = pd.DataFrame(res.data)
-            
-            # Liste des colonnes non désirées dans l'affichage du tableau
-            cols_to_remove = [
-                "created_at", 
-                "pkl", 
-                "statut", 
-                "observation", 
-                "observations", 
-                "k", 
-                "K", 
-                "rapport ev2/ev1", 
-                "rapport_ev2_ev1"
+
+            # Harmonisation des colonnes d'origine Supabase
+            if "k_ratio" in df.columns and "k" not in df.columns:
+                df["k"] = df["k_ratio"]
+            elif "k" in df.columns and "k_ratio" in df.columns:
+                df["k"] = df["k"].fillna(df["k_ratio"])
+
+            if "pk_profil" not in df.columns and "pkl" in df.columns:
+                df["pk_profil"] = df["pkl"]
+
+            # Mappage des nom de colonnes vers le format final
+            column_mapping = {
+                "id": "ID",
+                "date_essai": "Date d'essai",
+                "client": "Client",
+                "projet": "Projet",
+                "emplacement": "Emplacement",
+                "pk_profil": "PK/profil",
+                "couche": "Couche",
+                "nature_materiau": "Nature de matériaux",
+                "z1": "Z1",
+                "z2": "Z2",
+                "ev1": "EV1",
+                "ev2": "EV2",
+                "k": "K",
+                "technicien": "Technicien"
+            }
+
+            # Renommer les colonnes
+            df_renamed = df.rename(columns=column_mapping)
+
+            # Ordre strict des colonnes demandé
+            ordered_columns = [
+                "ID",
+                "Date d'essai",
+                "Client",
+                "Projet",
+                "Emplacement",
+                "PK/profil",
+                "Couche",
+                "Nature de matériaux",
+                "Z1",
+                "Z2",
+                "EV1",
+                "EV2",
+                "K",
+                "Technicien"
             ]
-            
-            # Suppression dynamique des colonnes si elles existent dans la dataframe
-            cols_to_drop = [c for c in cols_to_remove if c in df.columns]
-            df_display = df.drop(columns=cols_to_drop)
+
+            # Conserver uniquement les colonnes existantes selon l'ordre strict
+            final_columns = [col for col in ordered_columns if col in df_renamed.columns]
+            df_display = df_renamed[final_columns]
 
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
