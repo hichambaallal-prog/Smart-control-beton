@@ -139,7 +139,7 @@ def show(supabase):
                 st.rerun()
 
     # ---------------------------------------------------------
-    # 4. HISTORIQUE - COLONNES NETTOYÉES ET TRIÉES SELON L'ORDRE SPÉCIFIÉ
+    # 4. HISTORIQUE - COLONNES STRICTEMENT SÉLECTIONNÉES ET TRIÉES
     # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📋 Historique des Essais Enregistrés")
@@ -147,59 +147,34 @@ def show(supabase):
     try:
         res = supabase.table("essais_plaque").select("*").order("id", desc=True).execute()
         if res.data and len(res.data) > 0:
-            df = pd.DataFrame(res.data)
+            
+            # Reconstruction d'une liste de dictionnaires propre ligne par ligne
+            clean_rows = []
+            for row in res.data:
+                # Récupération de la valeur K (gestion k_ratio ou k)
+                k_val = row.get("k_ratio") if row.get("k_ratio") is not None else row.get("k")
+                # Récupération de la valeur PK/Profil (gestion pk_profil ou pkl)
+                pk_val = row.get("pk_profil") if row.get("pk_profil") is not None else row.get("pkl")
 
-            # Harmonisation des colonnes d'origine Supabase
-            if "k_ratio" in df.columns and "k" not in df.columns:
-                df["k"] = df["k_ratio"]
-            elif "k" in df.columns and "k_ratio" in df.columns:
-                df["k"] = df["k"].fillna(df["k_ratio"])
+                clean_rows.append({
+                    "ID": row.get("id"),
+                    "Date d'essai": row.get("date_essai"),
+                    "Client": row.get("client"),
+                    "Projet": row.get("projet"),
+                    "Emplacement": row.get("emplacement"),
+                    "PK/profil": pk_val,
+                    "Couche": row.get("couche"),
+                    "Nature de matériaux": row.get("nature_materiau"),
+                    "Z1": row.get("z1"),
+                    "Z2": row.get("z2"),
+                    "EV1": row.get("ev1"),
+                    "EV2": row.get("ev2"),
+                    "K": k_val,
+                    "Technicien": row.get("technicien")
+                })
 
-            if "pk_profil" not in df.columns and "pkl" in df.columns:
-                df["pk_profil"] = df["pkl"]
-
-            # Mappage des nom de colonnes vers le format final
-            column_mapping = {
-                "id": "ID",
-                "date_essai": "Date d'essai",
-                "client": "Client",
-                "projet": "Projet",
-                "emplacement": "Emplacement",
-                "pk_profil": "PK/profil",
-                "couche": "Couche",
-                "nature_materiau": "Nature de matériaux",
-                "z1": "Z1",
-                "z2": "Z2",
-                "ev1": "EV1",
-                "ev2": "EV2",
-                "k": "K",
-                "technicien": "Technicien"
-            }
-
-            # Renommer les colonnes
-            df_renamed = df.rename(columns=column_mapping)
-
-            # Ordre strict des colonnes demandé
-            ordered_columns = [
-                "ID",
-                "Date d'essai",
-                "Client",
-                "Projet",
-                "Emplacement",
-                "PK/profil",
-                "Couche",
-                "Nature de matériaux",
-                "Z1",
-                "Z2",
-                "EV1",
-                "EV2",
-                "K",
-                "Technicien"
-            ]
-
-            # Conserver uniquement les colonnes existantes selon l'ordre strict
-            final_columns = [col for col in ordered_columns if col in df_renamed.columns]
-            df_display = df_renamed[final_columns]
+            # Création directe du DataFrame avec l'ordre exact demandé
+            df_display = pd.DataFrame(clean_rows)
 
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
