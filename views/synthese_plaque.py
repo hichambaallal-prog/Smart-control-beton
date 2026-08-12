@@ -215,21 +215,18 @@ def generate_excel_a4(df_filtered, filter_title="Synthèse Générale"):
         sig_start = synth_start + 7
         ws.row_dimensions[sig_start].height = 24
 
-        # Responsable d'essai (Colonnes B à C)
         ws.merge_cells(start_row=sig_start, start_column=2, end_row=sig_start, end_column=3)
         c_resp = ws.cell(row=sig_start, column=2, value="Responsable d'essai")
         c_resp.font = Font(name="Calibri", size=11, bold=True, color=NAVY_HEADER)
         c_resp.alignment = Alignment(horizontal="center", vertical="center")
         c_resp.border = thin_border
 
-        # Chef du Laboratoire (Colonnes E à F)
         ws.merge_cells(start_row=sig_start, start_column=5, end_row=sig_start, end_column=6)
         c_chef = ws.cell(row=sig_start, column=5, value="Chef du Laboratoire")
         c_chef.font = Font(name="Calibri", size=11, bold=True, color=NAVY_HEADER)
         c_chef.alignment = Alignment(horizontal="center", vertical="center")
         c_chef.border = thin_border
 
-        # Zones vides pour signature
         for r in range(sig_start + 1, sig_start + 4):
             ws.row_dimensions[r].height = 24
             ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=3)
@@ -240,7 +237,6 @@ def generate_excel_a4(df_filtered, filter_title="Synthèse Générale"):
             for col in range(5, 7):
                 ws.cell(row=r, column=col).border = thin_border
 
-    # --- LARGEURS DE COLONNES ---
     col_widths = {
         'A': 14, 'B': 18, 'C': 20, 'D': 15,
         'E': 14, 'F': 14, 'G': 14
@@ -273,7 +269,6 @@ def show(supabase):
         return
 
     try:
-        # Modification ici : essais_plaque avec un "s"
         res = supabase.table("essais_plaque").select("*").order("date_essai", desc=True).execute()
         data = res.data if res else []
     except Exception as e:
@@ -285,7 +280,14 @@ def show(supabase):
         return
 
     df = pd.DataFrame(data)
-    df['date_essai_dt'] = pd.to_datetime(df['date_essai'])
+
+    # --- SÉCURISATION DES COLONNES PAR DÉFAUT ---
+    expected_columns = ["date_essai", "couche", "emplacement", "pk_profil", "ev1", "ev2", "k"]
+    for col in expected_columns:
+        if col not in df.columns:
+            df[col] = None
+
+    df['date_essai_dt'] = pd.to_datetime(df['date_essai'], errors='coerce')
 
     # --- FILTRES DE RECHERCHE ---
     st.markdown("### 🔍 Filtres de Recherche")
@@ -327,14 +329,14 @@ def show(supabase):
 
     # Filtres secondaires
     with col_f3 if type_recap != "Période Personnalisée" else col_f4:
-        emplacements = ["Tous les emplacements"] + sorted([str(x) for x in df['emplacement'].dropna().unique() if str(x) != "None"])
+        emplacements = ["Tous les emplacements"] + sorted([str(x) for x in df['emplacement'].dropna().unique() if str(x) not in ["None", "nan"]])
         emp_sel = st.selectbox("Emplacement", emplacements)
         if emp_sel != "Tous les emplacements":
             filtered_df = filtered_df[filtered_df['emplacement'] == emp_sel]
             filter_label += f" | Emplacement : {emp_sel}"
 
     with col_f4 if type_recap != "Période Personnalisée" else col_f1:
-        couches = ["Toutes les couches"] + sorted([str(x) for x in df['couche'].dropna().unique() if str(x) != "None"])
+        couches = ["Toutes les couches"] + sorted([str(x) for x in df['couche'].dropna().unique() if str(x) not in ["None", "nan"]])
         couche_sel = st.selectbox("Type de couche", couches)
         if couche_sel != "Toutes les couches":
             filtered_df = filtered_df[filtered_df['couche'] == couche_sel]
@@ -349,10 +351,10 @@ def show(supabase):
         st.warning("⚠️ Aucun essai trouvé pour les filtres sélectionnés.")
     else:
         nb_essais = len(filtered_df)
-        ev1_moyen = filtered_df['ev1'].astype(float).mean()
-        ev2_moyen = filtered_df['ev2'].astype(float).mean()
-        k_moyen = filtered_df['k'].astype(float).mean()
-        taux_conforme = (filtered_df['k'].astype(float) >= 1.50).sum() / nb_essais * 100
+        ev1_moyen = pd.to_numeric(filtered_df['ev1'], errors='coerce').fillna(0).mean()
+        ev2_moyen = pd.to_numeric(filtered_df['ev2'], errors='coerce').fillna(0).mean()
+        k_moyen = pd.to_numeric(filtered_df['k'], errors='coerce').fillna(0).mean()
+        taux_conforme = (pd.to_numeric(filtered_df['k'], errors='coerce').fillna(0) >= 1.50).sum() / nb_essais * 100
 
         kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
         kpi1.metric("Total Essais", f"{nb_essais}")
@@ -374,9 +376,6 @@ def show(supabase):
         df_display['date_essai'] = df_display['date_essai_dt'].dt.strftime('%Y-%m-%d')
 
         cols_show = ["date_essai", "couche", "emplacement", "pk_profil", "ev1", "ev2", "k"]
-        for c in cols_show:
-            if c not in df_display.columns:
-                df_display[c] = None
 
         df_display_clean = df_display[cols_show].rename(columns={
             "date_essai": "Date", "couche": "Couche", "emplacement": "Emplacement",
@@ -402,13 +401,12 @@ def show(supabase):
                 with st.expander("📝 Modifier cet essai"):
                     with st.form("edit_form"):
                         new_pk = st.text_input("PK / Profil", value=selected_item.get("pk_profil", ""))
-                        new_ev1 = st.number_input("EV1 (MPa)", value=float(selected_item.get("ev1", 0)))
-                        new_ev2 = st.number_input("EV2 (MPa)", value=float(selected_item.get("ev2", 0)))
+                        new_ev1 = st.number_input("EV1 (MPa)", value=float(selected_item.get("ev1", 0) or 0))
+                        new_ev2 = st.number_input("EV2 (MPa)", value=float(selected_item.get("ev2", 0) or 0))
                         
                         if st.form_submit_button("Enregistrer les modifications"):
                             try:
                                 new_k = new_ev2 / new_ev1 if new_ev1 > 0 else 0
-                                # Modification ici : essais_plaque
                                 supabase.table("essais_plaque").update({
                                     "pk_profil": new_pk,
                                     "ev1": new_ev1,
@@ -424,7 +422,6 @@ def show(supabase):
                 st.markdown("##### ⚠️ Suppression")
                 if st.button("🗑️ Supprimer définitivement", type="primary"):
                     try:
-                        # Modification ici : essais_plaque
                         supabase.table("essais_plaque").delete().eq("id", selected_item["id"]).execute()
                         st.success("Enregistrement supprimé avec succès.")
                         st.rerun()
