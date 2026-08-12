@@ -270,7 +270,7 @@ def show(supabase):
             with col_g2:
                 obs_globale = st.text_input("Observations générales", value="Rupture satisfaisante (NF EN 12390-3).", key="obs_global")
 
-            st.markdown("##### 📝 Saisie des mesures pour le lot (Exemple : 505.3 kN)")
+            st.markdown("##### 📝 Saisie des mesures pour le lot")
 
             # Initialisation de la force à 0.0
             df_saisie = pd.DataFrame([
@@ -294,7 +294,7 @@ def show(supabase):
                     "Masse (g)": st.column_config.NumberColumn("Masse (g)", min_value=1000.0, max_value=30000.0, step=10.0, format="%.1f"),
                     "Force (kN)": st.column_config.NumberColumn(
                         "⚡ Force (kN)", 
-                        help="Saisissez la force de rupture lue sur la presse (ex: 505.3)", 
+                        help="Saisissez la force de rupture lue sur la presse", 
                         min_value=0.0, 
                         max_value=3000.0, 
                         step=0.1, 
