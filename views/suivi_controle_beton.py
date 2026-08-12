@@ -270,10 +270,9 @@ def show(supabase):
             with col_g2:
                 obs_globale = st.text_input("Observations générales", value="Rupture satisfaisante (NF EN 12390-3).", key="obs_global")
 
-            st.markdown("##### 📝 Saisie des mesures pour le lot (Entrez les charges en kN)")
+            st.markdown("##### 📝 Saisie des mesures pour le lot (Exemple : 505.3 kN)")
 
-            # Préparation des données dans un DataFrame pour le st.data_editor
-            # Force (kN) initialisée à 0.0 par défaut pour imposer la saisie
+            # Initialisation de la force à 0.0
             df_saisie = pd.DataFrame([
                 {
                     "ID": ep["id"],
@@ -285,7 +284,7 @@ def show(supabase):
                 for ep in lot_selected
             ])
 
-            # Éditeur de données dynamique Streamlit
+            # Éditeur de données configuré pour 1 chiffre après la virgule (format="%.1f")
             edited_df = st.data_editor(
                 df_saisie,
                 column_config={
@@ -295,10 +294,10 @@ def show(supabase):
                     "Masse (g)": st.column_config.NumberColumn("Masse (g)", min_value=1000.0, max_value=30000.0, step=10.0, format="%.1f"),
                     "Force (kN)": st.column_config.NumberColumn(
                         "⚡ Force (kN)", 
-                        help="Saisissez la force de rupture lue sur la presse", 
+                        help="Saisissez la force de rupture lue sur la presse (ex: 505.3)", 
                         min_value=0.0, 
                         max_value=3000.0, 
-                        step=1.0, 
+                        step=0.1, 
                         format="%.1f"
                     ),
                 },
@@ -307,7 +306,7 @@ def show(supabase):
                 key="data_editor_ecrasement"
             )
 
-            # Calcul en temps réel des résistances Fc pour les forces saisies (>0)
+            # Calcul en temps réel des résistances Fc
             edited_df["Fc (MPa)"] = edited_df.apply(
                 lambda row: round((row["Force (kN)"] * 10.0) / row["Section (cm²)"], 2) if row["Section (cm²)"] > 0 and row["Force (kN)"] > 0 else 0.0,
                 axis=1
@@ -317,14 +316,14 @@ def show(supabase):
             forces_valides = edited_df[edited_df["Force (kN)"] > 0]
             if not forces_valides.empty:
                 fc_moy = round(forces_valides["Fc (MPa)"].mean(), 2)
-                st.success(f"📈 **Résistance moyenne calculée pour les éprouvettes saisies : {fc_moy} MPa**")
+                st.success(f"📈 **Résistance moyenne calculée pour les éprouvettes saisies : {fc_moy:.1f} MPa**")
             else:
                 st.warning("👈 Veuillez remplir la colonne **Force (kN)** pour chaque éprouvette.")
 
             # Bouton d'enregistrement pour TOUT LE LOT
             if st.button("💾 Valider et Enregistrer Tout le Lot", type="primary", use_container_width=True):
                 if (edited_df["Force (kN)"] == 0).any():
-                    st.error("❌ Attention : Une ou plusieurs éprouvettes ont encore une force de 0 kN. Veuillez compléter les saisies.")
+                    st.error("❌ Attention : Une ou plusieurs éprouvettes ont encore une force de 0.0 kN. Veuillez compléter les saisies.")
                 else:
                     succes_lot = 0
                     for _, row in edited_df.iterrows():
