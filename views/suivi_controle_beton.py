@@ -8,6 +8,36 @@ import streamlit as st
 
 
 # =========================================================
+# FONCTION UTILITAIRE : EXTRACTION SÉCURISÉE DU N° BL
+# =========================================================
+def extraire_num_bl(*sources):
+    """Parcourt les dictionnaires fournis pour extraire le premier N° BL valide trouvé."""
+    clefs_possibles = [
+        "num_bl",
+        "bl",
+        "num_bon_livraison",
+        "n_bl",
+        "bon_livraison",
+        "num_bl_p",
+    ]
+    for source in sources:
+        if isinstance(source, dict):
+            for key in clefs_possibles:
+                val = source.get(key)
+                if val is not None:
+                    val_str = str(val).strip()
+                    if val_str and val_str.upper() not in [
+                        "N/A",
+                        "NONE",
+                        "NAN",
+                        "-",
+                        "",
+                    ]:
+                        return val_str
+    return "-"
+
+
+# =========================================================
 # 1. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT EXACT LPEE)
 # =========================================================
 def generer_pv_excel(export_data, infos_header):
@@ -56,14 +86,12 @@ def generer_pv_excel(export_data, infos_header):
         left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
     )
 
-    # Extraction sécurisée du N° BL (Priorité absolue au BL de Phase 1)
-    default_bl = str(infos_header.get("num_bl") or infos_header.get("bl") or "").strip()
-    if not default_bl or default_bl.upper() in ["N/A", "NONE", "NAN"]:
-        default_bl = "-"
+    # Extraction sécurisée du N° BL
+    default_bl = extraire_num_bl(infos_header)
 
     def remplacer_na(valeur, fallback=None):
-        val_str = str(valeur).strip()
-        if val_str.upper() in ["N/A", "NONE", "NAN", ""]:
+        val_str = str(valeur).strip() if valeur is not None else ""
+        if val_str.upper() in ["N/A", "NONE", "NAN", "", "-"]:
             return fallback if fallback is not None else default_bl
         return valeur
 
@@ -525,7 +553,7 @@ def show(supabase):
         else:
             options_beton = {
                 (
-                    f"ID #{b['id']} | BL: {b.get('num_bl') or b.get('bl') or 'N/A'} | Ouvrage:"
+                    f"ID #{b['id']} | BL: {extraire_num_bl(b)} | Ouvrage:"
                     f" {b.get('ouvrage', 'N/A')} | Date:"
                     f" {b.get('date_coulee', b.get('date_livraison', 'N/A'))} |"
                     f" Classe: {b.get('classe_beton', b.get('classe', 'N/A'))}"
@@ -541,9 +569,7 @@ def show(supabase):
             beton_p = options_beton[choix_label_p]
 
             b_id = beton_p.get("id")
-            num_bl_p = str(beton_p.get("num_bl") or beton_p.get("bl") or "").strip()
-            if not num_bl_p or num_bl_p.upper() == "N/A":
-                num_bl_p = "-"
+            num_bl_p = extraire_num_bl(beton_p)
 
             ouvrage_p = str(beton_p.get("ouvrage") or "-")
             classe_beton_p = str(
@@ -849,17 +875,8 @@ def show(supabase):
                 supabase, betonnage_id
             )
 
-            # RÉCUPÉRATION EXACTE DU N° BL SAISI DANS LE SUIVI DE BÉTONNAGE (PHASE 1)
-            exact_bl_phase1 = (
-                info_betonnage.get("num_bl")
-                or info_betonnage.get("bl")
-                or sample.get("num_bl")
-                or sample.get("bl")
-                or ""
-            ).strip()
-
-            if not exact_bl_phase1 or exact_bl_phase1.upper() in ["N/A", "NONE", "NAN"]:
-                exact_bl_phase1 = "-"
+            # EXTRACTION DE TOUTES LES SOURCES D'INFORMATIONS DU BL
+            exact_bl_phase1 = extraire_num_bl(info_betonnage, sample)
 
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
             col_l1.metric("Client", "TGCC")
@@ -1197,13 +1214,7 @@ def show(supabase):
                             .replace("j", ""),
                         })
 
-                    num_bl_h = (
-                        info_beton_h.get("num_bl")
-                        or info_beton_h.get("bl")
-                        or sample_h.get("num_bl")
-                        or sample_h.get("bl")
-                        or "-"
-                    )
+                    num_bl_h = extraire_num_bl(info_beton_h, sample_h)
                     aff_h = (
                         info_beton_h.get("affaissement")
                         or info_beton_h.get("slump")
