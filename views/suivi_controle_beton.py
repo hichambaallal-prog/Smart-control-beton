@@ -301,14 +301,24 @@ def generer_pv_excel(export_data, infos_header):
     for idx, item in enumerate(export_data):
         curr_row = row_start + idx
 
-        ws.cell(row=curr_row, column=3, value=str(item.get("date_essai", "09/06/2025"))).alignment = align_center
-        ws.cell(row=curr_row, column=4, value=item.get("age", 7)).alignment = align_center
+        ws.cell(
+            row=curr_row,
+            column=3,
+            value=str(item.get("date_essai", "09/06/2025")),
+        ).alignment = align_center
+        ws.cell(row=curr_row, column=4, value=item.get("age", 7)).alignment = (
+            align_center
+        )
 
         f_kn = float(item.get("force_kn", 0.0))
-        ws.cell(row=curr_row, column=5, value=f"{f_kn:.1f}".replace(".", ",")).alignment = align_right
+        ws.cell(
+            row=curr_row, column=5, value=f"{f_kn:.1f}".replace(".", ",")
+        ).alignment = align_right
 
         fc_mpa = float(item.get("fc_mpa", 0.0))
-        ws.cell(row=curr_row, column=6, value=f"{fc_mpa:.1f}".replace(".", ",")).alignment = align_right
+        ws.cell(
+            row=curr_row, column=6, value=f"{fc_mpa:.1f}".replace(".", ",")
+        ).alignment = align_right
 
         ws.cell(row=curr_row, column=7, value="-").alignment = align_center
 
@@ -345,7 +355,9 @@ def generer_pv_excel(export_data, infos_header):
     ws.cell(row=last_row, column=1, value="COMMENTAIRE :").font = font_bold
     ws.cell(row=last_row, column=1).alignment = align_center
 
-    ws.merge_cells(start_row=last_row, start_column=2, end_row=last_row, end_column=8)
+    ws.merge_cells(
+        start_row=last_row, start_column=2, end_row=last_row, end_column=8
+    )
     ws.cell(
         row=last_row,
         column=2,
@@ -387,7 +399,7 @@ def show(supabase):
     tab_prog, tab_saisie, tab_hist = st.tabs([
         "📅 Phase 1 : Programmation",
         "💥 Phase 2 : Saisie des Écrasements (Par Lot)",
-        "📋 Historique Complet",
+        "📋 Historique Complet & PVs",
     ])
 
     betonnages_preleves = []
@@ -898,7 +910,6 @@ def show(supabase):
                     use_container_width=True,
                 )
 
-            # --- EXECUTION DE LA SAUVEGARDE EN BASE (SANS DISPARITION DU BOUTON) ---
             if btn_enregistrer:
                 if (df_actuel["Force (kN)"] == 0).any():
                     st.error(
@@ -933,10 +944,10 @@ def show(supabase):
                         )
 
     # ---------------------------------------------------------
-    # HISTORIQUE
+    # HISTORIQUE & RE-TÉLÉCHARGEMENT DES PV
     # ---------------------------------------------------------
     with tab_hist:
-        st.subheader("📋 Historique Général des Contrôles de Béton")
+        st.subheader("📋 Historique Général & Re-téléchargement des PV")
         try:
             res_all = (
                 supabase.table("suivi_controle_beton")
@@ -946,8 +957,106 @@ def show(supabase):
             )
             if res_all.data:
                 df_all = pd.DataFrame(res_all.data)
+
+                # Extraction des essais validés (avec force > 0)
+                df_valides = df_all[
+                    (df_all["force_kn"].notnull()) & (df_all["force_kn"] > 0)
+                ].copy()
+
+                if not df_valides.empty:
+                    st.markdown("##### 📥 Re-télécharger un PV déjà validé")
+
+                    # Regroupement par lot d'écrasement
+                    groupes_valides = {}
+                    for _, row in df_valides.iterrows():
+                        b_id_ep = row.get("betonnage_id")
+                        ech_ep = row.get("echeance", "28 jours")
+                        ouv_ep = row.get("ouvrage", "N/A")
+                        dt_ecras = row.get("date_ecrasement", "N/A")
+
+                        cle_pv = (
+                            f"Ouvrage: {ouv_ep} | Échéance: {ech_ep} (Date:"
+                            f" {dt_ecras}) | Lot ID #{b_id_ep}"
+                        )
+
+                        if cle_pv not in groupes_valides:
+                            groupes_valides[cle_pv] = []
+                        groupes_valides[cle_pv].append(row.to_dict())
+
+                    choix_pv_hist = st.selectbox(
+                        "Sélectionnez le PV validé à re-télécharger :",
+                        list(groupes_valides.keys()),
+                        key="select_pv_hist",
+                    )
+
+                    lot_hist = groupes_valides[choix_pv_hist]
+                    sample_h = lot_hist[0]
+
+                    export_data_h = []
+                    for item in lot_hist:
+                        sec = float(item.get("section") or 176.71)
+                        f_kn = float(item.get("force_kn") or 0.0)
+                        fc = float(item.get("fc_mpa") or 0.0)
+
+                        export_data_h.append({
+                            "repere_eprouvette": item.get(
+                                "repere_eprouvette", f"/{item['id']}"
+                            ),
+                            "forme": item.get(
+                                "forme", "Cylindrique 150x300"
+                            ),
+                            "section": sec,
+                            "force_kn": f_kn,
+                            "fc_mpa": fc,
+                            "date_essai": item.get("date_ecrasement", "N/A"),
+                            "age": str(
+                                item.get("echeance", "28")
+                            )
+                            .replace(" jours", "")
+                            .replace("j", ""),
+                        })
+
+                    infos_header_h = {
+                        "re_num": "25/260/LGV/ B/01",
+                        "dossier": "2025-260-05985-2025-0247",
+                        "client": "TGCC",
+                        "num_bl": sample_h.get("num_bl", "15479"),
+                        "ouvrage": sample_h.get("ouvrage", "N/A"),
+                        "classe_beton": sample_h.get("classe_beton", "C30/37"),
+                        "date_coulee": sample_h.get("date_coulee", "N/A"),
+                        "affaissement": sample_h.get("affaissement", "200"),
+                        "temperature": sample_h.get("temperature", "31"),
+                        "observations": sample_h.get(
+                            "observations",
+                            "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES",
+                        ),
+                    }
+
+                    excel_pv_hist = generer_pv_excel(
+                        export_data_h, infos_header_h
+                    )
+                    file_name_h = (
+                        f"PV_Ecrasement_RE-EXPORT_{sample_h.get('num_bl', 'BL')}.xlsx"
+                    )
+
+                    st.download_button(
+                        label=(
+                            "📄 Télécharger le PV ré-énoncé (Excel Format"
+                            " LPEE)"
+                        ),
+                        data=excel_pv_hist,
+                        file_name=file_name_h,
+                        mime=(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        ),
+                        use_container_width=True,
+                        key="btn_download_hist",
+                    )
+
+                st.markdown("---")
+                st.markdown("##### 📊 Base de données complète")
                 st.dataframe(df_all, use_container_width=True, hide_index=True)
             else:
                 st.info("Aucun enregistrement d'écrasement dans la base.")
         except Exception as e:
-            st.error(f"Erreur lors du chargement : {e}")
+            st.error(f"Erreur lors du chargement de l'historique : {e}")
