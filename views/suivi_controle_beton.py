@@ -73,7 +73,7 @@ def extraire_num_bl(*sources):
 # 1. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT EXACT LPEE)
 # =========================================================
 def generer_pv_excel(export_data, infos_header):
-    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE avec mise en forme et couleurs."""
+    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE avec gestion des états 'En cours' et du commentaire dynamique selon l'échéance."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "PV Écrasement LPEE"
@@ -375,27 +375,32 @@ def generer_pv_excel(export_data, infos_header):
             value=str(remplacer_na(infos_header.get("date_coulee"), "-")),
         )
 
-        ws.cell(
-            row=curr_row,
-            column=3,
-            value=str(remplacer_na(item.get("date_essai"), "-")),
-        )
+        dt_essai = item.get("date_essai")
+        is_en_cours = str(item.get("statut", "")).lower() == "en cours" or float(item.get("force_kn", 0.0)) == 0.0
+
+        if is_en_cours:
+            ws.cell(row=curr_row, column=3, value=str(dt_essai) if dt_essai and dt_essai != "-" else "En cours")
+        else:
+            ws.cell(row=curr_row, column=3, value=str(remplacer_na(dt_essai, "-")))
 
         try:
             ws.cell(row=curr_row, column=4, value=int(item.get("age", 7)))
         except (ValueError, TypeError):
             ws.cell(row=curr_row, column=4, value=item.get("age", 7))
 
-        f_kn = float(item.get("force_kn", 0.0))
-        ws.cell(row=curr_row, column=5, value=f_kn)
+        if is_en_cours:
+            ws.cell(row=curr_row, column=5, value="En cours")
+            ws.cell(row=curr_row, column=6, value="En cours")
+        else:
+            f_kn = float(item.get("force_kn", 0.0))
+            ws.cell(row=curr_row, column=5, value=f_kn)
+            ws.cell(row=curr_row, column=5).number_format = "0.0"
 
-        fc_mpa = float(item.get("fc_mpa", 0.0))
-        ws.cell(row=curr_row, column=6, value=fc_mpa)
+            fc_mpa = float(item.get("fc_mpa", 0.0))
+            ws.cell(row=curr_row, column=6, value=fc_mpa)
+            ws.cell(row=curr_row, column=6).number_format = "0.0"
 
         ws.cell(row=curr_row, column=7, value="-")
-
-        ws.cell(row=curr_row, column=5).number_format = "0.0"
-        ws.cell(row=curr_row, column=6).number_format = "0.0"
 
         for c in range(1, 9):
             ws.cell(row=curr_row, column=c).font = font_regular
@@ -404,24 +409,32 @@ def generer_pv_excel(export_data, infos_header):
 
         cle_lot = f"{item.get('age')}_{item.get('date_essai')}"
         if cle_lot not in groupes_lots:
-            groupes_lots[cle_lot] = []
-        groupes_lots[cle_lot].append(curr_row)
+            groupes_lots[cle_lot] = {"lignes": [], "en_cours": is_en_cours}
+        groupes_lots[cle_lot]["lignes"].append(curr_row)
 
     derniere_cellule_moyenne = f"H{row_start}"
-    for cle_lot, lignes in groupes_lots.items():
+    for cle_lot, data_lot in groupes_lots.items():
+        lignes = data_lot["lignes"]
         start_r = min(lignes)
         end_r = max(lignes)
 
-        if start_r == end_r:
-            ws[f"H{start_r}"] = f"=ROUND(F{start_r}, 1)"
+        if data_lot["en_cours"]:
+            if start_r != end_r:
+                ws.merge_cells(f"H{start_r}:H{end_r}")
+            ws[f"H{start_r}"] = "En cours"
+            ws[f"H{start_r}"].alignment = align_center
+            ws[f"H{start_r}"].font = font_bold
         else:
-            ws.merge_cells(f"H{start_r}:H{end_r}")
-            ws[f"H{start_r}"] = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
+            if start_r == end_r:
+                ws[f"H{start_r}"] = f"=ROUND(F{start_r}, 1)"
+            else:
+                ws.merge_cells(f"H{start_r}:H{end_r}")
+                ws[f"H{start_r}"] = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
 
-        ws[f"H{start_r}"].number_format = "0.0"
-        ws[f"H{start_r}"].alignment = align_center
-        ws[f"H{start_r}"].font = font_bold
-        derniere_cellule_moyenne = f"H{start_r}"
+            ws[f"H{start_r}"].number_format = "0.0"
+            ws[f"H{start_r}"].alignment = align_center
+            ws[f"H{start_r}"].font = font_bold
+            derniere_cellule_moyenne = f"H{start_r}"
 
     next_row = max(row_start + nb_total, 21)
 
@@ -431,22 +444,37 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells(f"B{next_row}:H{next_row}")
 
-    moyenne_cell = derniere_cellule_moyenne
+    # GESTION DES COMMENTAIRES ET ÉCHÉANCES
+    echeances_presentes = [str(item.get("age", "")).strip() for item in export_data]
+    max_age = 0
+    for ech in echeances_presentes:
+        m = re.search(r"\d+", ech)
+        if m:
+            val = int(m.group())
+            if val > max_age:
+                max_age = val
+
     obs_defaut = infos_header.get(
         "observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
     )
 
-    formule_commentaires = (
-        f'=IF(ISBLANK({moyenne_cell}), "", '
-        f'IF(OR('
-            f'AND(ISNUMBER(SEARCH("C25/30", G8)), {moyenne_cell}>=25), '
-            f'AND(ISNUMBER(SEARCH("C30/37", G8)), {moyenne_cell}>=30), '
-            f'AND(ISNUMBER(SEARCH("C35/45", G8)), {moyenne_cell}>=35), '
-            f'AND(ISNUMBER(SEARCH("C40/50", G8)), {moyenne_cell}>=40)'
-        f'), '
-        f'"{obs_defaut}", '
-        f'"PERFORMANCES MECANIQUES NON CONFORMES"))'
-    )
+    if max_age < 28:
+        # PV partiel (ex: 3 jours ou 7 jours)
+        formule_commentaires = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNEES ULTERIEUREMENT"
+    else:
+        # PV à 28 jours ou plus
+        moyenne_cell = derniere_cellule_moyenne
+        formule_commentaires = (
+            f'=IF(OR(ISBLANK({moyenne_cell}), {moyenne_cell}="En cours"), "", '
+            f'IF(OR('
+                f'AND(ISNUMBER(SEARCH("C25/30", G8)), {moyenne_cell}>=25), '
+                f'AND(ISNUMBER(SEARCH("C30/37", G8)), {moyenne_cell}>=30), '
+                f'AND(ISNUMBER(SEARCH("C35/45", G8)), {moyenne_cell}>=35), '
+                f'AND(ISNUMBER(SEARCH("C40/50", G8)), {moyenne_cell}>=40)'
+            f'), '
+            f'"{obs_defaut}", '
+            f'"PERFORMANCES MECANIQUES NON CONFORMES"))'
+        )
 
     ws.cell(row=next_row, column=2, value=formule_commentaires).font = font_bold
     ws.cell(row=next_row, column=2).alignment = align_left
@@ -485,7 +513,7 @@ def generer_pv_excel(export_data, infos_header):
 # FONCTIONS AUXILIAIRES DE SUPABASE
 # =========================================================
 def obtenir_historique_betonnage(supabase, betonnage_id):
-    """Récupère l'intégralité des écrasements déjà enregistrés pour un même béton (betonnage_id)."""
+    """Récupère l'intégralité des éprouvettes (écrasées ou programmées) pour un même béton (betonnage_id)."""
     if not betonnage_id:
         return []
     try:
@@ -493,8 +521,6 @@ def obtenir_historique_betonnage(supabase, betonnage_id):
             supabase.table("suivi_controle_beton")
             .select("*")
             .eq("betonnage_id", betonnage_id)
-            .not_.is_("force_kn", "null")
-            .gt("force_kn", 0)
             .order("id", desc=False)
             .execute()
         )
@@ -554,7 +580,6 @@ def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
     # 🔒 VÉRIFICATION DU RÔLE UTILISATEUR
-    # On vérifie si l'utilisateur connecté est Administrateur
     est_compte_admin = (
         st.session_state.get("user_role") == "admin"
         or st.session_state.get("is_admin") is True
@@ -563,7 +588,6 @@ def show(supabase):
 
     mode_admin = False
 
-    # Affiche le contrôle SEULEMENT si le compte connecté est Administrateur
     if est_compte_admin:
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔒 Mode Administration")
@@ -898,7 +922,6 @@ def show(supabase):
                         )
                         st.rerun()
 
-        # 🔧 MODIFICATION ADMIN - PROGRAMMATIONS DEJA EXISTANTES (Visible Uniquement pour les Admins)
         if mode_admin:
             st.markdown("---")
             st.subheader("🛠️ [ADMIN] Gérer / Modifier les Programmations Existantes")
@@ -993,7 +1016,9 @@ def show(supabase):
             info_betonnage = obtenir_infos_betonnage_parent(
                 supabase, betonnage_id
             )
-            essais_anterieurs = obtenir_historique_betonnage(
+            
+            # Récupération de toutes les éprouvettes du même bétonnage (écrasées ou programmées)
+            historique_complet = obtenir_historique_betonnage(
                 supabase, betonnage_id
             )
 
@@ -1132,57 +1157,43 @@ def show(supabase):
 
             df_actuel = st.session_state[lot_key]
 
+            # Construction des données exportées vers Excel avec gestion des éprouvettes programmées / "En cours"
             export_data = []
+            dict_actuel = {int(row["ID"]): row for _, row in df_actuel.iterrows()}
 
-            if essais_anterieurs:
-                st.info(
-                    f"ℹ️ {len(essais_anterieurs)} essai(s) antérieur(s)"
-                    f" répertorié(s) pour ce béton (Bétonnage ID #{betonnage_id})"
-                    " et inclus dans l'impression."
-                )
-                for ep_ant in essais_anterieurs:
-                    sec_a = float(ep_ant.get("section") or 176.71)
-                    f_a = float(ep_ant.get("force_kn") or 0.0)
-                    fc_a = float(
-                        ep_ant.get("fc_mpa") or round((f_a * 10.0) / sec_a, 1)
-                    )
+            if historique_complet:
+                for ep_h in historique_complet:
+                    ep_id = ep_h["id"]
+                    sec_h = float(ep_h.get("section") or 176.71)
+                    
+                    if ep_id in dict_actuel:
+                        row_saisie = dict_actuel[ep_id]
+                        f_kn = float(row_saisie["Force (kN)"])
+                        fc_mpa = float(row_saisie["Résistance Fc (MPa)"])
+                        ref_p = str(row_saisie["🏷️ Référence de Contrôle"]).strip()
+                        rep_s = str(row_saisie["Repère"]).strip()
+                        statut = "En cours" if f_kn == 0 else "Réalisé"
+                    else:
+                        f_kn = float(ep_h.get("force_kn") or 0.0)
+                        fc_mpa = float(ep_h.get("fc_mpa") or (round((f_kn * 10.0) / sec_h, 1) if f_kn > 0 else 0.0))
+                        ref_p = str(ep_h.get("ref_controle") or ref_controle_courante).strip()
+                        rep_s = str(ep_h.get("repere_eprouvette", f"/{ep_id}")).strip()
+                        statut = "En cours" if f_kn == 0 else "Réalisé"
 
-                    ref_prefix = str(ep_ant.get("ref_controle") or ref_controle_courante).strip()
-                    rep_suffix = str(ep_ant.get("repere_eprouvette", "-")).strip()
-                    rep_complet = (
-                        f"{ref_prefix}{rep_suffix}" if ref_prefix else rep_suffix
-                    )
+                    rep_c = f"{ref_p}{rep_s}" if ref_p else rep_s
 
                     export_data.append({
-                        "repere_eprouvette": rep_complet,
-                        "forme": ep_ant.get("forme", "Cylindrique 150x300"),
-                        "section": sec_a,
-                        "force_kn": f_a,
-                        "fc_mpa": fc_a,
-                        "date_essai": ep_ant.get("date_ecrasement", "-"),
-                        "age": str(ep_ant.get("echeance", "7"))
+                        "repere_eprouvette": rep_c,
+                        "forme": ep_h.get("forme", "Cylindrique 150x300"),
+                        "section": sec_h,
+                        "force_kn": f_kn,
+                        "fc_mpa": fc_mpa,
+                        "date_essai": ep_h.get("date_ecrasement", "-"),
+                        "age": str(ep_h.get("echeance", "28"))
                         .replace(" jours", "")
                         .replace("j", ""),
+                        "statut": statut,
                     })
-
-            for _, row in df_actuel.iterrows():
-                ref_prefix = str(row.get("🏷️ Référence de Contrôle") or "").strip()
-                rep_suffix = str(row["Repère"]).strip()
-                rep_complet = (
-                    f"{ref_prefix}{rep_suffix}" if ref_prefix else rep_suffix
-                )
-
-                export_data.append({
-                    "repere_eprouvette": rep_complet,
-                    "forme": row["Forme d'éprouvette"],
-                    "section": row["_section"],
-                    "force_kn": row["Force (kN)"],
-                    "fc_mpa": row["Résistance Fc (MPa)"],
-                    "date_essai": sample.get("date_ecrasement", "-"),
-                    "age": str(sample.get("echeance", "28"))
-                    .replace(" jours", "")
-                    .replace("j", ""),
-                })
 
             num_bl_valeur = exact_bl_phase1
             affaissement_saisi = (
@@ -1361,7 +1372,7 @@ def show(supabase):
                         f_kn = float(item.get("force_kn") or 0.0)
                         fc = float(
                             item.get("fc_mpa")
-                            or round((f_kn * 10.0) / sec, 1)
+                            or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0)
                         )
 
                         ref_p = str(item.get("ref_controle") or "").strip()
@@ -1369,6 +1380,7 @@ def show(supabase):
                             item.get("repere_eprouvette", f"/{item['id']}")
                         ).strip()
                         rep_c = f"{ref_p}{rep_s}" if ref_p else rep_s
+                        statut = "En cours" if f_kn == 0 else "Réalisé"
 
                         export_data_h.append({
                             "repere_eprouvette": rep_c,
@@ -1380,6 +1392,7 @@ def show(supabase):
                             "age": str(item.get("echeance", "28"))
                             .replace(" jours", "")
                             .replace("j", ""),
+                            "statut": statut,
                         })
 
                     num_bl_h = extraire_num_bl(sample_h, info_beton_h, choix_pv_hist)
@@ -1442,8 +1455,7 @@ def show(supabase):
 
                 st.markdown("---")
                 st.markdown("##### 📊 Base de données globale")
-                
-                # Zone de suppression en mode admin
+
                 if mode_admin:
                     st.warning("🛠️ [ADMIN] Zone de Suppression Définitive")
                     id_del_hist = st.number_input("Entrez l'ID de l'essai à supprimer :", min_value=1, step=1)
