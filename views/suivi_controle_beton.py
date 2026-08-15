@@ -1,4 +1,5 @@
 import io
+import re
 from datetime import date, datetime, timedelta
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -11,7 +12,10 @@ import streamlit as st
 # FONCTION UTILITAIRE : EXTRACTION SÉCURISÉE DU N° BL
 # =========================================================
 def extraire_num_bl(*sources):
-    """Parcourt les dictionnaires fournis pour extraire le premier N° BL valide trouvé."""
+    """
+    Inspecte récursivement les sources (dictionnaires, chaînes) pour extraire 
+    le numéro de Bon de Livraison (BL) sans risquer de renvoyer un simple tiret '-'.
+    """
     clefs_possibles = [
         "num_bl",
         "bl",
@@ -19,9 +23,14 @@ def extraire_num_bl(*sources):
         "n_bl",
         "bon_livraison",
         "num_bl_p",
+        "n_bon",
+        "bon_de_livraison",
+        "code_bl",
     ]
+
     for source in sources:
         if isinstance(source, dict):
+            # 1. Vérification par clés connues
             for key in clefs_possibles:
                 val = source.get(key)
                 if val is not None:
@@ -34,6 +43,35 @@ def extraire_num_bl(*sources):
                         "",
                     ]:
                         return val_str
+
+            # 2. Reperage dynamique si la clé contient "bl"
+            for key, val in source.items():
+                if "bl" in key.lower() or "bon" in key.lower():
+                    if val is not None:
+                        val_str = str(val).strip()
+                        if val_str and val_str.upper() not in [
+                            "N/A",
+                            "NONE",
+                            "NAN",
+                            "-",
+                            "",
+                        ]:
+                            return val_str
+
+        elif isinstance(source, str):
+            # 3. Extraction depuis une chaîne formatée (ex: "ID #7 | BL: 45892 | ...")
+            match = re.search(r"BL\s*:\s*([^\|]+)", source, re.IGNORECASE)
+            if match:
+                val_str = match.group(1).strip()
+                if val_str and val_str.upper() not in [
+                    "N/A",
+                    "NONE",
+                    "NAN",
+                    "-",
+                    "",
+                ]:
+                    return val_str
+
     return "-"
 
 
@@ -569,7 +607,7 @@ def show(supabase):
             beton_p = options_beton[choix_label_p]
 
             b_id = beton_p.get("id")
-            num_bl_p = extraire_num_bl(beton_p)
+            num_bl_p = extraire_num_bl(beton_p, choix_label_p)
 
             ouvrage_p = str(beton_p.get("ouvrage") or "-")
             classe_beton_p = str(
@@ -875,8 +913,8 @@ def show(supabase):
                 supabase, betonnage_id
             )
 
-            # EXTRACTION DE TOUTES LES SOURCES D'INFORMATIONS DU BL
-            exact_bl_phase1 = extraire_num_bl(info_betonnage, sample)
+            # EXTRACTION ULTRA SÉCURISÉE DE LA VALEUR DU BL
+            exact_bl_phase1 = extraire_num_bl(sample, info_betonnage, choix_lot)
 
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
             col_l1.metric("Client", "TGCC")
@@ -1214,7 +1252,7 @@ def show(supabase):
                             .replace("j", ""),
                         })
 
-                    num_bl_h = extraire_num_bl(info_beton_h, sample_h)
+                    num_bl_h = extraire_num_bl(sample_h, info_beton_h, choix_pv_hist)
                     aff_h = (
                         info_beton_h.get("affaissement")
                         or info_beton_h.get("slump")
