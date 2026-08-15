@@ -43,6 +43,14 @@ def generer_pv_excel(export_data, infos_header):
         left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
     )
 
+    # Extraction sécurisée du N° BL pour remplacer les éventuelles valeurs "N/A"
+    default_bl = str(infos_header.get("num_bl") or "N/A")
+
+    def remplacer_na(valeur):
+        if str(valeur).strip().upper() in ["N/A", "NONE", "NAN", ""]:
+            return default_bl
+        return valeur
+
     # --- ENTÊTE DU LABORATOIRE ET RÉFÉRENCES ---
     ws.merge_cells("A1:D1")
     ws["A1"] = "LPEE / CTR CSB"
@@ -57,19 +65,19 @@ def generer_pv_excel(export_data, infos_header):
     ws["E1"] = "RE N° :"
     ws["E1"].font = font_bold
     ws.merge_cells("F1:H1")
-    ws["F1"] = infos_header.get("re_num", "25/260/LGV/ B/01")
+    ws["F1"] = remplacer_na(infos_header.get("re_num", "25/260/LGV/ B/01"))
     ws["F1"].font = font_regular
 
     ws["E2"] = "DOSSIER :"
     ws["E2"].font = font_bold
     ws.merge_cells("F2:H2")
-    ws["F2"] = infos_header.get("dossier", "2025-260-05985-2025-0247")
+    ws["F2"] = remplacer_na(infos_header.get("dossier", "2025-260-05985-2025-0247"))
     ws["F2"].font = font_regular
 
     ws["E3"] = "CLIENT :"
     ws["E3"].font = font_bold
     ws.merge_cells("F3:H3")
-    ws["F3"] = infos_header.get("client", "TGCC")
+    ws["F3"] = remplacer_na(infos_header.get("client", "TGCC"))
     ws["F3"].font = font_bold
 
     for r in range(1, 4):
@@ -114,7 +122,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["A7"] = "Date de\nprélèvement"
     ws["A7"].font = font_bold
     ws["A7"].alignment = align_center
-    ws["B7"] = str(infos_header.get("date_coulee", "N/A"))
+    ws["B7"] = str(remplacer_na(infos_header.get("date_coulee")))
     ws["B7"].font = font_bold
     ws["B7"].alignment = align_center
 
@@ -124,9 +132,8 @@ def generer_pv_excel(export_data, infos_header):
     ws["C7"].alignment = align_center
 
     ws.merge_cells("E7:H7")
-    ws["E7"] = infos_header.get(
-        "lieu_prelevement",
-        infos_header.get("ouvrage", "N/A"),
+    ws["E7"] = remplacer_na(
+        infos_header.get("lieu_prelevement", infos_header.get("ouvrage"))
     )
     ws["E7"].font = font_regular
     ws["E7"].alignment = align_center
@@ -137,9 +144,11 @@ def generer_pv_excel(export_data, infos_header):
     ws["A8"].alignment = align_center
 
     ws.merge_cells("B8:D9")
-    ws["B8"] = infos_header.get(
-        "chantier",
-        "Augmentation de la capacité ferroviaire entre Kenitra et Marrakech et au niveau du hub de Casablanca\nTravaux d'exécution de terrassement, ouvrages d'art et rétablissement de communication entre PK 5+450 et PK 10+000-GARE CASA SUD",
+    ws["B8"] = remplacer_na(
+        infos_header.get(
+            "chantier",
+            "Augmentation de la capacité ferroviaire entre Kenitra et Marrakech et au niveau du hub de Casablanca\nTravaux d'exécution de terrassement, ouvrages d'art et rétablissement de communication entre PK 5+450 et PK 10+000-GARE CASA SUD",
+        )
     )
     ws["B8"].font = font_small
     ws["B8"].alignment = align_center
@@ -150,12 +159,12 @@ def generer_pv_excel(export_data, infos_header):
     ws["E8"].alignment = align_center
 
     ws.merge_cells("G8:H8")
-    ws["G8"] = infos_header.get("classe_beton", "C30/37")
+    ws["G8"] = remplacer_na(infos_header.get("classe_beton", "C30/37"))
     ws["G8"].font = font_bold
     ws["G8"].alignment = align_center
 
     ws.merge_cells("A10:B10")
-    ws["A10"] = infos_header.get("centrale", "TG Prefa Oulad Saleh")
+    ws["A10"] = remplacer_na(infos_header.get("centrale", "TG Prefa Oulad Saleh"))
     ws["A10"].font = font_bold
     ws["A10"].alignment = align_center
 
@@ -164,7 +173,7 @@ def generer_pv_excel(export_data, infos_header):
 
     # Inscription dynamique du Type / Forme de l'éprouvette
     ws.merge_cells("D10:H10")
-    ws["D10"] = infos_header.get("forme", "Cylindrique 150x300")
+    ws["D10"] = remplacer_na(infos_header.get("forme", "Cylindrique 150x300"))
     ws["D10"].font = font_bold
     ws["D10"].alignment = align_center
 
@@ -173,12 +182,14 @@ def generer_pv_excel(export_data, infos_header):
     ws["A11"].font = font_small
     ws["A11"].alignment = align_center
 
-    ws["C11"] = str(infos_header.get("affaissement", "N/A"))
+    ws["C11"] = str(remplacer_na(infos_header.get("affaissement")))
     ws["C11"].font = font_bold
     ws["C11"].alignment = align_center
 
+    # MODIFICATION : Activation du retour automatique à la ligne pour D11
     ws["D11"] = "- Mode confection"
     ws["D11"].font = font_regular
+    ws["D11"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
     ws.merge_cells("E11:H11")
     ws["E11"] = "Par vibration NF EN 12390-2 (2019)"
@@ -190,12 +201,14 @@ def generer_pv_excel(export_data, infos_header):
     ws["A12"].font = font_regular
     ws["A12"].alignment = align_center
 
-    ws["C12"] = str(infos_header.get("temperature", "N/A"))
+    ws["C12"] = str(remplacer_na(infos_header.get("temperature")))
     ws["C12"].font = font_bold
     ws["C12"].alignment = align_center
 
+    # MODIFICATION : Activation du retour automatique à la ligne pour D12
     ws["D12"] = "- Mode conservation"
     ws["D12"].font = font_regular
+    ws["D12"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
     ws.merge_cells("E12:H12")
     ws["E12"] = "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C"
@@ -213,7 +226,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["D13"].alignment = align_center
 
     ws.merge_cells("F13:H13")
-    ws["F13"] = str(infos_header.get("num_bl", "N/A"))
+    ws["F13"] = default_bl
     ws["F13"].font = font_bold
     ws["F13"].alignment = align_center
 
@@ -281,7 +294,7 @@ def generer_pv_excel(export_data, infos_header):
         ws[f"A{row_start}"].alignment = align_center
 
         ws.merge_cells(f"B{row_start}:B{row_start + nb_total - 1}")
-        ws[f"B{row_start}"] = str(infos_header.get("date_coulee", "N/A"))
+        ws[f"B{row_start}"] = str(remplacer_na(infos_header.get("date_coulee")))
         ws[f"B{row_start}"].font = font_bold
         ws[f"B{row_start}"].alignment = align_center
 
@@ -291,7 +304,7 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(
             row=curr_row,
             column=3,
-            value=str(item.get("date_essai", "N/A")),
+            value=str(remplacer_na(item.get("date_essai"))),
         ).alignment = align_center
 
         ws.cell(
@@ -314,28 +327,12 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=c).font = font_regular
             ws.cell(row=curr_row, column=c).border = border_cell
 
-    # Fusions conditionnelles pour le calcul automatique des moyennes
-    if nb_total >= 3:
-        ws.merge_cells("C16:C18")
-        ws.merge_cells("D16:D18")
-        ws.merge_cells("H16:H18")
-        ws["H16"] = "=ROUND(AVERAGE(F16:F18),1)"
-        ws["H16"].alignment = align_center
-        ws["H16"].font = font_bold
-
-    if nb_total >= 12:
-        ws.merge_cells("C19:C27")
-        ws.merge_cells("D19:D27")
-
-        ws.merge_cells("H19:H21")
-        ws["H19"] = "=ROUND(AVERAGE(F19:F21),1)"
-        ws["H19"].alignment = align_center
-        ws["H19"].font = font_bold
-
-        ws.merge_cells("H22:H27")
-        ws["H22"] = "=ROUND(AVERAGE(F22:F27),1)"
-        ws["H22"].alignment = align_center
-        ws["H22"].font = font_bold
+    # MODIFICATION : Fusion dynamique et calcul de la valeur moyenne du lot sous la colonne H
+    if nb_total > 0:
+        ws.merge_cells(f"H{row_start}:H{row_start + nb_total - 1}")
+        ws[f"H{row_start}"] = f"=ROUND(AVERAGE(F{row_start}:F{row_start + nb_total - 1}),1)"
+        ws[f"H{row_start}"].alignment = align_center
+        ws[f"H{row_start}"].font = font_bold
 
     # --- PIED DE PAGE ET COMMENTAIRES ---
     last_row = row_start + max(nb_total, 1)
@@ -358,13 +355,16 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=last_row, column=c).border = border_cell
 
-    # MODIFICATION : Fixation de la hauteur des lignes à 31pt
+    # MODIFICATION : Hauteur des lignes 1 à 6 fixée à 16, et 31 pour les lignes suivantes
     for r in range(1, last_row + 1):
-        ws.row_dimensions[r].height = 31
+        if 1 <= r <= 6:
+            ws.row_dimensions[r].height = 16
+        else:
+            ws.row_dimensions[r].height = 31
 
-    # Ajustement des largeurs de colonnes
+    # MODIFICATION : Largeur de la colonne A fixée à 10
     col_widths = {
-        "A": 8,
+        "A": 10,
         "B": 12,
         "C": 12,
         "D": 10,
@@ -948,40 +948,44 @@ def show(supabase):
                     .replace("j", ""),
                 })
 
-            # Extraction dynamique des variables depuis suivi_betonnage
+            # Extraction dynamique des variables depuis suivi_betonnage et fallback vers num_bl
+            num_bl_valeur = info_betonnage.get("num_bl") or sample.get("num_bl")
             affaissement_saisi = (
                 info_betonnage.get("affaissement")
                 or info_betonnage.get("slump")
-                or sample.get("affaissement", "N/A")
+                or sample.get("affaissement")
             )
             temp_saisie = (
                 info_betonnage.get("temperature")
                 or info_betonnage.get("temp_beton")
-                or sample.get("temperature", "N/A")
+                or sample.get("temperature")
             )
             ouvrage_saisi = (
                 info_betonnage.get("ouvrage")
-                or sample.get("ouvrage", "N/A")
+                or sample.get("ouvrage")
             )
-            forme_saisie = sample.get("forme", "Cylindrique 150x300")
+            date_coulee_saisie = (
+                info_betonnage.get("date_coulee")
+                or sample.get("date_coulee")
+            )
 
             infos_header = {
                 "re_num": "25/260/LGV/ B/01",
                 "dossier": "2025-260-05985-2025-0247",
                 "client": "TGCC",
-                "num_bl": sample.get("num_bl", "15479"),
+                "num_bl": num_bl_valeur,
                 "ouvrage": ouvrage_saisi,
                 "lieu_prelevement": ouvrage_saisi,
                 "classe_beton": sample.get("classe_beton", "C30/37"),
-                "date_coulee": sample.get("date_coulee", "N/A"),
+                "date_coulee": date_coulee_saisie,
                 "affaissement": affaissement_saisi,
                 "temperature": temp_saisie,
-                "forme": forme_saisie,
+                "forme": sample.get("forme", "Cylindrique 150x300"),
                 "observations": obs_globale,
             }
 
             excel_file = generer_pv_excel(export_data, infos_header)
-            filename = f"PV_Ecrasement_LPEE_{sample.get('num_bl', 'BL')}.xlsx"
+            filename = f"PV_Ecrasement_LPEE_{num_bl_valeur or 'BL'}.xlsx"
 
             st.markdown("---")
             col_b1, col_b2 = st.columns(2)
@@ -1118,34 +1122,38 @@ def show(supabase):
                             .replace("j", ""),
                         })
 
+                    num_bl_h = info_beton_h.get("num_bl") or sample_h.get("num_bl")
                     aff_h = (
                         info_beton_h.get("affaissement")
                         or info_beton_h.get("slump")
-                        or sample_h.get("affaissement", "N/A")
+                        or sample_h.get("affaissement")
                     )
                     temp_h = (
                         info_beton_h.get("temperature")
                         or info_beton_h.get("temp_beton")
-                        or sample_h.get("temperature", "N/A")
+                        or sample_h.get("temperature")
                     )
                     ouv_h = (
                         info_beton_h.get("ouvrage")
-                        or sample_h.get("ouvrage", "N/A")
+                        or sample_h.get("ouvrage")
                     )
-                    forme_h = sample_h.get("forme", "Cylindrique 150x300")
+                    date_coulee_h = (
+                        info_beton_h.get("date_coulee")
+                        or sample_h.get("date_coulee")
+                    )
 
                     infos_header_h = {
                         "re_num": "25/260/LGV/ B/01",
                         "dossier": "2025-260-05985-2025-0247",
                         "client": "TGCC",
-                        "num_bl": sample_h.get("num_bl", "15479"),
+                        "num_bl": num_bl_h,
                         "ouvrage": ouv_h,
                         "lieu_prelevement": ouv_h,
                         "classe_beton": sample_h.get("classe_beton", "C30/37"),
-                        "date_coulee": sample_h.get("date_coulee", "N/A"),
+                        "date_coulee": date_coulee_h,
                         "affaissement": aff_h,
                         "temperature": temp_h,
-                        "forme": forme_h,
+                        "forme": sample_h.get("forme", "Cylindrique 150x300"),
                         "observations": sample_h.get(
                             "observations",
                             "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES",
@@ -1155,7 +1163,7 @@ def show(supabase):
                     excel_pv_hist = generer_pv_excel(
                         export_data_h, infos_header_h
                     )
-                    file_name_h = f"PV_Ecrasement_RE-EXPORT_{sample_h.get('num_bl', 'BL')}.xlsx"
+                    file_name_h = f"PV_Ecrasement_RE-EXPORT_{num_bl_h or 'BL'}.xlsx"
 
                     st.download_button(
                         label="📄 Télécharger le PV (Excel Format LPEE)",
