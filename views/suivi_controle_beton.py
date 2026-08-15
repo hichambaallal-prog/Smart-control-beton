@@ -43,7 +43,7 @@ def generer_pv_excel(export_data, infos_header):
         left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
     )
 
-    # Extraction sécurisée du N° BL pour remplacer les éventuelles valeurs "N/A"
+    # Extraction sécurisée du N° BL
     default_bl = str(infos_header.get("num_bl") or "N/A")
 
     def remplacer_na(valeur):
@@ -844,7 +844,6 @@ def show(supabase):
                         "_section": sec,
                         "Force (kN)": f_kn,
                         "Résistance Fc (MPa)": fc,
-                        "Moyenne Resistance Fc (MPa)": fc,
                     })
                 st.session_state[lot_key] = pd.DataFrame(rows_list)
 
@@ -870,13 +869,6 @@ def show(supabase):
                                 row_idx, "Résistance Fc (MPa)"
                             ] = 0.0
 
-                # Calcul de la moyenne du lot et mise à jour de la colonne dédiée
-                valid_fcs = st.session_state[lot_key][
-                    st.session_state[lot_key]["Résistance Fc (MPa)"] > 0
-                ]["Résistance Fc (MPa)"]
-                avg_val = round(valid_fcs.mean(), 1) if not valid_fcs.empty else 0.0
-                st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = avg_val
-
             st.data_editor(
                 st.session_state[lot_key],
                 column_config={
@@ -899,9 +891,6 @@ def show(supabase):
                     "Résistance Fc (MPa)": st.column_config.NumberColumn(
                         "💥 Résistance Fc (MPa)", disabled=True, format="%.1f"
                     ),
-                    "Moyenne Resistance Fc (MPa)": st.column_config.NumberColumn(
-                        "📊 Moyenne Resistance Fc (MPa)", disabled=True, format="%.1f"
-                    ),
                 },
                 use_container_width=True,
                 hide_index=True,
@@ -910,14 +899,19 @@ def show(supabase):
             )
 
             df_actuel = st.session_state[lot_key]
-            forces_valides = df_actuel[df_actuel["Force (kN)"] > 0]
-            if not forces_valides.empty:
-                fc_moy = round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
-                st.success(
-                    f"📈 **Résistance moyenne du lot actuel : {fc_moy:.1f} MPa**"
-                )
+            forces_valides = df_actuel[df_actuel["Résistance Fc (MPa)"] > 0]
+            fc_moy = (
+                round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
+                if not forces_valides.empty
+                else 0.0
+            )
 
-            # Data de sortie
+            st.metric(
+                "📊 Moyenne Résistance Fc (MPa) du Lot",
+                f"{fc_moy:.1f} MPa" if fc_moy > 0 else "0.0 MPa",
+            )
+
+            # Data de sortie pour le fichier Excel
             export_data = []
 
             if essais_anterieurs:
