@@ -124,7 +124,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["C7"].alignment = align_center
 
     ws.merge_cells("E7:H7")
-    # Lieu de prélèvement dynamique qui prend la valeur de l'Ouvrage
     ws["E7"] = infos_header.get(
         "lieu_prelevement",
         infos_header.get("ouvrage", "N/A"),
@@ -155,10 +154,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["G8"].font = font_bold
     ws["G8"].alignment = align_center
 
-    ws.merge_cells("E9:H9")
-    ws["E9"] = "EPROUVETTES"
-    ws["E9"].font = font_bold
-    ws["E9"].alignment = align_center
+    # MODIFICATION : Suppression de "EPROUVETTES" en E9:H9 (ligne 9 colonne E-H reste vide ou bordurée)
 
     ws.merge_cells("A10:B10")
     ws["A10"] = infos_header.get("centrale", "TG Prefa Oulad Saleh")
@@ -167,21 +163,18 @@ def generer_pv_excel(export_data, infos_header):
 
     ws["C10"] = "- Dimensions"
     ws["C10"].font = font_regular
-    ws["D10"] = "Φ"
+
+    # MODIFICATION : Remplacement de "Φ", "15" et "30" par la forme sélectionnée dans D10:H10
+    ws.merge_cells("D10:H10")
+    ws["D10"] = infos_header.get("forme", "Cylindrique 150x300")
     ws["D10"].font = font_bold
     ws["D10"].alignment = align_center
-    ws["E10"] = "15"
-    ws["E10"].alignment = align_center
-    ws.merge_cells("F10:H10")
-    ws["F10"] = "30"
-    ws["F10"].alignment = align_center
 
     ws.merge_cells("A11:B11")
     ws["A11"] = "Affaissement au cône d'abrams NF EN 12350-2"
     ws["A11"].font = font_small
     ws["A11"].alignment = align_center
 
-    # Valeur dynamique transmise depuis le suivi de bétonnage
     ws["C11"] = str(infos_header.get("affaissement", "N/A"))
     ws["C11"].font = font_bold
     ws["C11"].alignment = align_center
@@ -199,7 +192,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["A12"].font = font_regular
     ws["A12"].alignment = align_center
 
-    # Valeur dynamique transmise depuis le suivi de bétonnage
     ws["C12"] = str(infos_header.get("temperature", "N/A"))
     ws["C12"].font = font_bold
     ws["C12"].alignment = align_center
@@ -367,6 +359,10 @@ def generer_pv_excel(export_data, infos_header):
 
     for c in range(1, 9):
         ws.cell(row=last_row, column=c).border = border_cell
+
+    # MODIFICATION : Augmentation de la hauteur des lignes à 35pt
+    for r in range(1, last_row + 1):
+        ws.row_dimensions[r].height = 35
 
     # Ajustement des largeurs de colonnes
     col_widths = {
@@ -969,6 +965,7 @@ def show(supabase):
                 info_betonnage.get("ouvrage")
                 or sample.get("ouvrage", "N/A")
             )
+            forme_saisie = sample.get("forme", "Cylindrique 150x300")
 
             infos_header = {
                 "re_num": "25/260/LGV/ B/01",
@@ -976,11 +973,12 @@ def show(supabase):
                 "client": "TGCC",
                 "num_bl": sample.get("num_bl", "15479"),
                 "ouvrage": ouvrage_saisi,
-                "lieu_prelevement": ouvrage_saisi,  # Remplace la valeur en dur de l'Ouvrage
+                "lieu_prelevement": ouvrage_saisi,
                 "classe_beton": sample.get("classe_beton", "C30/37"),
                 "date_coulee": sample.get("date_coulee", "N/A"),
-                "affaissement": affaissement_saisi,  # Valeur dynamique
-                "temperature": temp_saisie,  # Valeur dynamique
+                "affaissement": affaissement_saisi,
+                "temperature": temp_saisie,
+                "forme": forme_saisie,  # Transmit pour l'affichage en D10:H10
                 "observations": obs_globale,
             }
 
@@ -1136,6 +1134,7 @@ def show(supabase):
                         info_beton_h.get("ouvrage")
                         or sample_h.get("ouvrage", "N/A")
                     )
+                    forme_h = sample_h.get("forme", "Cylindrique 150x300")
 
                     infos_header_h = {
                         "re_num": "25/260/LGV/ B/01",
@@ -1143,11 +1142,12 @@ def show(supabase):
                         "client": "TGCC",
                         "num_bl": sample_h.get("num_bl", "15479"),
                         "ouvrage": ouv_h,
-                        "lieu_prelevement": ouv_h,  # Remplace la valeur en dur de l'Ouvrage
+                        "lieu_prelevement": ouv_h,
                         "classe_beton": sample_h.get("classe_beton", "C30/37"),
                         "date_coulee": sample_h.get("date_coulee", "N/A"),
-                        "affaissement": aff_h,  # Valeur dynamique
-                        "temperature": temp_h,  # Valeur dynamique
+                        "affaissement": aff_h,
+                        "temperature": temp_h,
+                        "forme": forme_h,
                         "observations": sample_h.get(
                             "observations",
                             "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES",
