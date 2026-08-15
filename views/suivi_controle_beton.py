@@ -397,14 +397,14 @@ def generer_pv_excel(export_data, infos_header):
             has_28_days_ecrases = True
 
         # Affichage "En cours" si non encore écrasé
-        if f_kn > 0:
-            ws.cell(row=curr_row, column=5, value=f_kn)
-            ws.cell(row=curr_row, column=6, value=fc_mpa)
-            ws.cell(row=curr_row, column=5).number_format = "0.0"
-            ws.cell(row=curr_row, column=6).number_format = "0.0"
-        else:
-            ws.cell(row=curr_row, column=5, value="En cours")
-            ws.cell(row=curr_row, column=6, value="En cours")
+      if f_kn > 0:
+    ws.cell(row=curr_row, column=5, value=f_kn)
+    ws.cell(row=curr_row, column=6, value=fc_mpa)
+    ws.cell(row=curr_row, column=5).number_format = "0.0"
+    ws.cell(row=curr_row, column=6).number_format = "0.0"
+else:
+    ws.cell(row=curr_row, column=5, value="En cours")
+    ws.cell(row=curr_row, column=6, value="En cours")
 
         ws.cell(row=curr_row, column=7, value="-")
 
