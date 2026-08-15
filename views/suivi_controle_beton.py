@@ -189,7 +189,7 @@ def generer_pv_excel(export_data, infos_header):
     ws.merge_cells("G6:H6")
     ws["G6"] = "Classe : A"
     ws["G6"].font = font_bold
-    ws.alignment = align_center
+    ws["G6"].alignment = align_center
 
     for c in range(1, 9):
         ws.cell(row=6, column=c).border = border_cell
@@ -287,7 +287,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["E11"].font = font_bold
     ws["E11"].alignment = align_center
 
-    # MODIFICATION CASE LIGNE 12 : Nom du Technicien ayant effectué le prélèvement
     tech_prelevement = remplacer_na(
         infos_header.get("technicien_prelevement") 
         or infos_header.get("preleve_par") 
@@ -359,7 +358,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["G14"].font = font_regular
     ws["G14"].alignment = align_center
 
-    ws.H14 = "Moyenne"
+    ws["H14"] = "Moyenne"
     ws["H14"].font = font_regular
     ws["H14"].alignment = align_center
 
@@ -457,7 +456,7 @@ def generer_pv_excel(export_data, infos_header):
                 pass
 
     # ---------------------------------------------------------
-    # POSITION DYNAMIQUE : Ligne 27 (12 ep) ou Ligne 30 (15 ep)
+    # POSITION DYNAMIQUE DE LA SECTION COMMENTAIRE
     # ---------------------------------------------------------
     next_row = row_start + nb_total
 
@@ -496,7 +495,7 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(row=next_row, column=c).border = border_cell
 
     # ---------------------------------------------------------
-    # BLOC DE SIGNATURES (Ajusté sous le commentaire)
+    # BLOC DE SIGNATURES
     # ---------------------------------------------------------
     r_sig_titre = next_row + 2
     r_sig_debut = r_sig_titre + 1
@@ -521,7 +520,7 @@ def generer_pv_excel(export_data, infos_header):
     ws.cell(row=r_sig_debut, column=6).alignment = align_top_center
 
     # ---------------------------------------------------------
-    # DIMENSIONNEMENT ET HAUTEURS DE LIGNES MODIFIÉES
+    # HAUTEURS DE LIGNES & LARGEURS DE COLONNES
     # ---------------------------------------------------------
     for r in range(1, r_sig_fin + 1):
         if r == 7:
