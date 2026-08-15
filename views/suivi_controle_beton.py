@@ -104,11 +104,11 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=5, column=c).border = border_cell
 
-    # Ligne de la Presse
+    # MODIFICATION : Ligne 6 - Alignement à droite pour "Presse : Marque: Controls"
     ws.merge_cells("A6:F6")
     ws["A6"] = "Presse : Marque: Controls"
     ws["A6"].font = font_bold
-    ws["A6"].alignment = align_left
+    ws["A6"].alignment = align_right
 
     ws.merge_cells("G6:H6")
     ws["G6"] = "Classe : A"
@@ -138,12 +138,12 @@ def generer_pv_excel(export_data, infos_header):
     ws["E7"].font = font_regular
     ws["E7"].alignment = align_center
 
-    ws.merge_cells("A8:A9")
+    # MODIFICATION : Hauteur de la ligne 8 à 54 (Suppression de la ligne 9)
     ws["A8"] = "Chantier"
     ws["A8"].font = font_bold
     ws["A8"].alignment = align_center
 
-    ws.merge_cells("B8:D9")
+    ws.merge_cells("B8:D8")
     ws["B8"] = remplacer_na(
         infos_header.get(
             "chantier",
@@ -163,128 +163,128 @@ def generer_pv_excel(export_data, infos_header):
     ws["G8"].font = font_bold
     ws["G8"].alignment = align_center
 
-    ws.merge_cells("A10:B10")
-    ws["A10"] = remplacer_na(infos_header.get("centrale", "TG Prefa Oulad Saleh"))
-    ws["A10"].font = font_bold
-    ws["A10"].alignment = align_center
+    # MODIFICATION : Remplacement de "TG Prefa Oulad Saleh" par la saisie dynamique de la Centrale
+    centrale_saisie = remplacer_na(infos_header.get("centrale", "Centrale à Béton"))
+    ws.merge_cells("A9:B9")
+    ws["A9"] = centrale_saisie
+    ws["A9"].font = font_bold
+    ws["A9"].alignment = align_center
 
-    ws["C10"] = "- Dimensions"
-    ws["C10"].font = font_regular
+    ws["C9"] = "- Dimensions"
+    ws["C9"].font = font_regular
 
     # Inscription dynamique du Type / Forme de l'éprouvette
-    ws.merge_cells("D10:H10")
-    ws["D10"] = remplacer_na(infos_header.get("forme", "Cylindrique 150x300"))
-    ws["D10"].font = font_bold
-    ws["D10"].alignment = align_center
+    ws.merge_cells("D9:H9")
+    ws["D9"] = remplacer_na(infos_header.get("forme", "Cylindrique 150x300"))
+    ws["D9"].font = font_bold
+    ws["D9"].alignment = align_center
+
+    ws.merge_cells("A10:B10")
+    ws["A10"] = "Affaissement au cône d'abrams NF EN 12350-2"
+    ws["A10"].font = font_small
+    ws["A10"].alignment = align_center
+
+    ws["C10"] = str(remplacer_na(infos_header.get("affaissement")))
+    ws["C10"].font = font_bold
+    ws["C10"].alignment = align_center
+
+    ws["D10"] = "- Mode confection"
+    ws["D10"].font = font_regular
+    ws["D10"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    ws.merge_cells("E10:H10")
+    ws["E10"] = "Par vibration NF EN 12390-2 (2019)"
+    ws["E10"].font = font_bold
+    ws["E10"].alignment = align_center
 
     ws.merge_cells("A11:B11")
-    ws["A11"] = "Affaissement au cône d'abrams NF EN 12350-2"
-    ws["A11"].font = font_small
+    ws["A11"] = "Température °C"
+    ws["A11"].font = font_regular
     ws["A11"].alignment = align_center
 
-    ws["C11"] = str(remplacer_na(infos_header.get("affaissement")))
+    ws["C11"] = str(remplacer_na(infos_header.get("temperature")))
     ws["C11"].font = font_bold
     ws["C11"].alignment = align_center
 
-    # MODIFICATION : Activation du retour automatique à la ligne pour D11
-    ws["D11"] = "- Mode confection"
+    ws["D11"] = "- Mode conservation"
     ws["D11"].font = font_regular
     ws["D11"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
     ws.merge_cells("E11:H11")
-    ws["E11"] = "Par vibration NF EN 12390-2 (2019)"
+    ws["E11"] = "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C"
     ws["E11"].font = font_bold
     ws["E11"].alignment = align_center
 
-    ws.merge_cells("A12:B12")
-    ws["A12"] = "Température °C"
-    ws["A12"].font = font_regular
+    ws.merge_cells("A12:C12")
+    ws["A12"] = "Densité du béton durci NF EN 12390-7(2019)"
+    ws["A12"].font = font_small
     ws["A12"].alignment = align_center
 
-    ws["C12"] = str(remplacer_na(infos_header.get("temperature")))
-    ws["C12"].font = font_bold
-    ws["C12"].alignment = align_center
-
-    # MODIFICATION : Activation du retour automatique à la ligne pour D12
-    ws["D12"] = "- Mode conservation"
+    ws.merge_cells("D12:E12")
+    ws["D12"] = "N° de bon de livraison"
     ws["D12"].font = font_regular
-    ws["D12"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws["D12"].alignment = align_center
 
-    ws.merge_cells("E12:H12")
-    ws["E12"] = "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C"
-    ws["E12"].font = font_bold
-    ws["E12"].alignment = align_center
+    ws.merge_cells("F12:H12")
+    ws["F12"] = default_bl
+    ws["F12"].font = font_bold
+    ws["F12"].alignment = align_center
 
-    ws.merge_cells("A13:C13")
-    ws["A13"] = "Densité du béton durci NF EN 12390-7(2019)"
-    ws["A13"].font = font_small
-    ws["A13"].alignment = align_center
-
-    ws.merge_cells("D13:E13")
-    ws["D13"] = "N° de bon de livraison"
-    ws["D13"].font = font_regular
-    ws["D13"].alignment = align_center
-
-    ws.merge_cells("F13:H13")
-    ws["F13"] = default_bl
-    ws["F13"].font = font_bold
-    ws["F13"].alignment = align_center
-
-    for r in range(7, 14):
+    for r in range(7, 13):
         for c in range(1, 9):
             ws.cell(row=r, column=c).border = border_cell
 
     # --- TABLEAU DES RÉSULTATS D'ÉCRASEMENT ---
-    ws.merge_cells("A14:A15")
-    ws["A14"] = "Réf,"
-    ws["A14"].font = font_bold
-    ws["A14"].alignment = align_center
+    ws.merge_cells("A13:A14")
+    ws["A13"] = "Réf,"
+    ws["A13"].font = font_bold
+    ws["A13"].alignment = align_center
 
-    ws.merge_cells("B14:C14")
-    ws["B14"] = "Date"
-    ws["B14"].font = font_bold
+    ws.merge_cells("B13:C13")
+    ws["B13"] = "Date"
+    ws["B13"].font = font_bold
+    ws["B13"].alignment = align_center
+
+    ws["B14"] = "Fabri"
+    ws["B14"].font = font_regular
     ws["B14"].alignment = align_center
 
-    ws["B15"] = "Fabri"
-    ws["B15"].font = font_regular
-    ws["B15"].alignment = align_center
+    ws["C14"] = "Essai"
+    ws["C14"].font = font_regular
+    ws["C14"].alignment = align_center
 
-    ws["C15"] = "Essai"
-    ws["C15"].font = font_regular
-    ws["C15"].alignment = align_center
+    ws.merge_cells("D13:D14")
+    ws["D13"] = "Age (jours)"
+    ws["D13"].font = font_bold
+    ws["D13"].alignment = align_center
 
-    ws.merge_cells("D14:D15")
-    ws["D14"] = "Age (jours)"
-    ws["D14"].font = font_bold
-    ws["D14"].alignment = align_center
+    ws.merge_cells("E13:E14")
+    ws["E13"] = "Charge rupture(KN)"
+    ws["E13"].font = font_bold
+    ws["E13"].alignment = align_center
 
-    ws.merge_cells("E14:E15")
-    ws["E14"] = "Charge rupture(KN)"
-    ws["E14"].font = font_bold
-    ws["E14"].alignment = align_center
+    ws.merge_cells("F13:H13")
+    ws["F13"] = "Résistance (MPa)"
+    ws["F13"].font = font_bold
+    ws["F13"].alignment = align_center
 
-    ws.merge_cells("F14:H14")
-    ws["F14"] = "Résistance (MPa)"
-    ws["F14"].font = font_bold
+    ws["F14"] = "Compression"
+    ws["F14"].font = font_regular
     ws["F14"].alignment = align_center
 
-    ws["F15"] = "Compression"
-    ws["F15"].font = font_regular
-    ws["F15"].alignment = align_center
+    ws["G14"] = "Traction"
+    ws["G14"].font = font_regular
+    ws["G14"].alignment = align_center
 
-    ws["G15"] = "Traction"
-    ws["G15"].font = font_regular
-    ws["G15"].alignment = align_center
+    ws["H14"] = "Moyenne"
+    ws["H14"].font = font_regular
+    ws["H14"].alignment = align_center
 
-    ws["H15"] = "Moyenne"
-    ws["H15"].font = font_regular
-    ws["H15"].alignment = align_center
-
-    for r in range(14, 16):
+    for r in range(13, 15):
         for c in range(1, 9):
             ws.cell(row=r, column=c).border = border_cell
 
-    row_start = 16
+    row_start = 15
     nb_total = len(export_data)
 
     if nb_total > 0:
@@ -327,42 +327,55 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=c).font = font_regular
             ws.cell(row=curr_row, column=c).border = border_cell
 
-    # MODIFICATION : Fusion dynamique et calcul de la valeur moyenne du lot sous la colonne H
+    # MODIFICATION : Remplacement de la case moyenne par la formule dynamique de moyenne du lot (colonne H)
+    row_end = row_start + max(nb_total, 1) - 1
     if nb_total > 0:
-        ws.merge_cells(f"H{row_start}:H{row_start + nb_total - 1}")
-        ws[f"H{row_start}"] = f"=ROUND(AVERAGE(F{row_start}:F{row_start + nb_total - 1}),1)"
+        ws.merge_cells(f"H{row_start}:H{row_end}")
+        ws[f"H{row_start}"] = f"=ROUND(AVERAGE(F{row_start}:F{row_end}), 1)"
         ws[f"H{row_start}"].alignment = align_center
         ws[f"H{row_start}"].font = font_bold
 
-    # --- PIED DE PAGE ET COMMENTAIRES ---
-    last_row = row_start + max(nb_total, 1)
+    # MODIFICATION : Gestion de la ligne 22 pour le commentaire de conformité
+    # Suppression de l'ancienne ligne 22 et insertion d'une ligne 22 propre
+    ws.delete_rows(22)
+    ws.insert_rows(22)
 
-    ws.cell(row=last_row, column=1, value="COMMENTAIRE :").font = font_bold
-    ws.cell(row=last_row, column=1).alignment = align_center
+    ws.cell(row=22, column=1, value="Commentaire :").font = font_bold
+    ws.cell(row=22, column=1).alignment = align_left
 
-    ws.merge_cells(
-        start_row=last_row, start_column=2, end_row=last_row, end_column=8
+    ws.merge_cells("B22:H22")
+    
+    # Formule dynamique de conformité en fonction de la classe de béton et de la moyenne à 28 jours (Cellule H15/H_moyenne)
+    # Vérifie si le béton respecte le seuil MPa du projet
+    moyenne_cell = f"H{row_start}"
+    formule_commentaires = (
+        f'=IF(ISBLANK({moyenne_cell}), "", '
+        f'IF(OR('
+            f'AND(ISNUMBER(SEARCH("C25/30", G8)), {moyenne_cell}>=25), '
+            f'AND(ISNUMBER(SEARCH("C30/37", G8)), {moyenne_cell}>=30), '
+            f'AND(ISNUMBER(SEARCH("C35/45", G8)), {moyenne_cell}>=35), '
+            f'AND(ISNUMBER(SEARCH("C40/50", G8)), {moyenne_cell}>=40)'
+        f'), '
+        f'"PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES", '
+        f'"PERFORMANCES MECANIQUES A 28 JOURS NE SONT PAS CONFORMES"))'
     )
-    ws.cell(
-        row=last_row,
-        column=2,
-        value=infos_header.get(
-            "observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
-        ),
-    ).font = font_bold
-    ws.cell(row=last_row, column=2).alignment = align_left
+    
+    ws.cell(row=22, column=2, value=formule_commentaires).font = font_bold
+    ws.cell(row=22, column=2).alignment = align_left
 
     for c in range(1, 9):
-        ws.cell(row=last_row, column=c).border = border_cell
+        ws.cell(row=22, column=c).border = border_cell
 
-    # MODIFICATION : Hauteur des lignes 1 à 6 fixée à 16, et 31 pour les lignes suivantes
-    for r in range(1, last_row + 1):
-        if 1 <= r <= 6:
-            ws.row_dimensions[r].height = 16
-        else:
-            ws.row_dimensions[r].height = 31
+    # MODIFICATION : Configuration des hauteurs de lignes (Hauteur ligne 8 = 54)
+    ws.row_dimensions[8].height = 54
+    for r in range(1, 23):
+        if r != 8:
+            if 1 <= r <= 6:
+                ws.row_dimensions[r].height = 16
+            else:
+                ws.row_dimensions[r].height = 31
 
-    # MODIFICATION : Largeur de la colonne A fixée à 10
+    # Largeurs des colonnes
     col_widths = {
         "A": 10,
         "B": 12,
@@ -948,7 +961,7 @@ def show(supabase):
                     .replace("j", ""),
                 })
 
-            # Extraction dynamique des variables depuis suivi_betonnage et fallback vers num_bl
+            # Extraction dynamique des variables depuis suivi_betonnage et fallback
             num_bl_valeur = info_betonnage.get("num_bl") or sample.get("num_bl")
             affaissement_saisi = (
                 info_betonnage.get("affaissement")
@@ -968,6 +981,11 @@ def show(supabase):
                 info_betonnage.get("date_coulee")
                 or sample.get("date_coulee")
             )
+            centrale_saisie = (
+                info_betonnage.get("centrale")
+                or info_betonnage.get("centrale_beton")
+                or sample.get("centrale")
+            )
 
             infos_header = {
                 "re_num": "25/260/LGV/ B/01",
@@ -981,6 +999,7 @@ def show(supabase):
                 "affaissement": affaissement_saisi,
                 "temperature": temp_saisie,
                 "forme": sample.get("forme", "Cylindrique 150x300"),
+                "centrale": centrale_saisie,
                 "observations": obs_globale,
             }
 
@@ -1141,6 +1160,11 @@ def show(supabase):
                         info_beton_h.get("date_coulee")
                         or sample_h.get("date_coulee")
                     )
+                    centrale_h = (
+                        info_beton_h.get("centrale")
+                        or info_beton_h.get("centrale_beton")
+                        or sample_h.get("centrale")
+                    )
 
                     infos_header_h = {
                         "re_num": "25/260/LGV/ B/01",
@@ -1154,6 +1178,7 @@ def show(supabase):
                         "affaissement": aff_h,
                         "temperature": temp_h,
                         "forme": sample_h.get("forme", "Cylindrique 150x300"),
+                        "centrale": centrale_h,
                         "observations": sample_h.get(
                             "observations",
                             "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES",
