@@ -631,12 +631,13 @@ def show(supabase):
                 "ℹ️ Aucun bétonnage en attente de programmation (tous les prélèvements ont déjà été entièrement programmés)."
             )
         else:
+            # OPTION AFFICHAGE ORDRE : Classe de béton -> Date de bétonnage -> Ouvrage
             options_beton = {
                 (
-                    f"ID #{b['id']} | BL: {extraire_num_bl(b)} | Ouvrage:"
-                    f" {b.get('ouvrage', 'N/A')} | Date:"
-                    f" {b.get('date_coulee', b.get('date_livraison', 'N/A'))} |"
-                    f" Classe: {b.get('classe_beton', b.get('classe', 'N/A'))}"
+                    f"Classe: {b.get('classe_beton', b.get('classe', 'N/A'))} | "
+                    f"Date: {b.get('date_coulee', b.get('date_livraison', 'N/A'))} | "
+                    f"Ouvrage: {b.get('ouvrage', 'N/A')} | "
+                    f"BL: {extraire_num_bl(b)} | ID #{b['id']}"
                 ): b
                 for b in betonnages_non_programmes
             }
@@ -693,7 +694,6 @@ def show(supabase):
             except Exception:
                 date_coulee_p = date.today()
 
-            # Récupération persistante du préfixe de contrôle
             ref_controle_init = determiner_ref_controle(
                 supabase, b_id, beton_p, {}
             )
@@ -711,7 +711,6 @@ def show(supabase):
                 value=ref_controle_init,
                 key=f"p_ref_ctrl_{b_id}",
             )
-            # Mise à jour globale du préfixe lors de la modification
             st.session_state[f"ref_controle_beton_{b_id}"] = ref_controle_p
 
             st.markdown("---")
@@ -853,7 +852,6 @@ def show(supabase):
                     use_container_width=True,
                     key=f"btn_save_prog_{b_id}",
                 ):
-                    # Sauvegarde optionnelle dans la table parent si la colonne existe
                     try:
                         supabase.table("suivi_betonnage").update(
                             {"ref_controle": ref_controle_p}
@@ -983,7 +981,6 @@ def show(supabase):
 
             st.markdown("##### 📝 Saisie des forces d'écrasement")
 
-            # Récupération persistante de la Référence de Contrôle du prélèvement
             ref_controle_courante = determiner_ref_controle(
                 supabase, betonnage_id, info_betonnage, sample
             )
@@ -1039,7 +1036,6 @@ def show(supabase):
                     if "🏷️ Référence de Contrôle" in updated_cols:
                         nouvelle_ref = updated_cols["🏷️ Référence de Contrôle"]
                         st.session_state[lot_key].at[row_idx, "🏷️ Référence de Contrôle"] = nouvelle_ref
-                        # Propagation globale à tous les lots du même prélèvement
                         st.session_state[f"ref_controle_beton_{betonnage_id}"] = nouvelle_ref
 
                 df_cur = st.session_state[lot_key]
@@ -1214,7 +1210,6 @@ def show(supabase):
                     succes_lot = 0
                     ref_finale = df_actuel.iloc[0].get("🏷️ Référence de Contrôle")
                     
-                    # Persistance globale dans la table parent
                     try:
                         supabase.table("suivi_betonnage").update(
                             {"ref_controle": ref_finale}
