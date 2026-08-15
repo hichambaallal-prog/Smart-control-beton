@@ -583,10 +583,42 @@ def show(supabase):
     with tab_prog:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
-        if not betonnages_preleves:
+        # 1. Compter les éprouvettes déjà programmées par betonnage_id
+        prog_counts = {}
+        try:
+            res_deja_all = (
+                supabase.table("suivi_controle_beton")
+                .select("betonnage_id")
+                .execute()
+            )
+            if res_deja_all.data:
+                for row in res_deja_all.data:
+                    b_id_val = row.get("betonnage_id")
+                    if b_id_val:
+                        prog_counts[b_id_val] = prog_counts.get(b_id_val, 0) + 1
+        except Exception as e:
+            st.warning(f"Note lors du contrôle des quotas : {e}")
+
+        # 2. Exclure les bétonnages dont le quota est entièrement programmé
+        betonnages_non_programmes = []
+        for b in betonnages_preleves:
+            b_id = b.get("id")
+            
+            raw_nb_ep = b.get("nb_eprouvettes") or b.get("nombre_eprouvettes")
+            try:
+                total_prevu = int(raw_nb_ep) if raw_nb_ep is not None else 12
+            except (ValueError, TypeError):
+                total_prevu = 12
+
+            deja_prog = prog_counts.get(b_id, 0)
+            
+            # Conservation uniquement des bétonnages avec du solde disponible
+            if (total_prevu - deja_prog) > 0:
+                betonnages_non_programmes.append(b)
+
+        if not betonnages_non_programmes:
             st.info(
-                "ℹ️ Aucun suivi de bétonnage avec prélèvement d'éprouvettes"
-                " (OUI) trouvé."
+                "ℹ️ Aucun bétonnage en attente de programmation (tous les prélèvements ont déjà été entièrement programmés)."
             )
         else:
             options_beton = {
@@ -596,7 +628,7 @@ def show(supabase):
                     f" {b.get('date_coulee', b.get('date_livraison', 'N/A'))} |"
                     f" Classe: {b.get('classe_beton', b.get('classe', 'N/A'))}"
                 ): b
-                for b in betonnages_preleves
+                for b in betonnages_non_programmes
             }
 
             choix_label_p = st.selectbox(
@@ -624,19 +656,7 @@ def show(supabase):
             except (ValueError, TypeError):
                 total_eprouvettes_prevues = 12
 
-            eprouvettes_deja_prog = 0
-            try:
-                res_deja = (
-                    supabase.table("suivi_controle_beton")
-                    .select("id")
-                    .eq("betonnage_id", b_id)
-                    .execute()
-                )
-                if res_deja.data:
-                    eprouvettes_deja_prog = len(res_deja.data)
-            except Exception:
-                eprouvettes_deja_prog = 0
-
+            eprouvettes_deja_prog = prog_counts.get(b_id, 0)
             solde_disponible = max(
                 0, total_eprouvettes_prevues - eprouvettes_deja_prog
             )
@@ -913,7 +933,7 @@ def show(supabase):
                 supabase, betonnage_id
             )
 
-            # EXTRACTION ULTRA SÉCURISÉE DE LA VALEUR DU BL
+            # EXTRACTION SÉCURISÉE DU BL
             exact_bl_phase1 = extraire_num_bl(sample, info_betonnage, choix_lot)
 
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
