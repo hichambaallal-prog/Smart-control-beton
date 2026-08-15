@@ -295,6 +295,8 @@ def generer_pv_excel(export_data, infos_header):
         ws[f"B{row_start}"].font = font_bold
         ws[f"B{row_start}"].alignment = align_center
 
+    # Regroupement par lot (par âge / date d'essai) pour calculer la moyenne de chaque lot séparément
+    groupes_lots = {}
     for idx, item in enumerate(export_data):
         curr_row = row_start + idx
 
@@ -324,13 +326,26 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=c).font = font_regular
             ws.cell(row=curr_row, column=c).border = border_cell
 
-    # Fusion unique de la cellule Moyenne dans Excel
-    row_end = row_start + max(nb_total, 1) - 1
-    if nb_total > 0:
-        ws.merge_cells(f"H{row_start}:H{row_end}")
-        ws[f"H{row_start}"] = f"=ROUND(AVERAGE(F{row_start}:F{row_end}), 1)"
-        ws[f"H{row_start}"].alignment = align_center
-        ws[f"H{row_start}"].font = font_bold
+        cle_lot = f"{item.get('age')}_{item.get('date_essai')}"
+        if cle_lot not in groupes_lots:
+            groupes_lots[cle_lot] = []
+        groupes_lots[cle_lot].append(curr_row)
+
+    # Fusion de la colonne H (Moyenne) individuellement POUR CHAQUE LOT
+    derniere_cellule_moyenne = f"H{row_start}"
+    for cle_lot, lignes in groupes_lots.items():
+        start_r = min(lignes)
+        end_r = max(lignes)
+
+        if start_r == end_r:
+            ws[f"H{start_r}"] = f"=ROUND(F{start_r}, 1)"
+        else:
+            ws.merge_cells(f"H{start_r}:H{end_r}")
+            ws[f"H{start_r}"] = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
+
+        ws[f"H{start_r}"].alignment = align_center
+        ws[f"H{start_r}"].font = font_bold
+        derniere_cellule_moyenne = f"H{start_r}"
 
     # Commentaire de conformité
     ws.delete_rows(22)
@@ -341,7 +356,7 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells("B22:H22")
 
-    moyenne_cell = f"H{row_start}"
+    moyenne_cell = derniere_cellule_moyenne
     formule_commentaires = (
         f'=IF(ISBLANK({moyenne_cell}), "", '
         f'IF(OR('
@@ -847,12 +862,12 @@ def show(supabase):
                         "Moyenne Resistance Fc (MPa)": 0.0,
                     })
                 df_init = pd.DataFrame(rows_list)
-                
-                # Calcul de la moyenne initiale
+
+                # Calcul de la moyenne initiale pour ce lot
                 valides_init = df_init[df_init["Résistance Fc (MPa)"] > 0]
                 moy_init = round(valides_init["Résistance Fc (MPa)"].mean(), 1) if not valides_init.empty else 0.0
                 df_init["Moyenne Resistance Fc (MPa)"] = moy_init
-                
+
                 st.session_state[lot_key] = df_init
 
             def update_fc():
@@ -877,7 +892,7 @@ def show(supabase):
                                 row_idx, "Résistance Fc (MPa)"
                             ] = 0.0
 
-                # Calcul et répercussion de la moyenne sur les 3 lignes
+                # Recalcul de la moyenne du lot de la Phase 2
                 df_cur = st.session_state[lot_key]
                 forces_valides = df_cur[df_cur["Résistance Fc (MPa)"] > 0]
                 fc_moy = (
@@ -887,7 +902,6 @@ def show(supabase):
                 )
                 st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = fc_moy
 
-            # --- Saisie avec colonne moyenne réintégrée sur les 3 lignes ---
             st.data_editor(
                 st.session_state[lot_key],
                 column_config={
