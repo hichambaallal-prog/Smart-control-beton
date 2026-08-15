@@ -73,7 +73,7 @@ def extraire_num_bl(*sources):
 # 1. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT EXACT LPEE)
 # =========================================================
 def generer_pv_excel(export_data, infos_header):
-    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE avec gestion des états 'En cours' et du commentaire dynamique."""
+    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "PV Écrasement LPEE"
@@ -188,7 +188,7 @@ def generer_pv_excel(export_data, infos_header):
     ws.merge_cells("G6:H6")
     ws["G6"] = "Classe : A"
     ws["G6"].font = font_bold
-    ws["G6"].alignment = align_center
+    ws.alignment = align_center
 
     for c in range(1, 9):
         ws.cell(row=6, column=c).border = border_cell
@@ -341,7 +341,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["F13"].font = font_bold
     ws["F13"].alignment = align_center
 
-    ws.font_regular = font_regular
     ws["F14"] = "Compression"
     ws["F14"].font = font_regular
     ws["F14"].alignment = align_center
@@ -364,8 +363,6 @@ def generer_pv_excel(export_data, infos_header):
     nb_total = len(export_data)
 
     groupes_lots = {}
-    
-    # Indicateurs pour vérifier spécifiquement l'état à 28 jours
     a_des_28j_ecrases = False
     cellule_moyenne_28j = None
 
@@ -443,7 +440,6 @@ def generer_pv_excel(export_data, infos_header):
             ws[f"H{start_r}"].alignment = align_center
             ws[f"H{start_r}"].font = font_bold
 
-            # On conserve la référence de cellule si l'échéance est >= 28 jours et écrasée
             try:
                 if int(str(age_lot).replace("j", "").replace("jours", "").strip()) >= 28:
                     a_des_28j_ecrases = True
@@ -453,26 +449,26 @@ def generer_pv_excel(export_data, infos_header):
 
     next_row = max(row_start + nb_total, 21)
 
+    # ---------------------------------------------------------
+    # COMMENTAIRES DYNAMIQUES
+    # ---------------------------------------------------------
     ws.cell(row=next_row, column=1, value="Commentaire :").font = font_bold
     ws.cell(row=next_row, column=1).alignment = align_left
     ws.cell(row=next_row, column=1).fill = fill_section_label
 
     ws.merge_cells(f"B{next_row}:H{next_row}")
 
-    # GESTION DES COMMENTAIRES DYNAMIQUES
     obs_defaut = infos_header.get(
         "observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
     )
 
-    # Si aucun essai à 28j n'est encore écrasé (ou tous 'En cours'), afficher le texte demandé
     if not a_des_28j_ecrases or not cellule_moyenne_28j:
-        formule_commentaires = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNEES ULTERIEUREMENT"
+        formule_commentaires = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
     else:
-        # Évaluation dynamique si au moins une moyenne à 28j existe
         moyenne_cell = cellule_moyenne_28j
         formule_commentaires = (
             f'=IF(OR(ISBLANK({moyenne_cell}), {moyenne_cell}="En cours"), '
-            f'"PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNEES ULTERIEUREMENT", '
+            f'"PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT.", '
             f'IF(OR('
                 f'AND(ISNUMBER(SEARCH("C25/30", G8)), {moyenne_cell}>=25), '
                 f'AND(ISNUMBER(SEARCH("C30/37", G8)), {moyenne_cell}>=30), '
@@ -489,9 +485,50 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=next_row, column=c).border = border_cell
 
+    # ---------------------------------------------------------
+    # BLOC DE SIGNATURES (SOUS LE COMMENTAIRE)
+    # ---------------------------------------------------------
+    r_sig_titre = next_row + 2
+    r_sig_debut = r_sig_titre + 1
+    r_sig_fin = r_sig_debut + 3
+
+    # Visa Responsable d'essai (Colonnes B à D)
+    ws.merge_cells(start_row=r_sig_titre, start_column=2, end_row=r_sig_titre, end_column=4)
+    ws.cell(row=r_sig_titre, column=2, value="Visa Responsable d'essai").font = font_bold
+    ws.cell(row=r_sig_titre, column=2).alignment = align_center
+
+    ws.merge_cells(start_row=r_sig_debut, start_column=2, end_row=r_sig_fin, end_column=4)
+
+    # Visa Chef du laboratoire (Colonnes F à H)
+    ws.merge_cells(start_row=r_sig_titre, start_column=6, end_row=r_sig_titre, end_column=8)
+    ws.cell(row=r_sig_titre, column=6, value="Visa Chef du laboratoire").font = font_bold
+    ws.cell(row=r_sig_titre, column=6).alignment = align_center
+
+    ws.merge_cells(start_row=r_sig_debut, start_column=6, end_row=r_sig_fin, end_column=8)
+
+    def appliquer_cadre_signature(r_start, r_end, c_start, c_end):
+        for r in range(r_start, r_end + 1):
+            for c in range(c_start, c_end + 1):
+                cell = ws.cell(row=r, column=c)
+                top = thin_side if r == r_start else None
+                bottom = thin_side if r == r_end else None
+                left = thin_side if c == c_start else None
+                right = thin_side if c == c_end else None
+                cell.border = Border(top=top, bottom=bottom, left=left, right=right)
+
+    appliquer_cadre_signature(r_sig_titre, r_sig_fin, 2, 4)
+    appliquer_cadre_signature(r_sig_titre, r_sig_fin, 6, 8)
+
+    # ---------------------------------------------------------
+    # DIMENSIONNEMENT ET HAUTEURS DE LIGNES
+    # ---------------------------------------------------------
     ws.row_dimensions[8].height = 54
-    for r in range(1, next_row + 1):
-        if r != 8:
+
+    # Application de la hauteur 15 spécifiquement pour 9, 12, 13, 14
+    for r in range(1, r_sig_fin + 1):
+        if r in [9, 12, 13, 14]:
+            ws.row_dimensions[r].height = 15
+        elif r != 8:
             if 1 <= r <= 6:
                 ws.row_dimensions[r].height = 16
             else:
@@ -1024,7 +1061,6 @@ def show(supabase):
                 supabase, betonnage_id
             )
             
-            # Récupération de toutes les éprouvettes du même bétonnage (écrasées ou programmées)
             historique_complet = obtenir_historique_betonnage(
                 supabase, betonnage_id
             )
@@ -1164,7 +1200,6 @@ def show(supabase):
 
             df_actuel = st.session_state[lot_key]
 
-            # Construction des données exportées vers Excel avec gestion des éprouvettes programmées / "En cours"
             export_data = []
             dict_actuel = {int(row["ID"]): row for _, row in df_actuel.iterrows()}
 
