@@ -78,7 +78,6 @@ def generer_pv_excel(export_data, infos_header):
     ws = wb.active
     ws.title = "PV Écrasement LPEE"
 
-    # Configuration A4 Portrait
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -89,14 +88,12 @@ def generer_pv_excel(export_data, infos_header):
         left=0.3, right=0.3, top=0.4, bottom=0.4, header=0.2, footer=0.2
     )
 
-    # Styles Typographiques
     font_bold = Font(name="Calibri", size=9, bold=True)
     font_bold_white = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
     font_title_white = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     font_regular = Font(name="Calibri", size=8.5)
     font_small = Font(name="Calibri", size=8)
 
-    # Couleurs
     fill_header_dark = PatternFill(
         start_color="1F4E78", end_color="1F4E78", fill_type="solid"
     )
@@ -107,12 +104,10 @@ def generer_pv_excel(export_data, infos_header):
         start_color="F2F2F2", end_color="F2F2F2", fill_type="solid"
     )
 
-    # Alignements
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
     align_left = Alignment(horizontal="left", vertical="center", wrap_text=True)
     align_right = Alignment(horizontal="right", vertical="center", wrap_text=True)
 
-    # Bordures
     thin_side = Side(border_style="thin", color="000000")
     border_cell = Border(
         left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
@@ -532,13 +527,7 @@ def obtenir_infos_betonnage_parent(supabase, betonnage_id):
 
 
 def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
-    """
-    Détermine la référence de contrôle avec priorité :
-    1. Session state active du même prélèvement
-    2. Référence stockée dans la table parent suivi_betonnage
-    3. Référence déjà saisie dans l'éprouvette
-    4. Valeur calculée par défaut
-    """
+    """Détermine la référence de contrôle avec priorité."""
     session_key = f"ref_controle_beton_{betonnage_id}"
     if session_key in st.session_state and st.session_state[session_key]:
         return st.session_state[session_key]
@@ -563,6 +552,13 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
 # =========================================================
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
+
+    # 🔑 MODE ADMINISTRATEUR DANS LA SIDEBAR
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔒 Mode Administration")
+    mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Edition", value=False)
+    if mode_admin:
+        st.sidebar.warning("⚠️ Vous êtes en Mode Administrateur. Vous avez le droit de modifier/supprimer les données.")
 
     tab_prog, tab_saisie, tab_hist = st.tabs([
         "📅 Phase 1 : Programmation",
@@ -612,7 +608,6 @@ def show(supabase):
         betonnages_non_programmes = []
         for b in betonnages_preleves:
             b_id = b.get("id")
-            
             raw_nb_ep = b.get("nb_eprouvettes") or b.get("nombre_eprouvettes")
             try:
                 total_prevu = int(raw_nb_ep) if raw_nb_ep is not None else 12
@@ -620,8 +615,7 @@ def show(supabase):
                 total_prevu = 12
 
             deja_prog = prog_counts.get(b_id, 0)
-            
-            if (total_prevu - deja_prog) > 0:
+            if (total_prevu - deja_prog) > 0 or mode_admin:
                 betonnages_non_programmes.append(b)
 
         if not betonnages_non_programmes:
@@ -786,18 +780,19 @@ def show(supabase):
                     key=f"p_date_ecras_{b_id}_{echeance_key_clean}",
                 )
 
-            min_val = 1 if solde_disponible > 0 else 0
-            val_defaut = min(2, solde_disponible) if solde_disponible > 0 else 0
+            max_allowed = solde_disponible if not mode_admin else 50
+            min_val = 1 if max_allowed > 0 else 0
+            val_defaut = min(2, max_allowed) if max_allowed > 0 else 0
 
             with col_e4:
-                if solde_disponible == 0:
+                if max_allowed == 0 and not mode_admin:
                     st.warning("⚠️ Quota atteint.")
                     nb_eprouvettes_p = 0
                 else:
                     nb_eprouvettes_p = st.number_input(
                         "Nombre d'éprouvettes à programmer",
                         min_value=min_val,
-                        max_value=solde_disponible,
+                        max_value=max_allowed,
                         value=val_defaut,
                         step=1,
                         key=f"p_nb_ep_{b_id}_{echeance_key_clean}",
@@ -892,6 +887,36 @@ def show(supabase):
                         )
                         st.rerun()
 
+        # 🔧 MODIFICATION ADMIN - PROGRAMMATIONS DEJA EXISTANTES
+        if mode_admin:
+            st.markdown("---")
+            st.subheader("🛠️ [ADMIN] Gérer / Modifier les Programmations Existantes")
+            try:
+                prog_existantes = (
+                    supabase.table("suivi_controle_beton")
+                    .select("*")
+                    .or_("force_kn.is.null,force_kn.eq.0")
+                    .execute()
+                )
+                if prog_existantes.data:
+                    df_prog = pd.DataFrame(prog_existantes.data)
+                    st.write("Éprouvettes programmées en attente d'écrasement :")
+                    
+                    id_to_del = st.selectbox(
+                        "Sélectionner une éprouvette programmée à supprimer :",
+                        df_prog["id"].tolist(),
+                        format_func=lambda x: f"ID #{x} | Repère: {df_prog[df_prog['id']==x]['repere_eprouvette'].values[0]} | Ouvrage: {df_prog[df_prog['id']==x]['ouvrage'].values[0]}"
+                    )
+                    
+                    if st.button("🗑️ Supprimer l'éprouvette programmée", type="secondary"):
+                        supabase.table("suivi_controle_beton").delete().eq("id", id_to_del).execute()
+                        st.success(f"Éprouvette #{id_to_del} supprimée !")
+                        st.rerun()
+                else:
+                    st.info("Aucune programmation modifiable.")
+            except Exception as e:
+                st.error(f"Erreur de lecture : {e}")
+
     # ---------------------------------------------------------
     # PHASE 2 : SAISIE DES ÉCRASEMENTS PAR LOT
     # ---------------------------------------------------------
@@ -907,17 +932,21 @@ def show(supabase):
                 .execute()
             )
             if res_att.data:
-                eprouvettes_en_attente = [
-                    e
-                    for e in res_att.data
-                    if e.get("force_kn") is None
-                    or float(e.get("force_kn") or 0) == 0
-                ]
+                if mode_admin:
+                    # En mode Admin, on permet d'accéder à TOUTES les éprouvettes (même écrasées)
+                    eprouvettes_en_attente = res_att.data
+                else:
+                    eprouvettes_en_attente = [
+                        e
+                        for e in res_att.data
+                        if e.get("force_kn") is None
+                        or float(e.get("force_kn") or 0) == 0
+                    ]
         except Exception as e:
             st.error(f"Erreur de chargement des essais en attente : {e}")
 
         if not eprouvettes_en_attente:
-            st.info("👍 Aucune éprouvette en attente d'écrasement.")
+            st.info("👍 Aucune éprouvette disponible pour la saisie.")
         else:
             groupes_lots = {}
             for ep in eprouvettes_en_attente:
@@ -927,7 +956,6 @@ def show(supabase):
                 dt_ecras = ep.get("date_ecrasement", "-")
                 classe_ep = ep.get("classe_beton", "-")
 
-                # Récupération des informations du bétonnage parent si disponibles
                 info_b_temp = obtenir_infos_betonnage_parent(supabase, b_id_ep)
                 ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
                 if not classe_ep or classe_ep == "-":
@@ -944,7 +972,7 @@ def show(supabase):
                 groupes_lots[cle_groupe].append(ep)
 
             choix_lot = st.selectbox(
-                "📦 Sélectionner le lot d'éprouvettes à écraser :",
+                "📦 Sélectionner le lot d'éprouvettes à écraser / modifier :",
                 list(groupes_lots.keys()),
                 key="select_lot_saisie",
             )
@@ -974,17 +1002,17 @@ def show(supabase):
             with col_g1:
                 tech_global = st.text_input(
                     "Technicien / Opérateur",
-                    value="Technicien LPEE",
+                    value=sample.get("technicien", "Technicien LPEE"),
                     key="tech_global",
                 )
             with col_g2:
                 obs_globale = st.text_input(
                     "Commentaire / Observation",
-                    value="PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES",
+                    value=sample.get("observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"),
                     key="obs_global",
                 )
 
-            st.markdown("##### 📝 Saisie des forces d'écrasement")
+            st.markdown("##### 📝 Saisie / Modification des forces d'écrasement")
 
             ref_controle_courante = determiner_ref_controle(
                 supabase, betonnage_id, info_betonnage, sample
@@ -992,7 +1020,7 @@ def show(supabase):
 
             lot_key = f"df_lot_{choix_lot}"
 
-            if lot_key not in st.session_state:
+            if lot_key not in st.session_state or mode_admin:
                 rows_list = []
                 for ep in lot_selected:
                     sec = float(ep.get("section") or 176.71)
@@ -1066,7 +1094,7 @@ def show(supabase):
                         help="Préfixe conservé pour tous les lots du même prélèvement",
                     ),
                     "Repère": st.column_config.TextColumn(
-                        "Repère", disabled=True
+                        "Repère", disabled=not mode_admin
                     ),
                     "Forme d'éprouvette": st.column_config.TextColumn(
                         "Forme d'éprouvette", disabled=True
@@ -1195,8 +1223,9 @@ def show(supabase):
             col_b1, col_b2 = st.columns(2)
 
             with col_b1:
+                label_btn = "💾 Valider et Mettre à Jour Le Lot" if mode_admin else "💾 Valider et Enregistrer Le Lot"
                 btn_enregistrer = st.button(
-                    "💾 Valider et Enregistrer Le Lot",
+                    label_btn,
                     type="primary",
                     use_container_width=True,
                 )
@@ -1211,7 +1240,7 @@ def show(supabase):
                 )
 
             if btn_enregistrer:
-                if (df_actuel["Force (kN)"].astype(float) == 0).any():
+                if (df_actuel["Force (kN)"].astype(float) == 0).any() and not mode_admin:
                     st.error(
                         "❌ Les forces de rupture doivent toutes être saisies"
                         " (> 0 kN)."
@@ -1230,6 +1259,7 @@ def show(supabase):
                     for _, row in df_actuel.iterrows():
                         update_payload = {
                             "ref_controle": row.get("🏷️ Référence de Contrôle"),
+                            "repere_eprouvette": row.get("Repère"),
                             "force_kn": float(row["Force (kN)"]),
                             "fc_mpa": float(row["Résistance Fc (MPa)"]),
                             "technicien": tech_global,
@@ -1248,9 +1278,7 @@ def show(supabase):
                     if succes_lot == len(df_actuel):
                         st.balloons()
                         st.success(
-                            f"✅ Lot de {succes_lot} éprouvettes validé dans"
-                            " Supabase ! La référence est sauvegardée pour"
-                            " les lots suivants."
+                            f"✅ Lot de {succes_lot} éprouvettes mis à jour / validé !"
                         )
 
     # ---------------------------------------------------------
@@ -1405,6 +1433,16 @@ def show(supabase):
 
                 st.markdown("---")
                 st.markdown("##### 📊 Base de données globale")
+                
+                # Option de suppression définitive en Mode Admin
+                if mode_admin:
+                    st.warning("🛠️ [ADMIN] Zone de Suppression Définitive")
+                    id_del_hist = st.number_input("Entrez l'ID de l'essai à supprimer :", min_value=1, step=1)
+                    if st.button("❌ Supprimer définitivement l'entrée"):
+                        supabase.table("suivi_controle_beton").delete().eq("id", id_del_hist).execute()
+                        st.success(f"Entrée #{id_del_hist} supprimée de la base de données.")
+                        st.rerun()
+
                 st.dataframe(df_all, use_container_width=True, hide_index=True)
             else:
                 st.info("Aucun enregistrement d'écrasement dans la base.")
