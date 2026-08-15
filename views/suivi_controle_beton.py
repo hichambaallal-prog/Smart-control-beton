@@ -553,12 +553,23 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # 🔑 MODE ADMINISTRATEUR DANS LA SIDEBAR
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🔒 Mode Administration")
-    mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Edition", value=False)
-    if mode_admin:
-        st.sidebar.warning("⚠️ Vous êtes en Mode Administrateur. Vous avez le droit de modifier/supprimer les données.")
+    # 🔒 VÉRIFICATION DU RÔLE UTILISATEUR
+    # On vérifie si l'utilisateur connecté est Administrateur
+    est_compte_admin = (
+        st.session_state.get("user_role") == "admin"
+        or st.session_state.get("is_admin") is True
+        or st.session_state.get("role") == "admin"
+    )
+
+    mode_admin = False
+
+    # Affiche le contrôle SEULEMENT si le compte connecté est Administrateur
+    if est_compte_admin:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🔒 Mode Administration")
+        mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Edition", value=False)
+        if mode_admin:
+            st.sidebar.warning("⚠️ Vous êtes en Mode Administrateur. Vous avez le droit de modifier/supprimer les données.")
 
     tab_prog, tab_saisie, tab_hist = st.tabs([
         "📅 Phase 1 : Programmation",
@@ -887,7 +898,7 @@ def show(supabase):
                         )
                         st.rerun()
 
-        # 🔧 MODIFICATION ADMIN - PROGRAMMATIONS DEJA EXISTANTES
+        # 🔧 MODIFICATION ADMIN - PROGRAMMATIONS DEJA EXISTANTES (Visible Uniquement pour les Admins)
         if mode_admin:
             st.markdown("---")
             st.subheader("🛠️ [ADMIN] Gérer / Modifier les Programmations Existantes")
@@ -933,7 +944,6 @@ def show(supabase):
             )
             if res_att.data:
                 if mode_admin:
-                    # En mode Admin, on permet d'accéder à TOUTES les éprouvettes (même écrasées)
                     eprouvettes_en_attente = res_att.data
                 else:
                     eprouvettes_en_attente = [
@@ -961,7 +971,6 @@ def show(supabase):
                 if not classe_ep or classe_ep == "-":
                     classe_ep = info_b_temp.get("classe_beton") or info_b_temp.get("classe") or "-"
 
-                # Ordre demandé : Référence de Contrôle | Classe de béton | Ouvrage
                 cle_groupe = (
                     f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ouv_ep}"
                     f" | Échéance : {ech_ep} (Date : {dt_ecras}) | Lot ID #{b_id_ep}"
@@ -1434,7 +1443,7 @@ def show(supabase):
                 st.markdown("---")
                 st.markdown("##### 📊 Base de données globale")
                 
-                # Option de suppression définitive en Mode Admin
+                # Zone de suppression en mode admin
                 if mode_admin:
                     st.warning("🛠️ [ADMIN] Zone de Suppression Définitive")
                     id_del_hist = st.number_input("Entrez l'ID de l'essai à supprimer :", min_value=1, step=1)
