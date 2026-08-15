@@ -324,7 +324,6 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=c).font = font_regular
             ws.cell(row=curr_row, column=c).border = border_cell
 
-    # Fusion unique de la cellule Moyenne dans Excel
     row_end = row_start + max(nb_total, 1) - 1
     if nb_total > 0:
         ws.merge_cells(f"H{row_start}:H{row_end}")
@@ -360,7 +359,7 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=22, column=c).border = border_cell
 
-    # Dimensions
+    # Configuration des hauteurs de lignes
     ws.row_dimensions[8].height = 54
     for r in range(1, 23):
         if r != 8:
@@ -369,6 +368,7 @@ def generer_pv_excel(export_data, infos_header):
             else:
                 ws.row_dimensions[r].height = 31
 
+    # Largeurs des colonnes
     col_widths = {
         "A": 10,
         "B": 12,
@@ -869,7 +869,6 @@ def show(supabase):
                                 row_idx, "Résistance Fc (MPa)"
                             ] = 0.0
 
-            # --- Saisie unique sans répéter la colonne moyenne ---
             st.data_editor(
                 st.session_state[lot_key],
                 column_config={
@@ -899,7 +898,6 @@ def show(supabase):
                 on_change=update_fc,
             )
 
-            # Affichage de la moyenne globale une seule fois
             df_actuel = st.session_state[lot_key]
             forces_valides = df_actuel[df_actuel["Résistance Fc (MPa)"] > 0]
             fc_moy = (
@@ -913,7 +911,7 @@ def show(supabase):
                 f"{fc_moy:.1f} MPa" if fc_moy > 0 else "0.0 MPa",
             )
 
-            # Préparation des données d'export Excel
+            # Data de sortie pour le fichier Excel
             export_data = []
 
             if essais_anterieurs:
