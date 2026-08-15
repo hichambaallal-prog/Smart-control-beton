@@ -451,7 +451,7 @@ def generer_pv_excel(export_data, infos_header):
     next_row = max(row_start + nb_total, 21)
 
     # ---------------------------------------------------------
-    # COMMENTAIRES DYNAMIQUES
+    # COMMENTAIRES DYNAMIQUES (CORRECTION EXCEL DU TEXTE CONFORME)
     # ---------------------------------------------------------
     ws.cell(row=next_row, column=1, value="Commentaire :").font = font_bold
     ws.cell(row=next_row, column=1).alignment = align_left
@@ -516,7 +516,6 @@ def generer_pv_excel(export_data, infos_header):
     # ---------------------------------------------------------
     ws.row_dimensions[8].height = 54
 
-    # Application de la hauteur 22 spécifiquement pour les lignes 15 à 28
     for r in range(1, r_sig_fin + 1):
         if 15 <= r <= 28:
             ws.row_dimensions[r].height = 22
@@ -973,13 +972,13 @@ def show(supabase):
                 if prog_existantes.data:
                     df_prog = pd.DataFrame(prog_existantes.data)
                     st.write("Éprouvettes programmées en attente d'écrasement :")
-                    
+
                     id_to_del = st.selectbox(
                         "Sélectionner une éprouvette programmée à supprimer :",
                         df_prog["id"].tolist(),
                         format_func=lambda x: f"ID #{x} | Repère: {df_prog[df_prog['id']==x]['repere_eprouvette'].values[0]} | Ouvrage: {df_prog[df_prog['id']==x]['ouvrage'].values[0]}"
                     )
-                    
+
                     if st.button("🗑️ Supprimer l'éprouvette programmée", type="secondary"):
                         supabase.table("suivi_controle_beton").delete().eq("id", id_to_del).execute()
                         st.success(f"Éprouvette #{id_to_del} supprimée !")
@@ -1054,7 +1053,7 @@ def show(supabase):
             info_betonnage = obtenir_infos_betonnage_parent(
                 supabase, betonnage_id
             )
-            
+
             historique_complet = obtenir_historique_betonnage(
                 supabase, betonnage_id
             )
@@ -1125,7 +1124,7 @@ def show(supabase):
             def update_fc():
                 editor_state = st.session_state.get("data_editor_ecrasement", {})
                 changes = editor_state.get("edited_rows", {})
-                
+
                 for row_idx, updated_cols in changes.items():
                     if "Force (kN)" in updated_cols:
                         raw_force = updated_cols["Force (kN)"]
@@ -1136,7 +1135,7 @@ def show(supabase):
 
                         sec = float(st.session_state[lot_key].at[row_idx, "_section"])
                         st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
-                        
+
                         if sec > 0 and new_force > 0:
                             st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1)
                         else:
@@ -1201,7 +1200,7 @@ def show(supabase):
                 for ep_h in historique_complet:
                     ep_id = ep_h["id"]
                     sec_h = float(ep_h.get("section") or 176.71)
-                    
+
                     if ep_id in dict_actuel:
                         row_saisie = dict_actuel[ep_id]
                         f_kn = float(row_saisie["Force (kN)"])
@@ -1304,7 +1303,7 @@ def show(supabase):
                 else:
                     succes_lot = 0
                     ref_finale = df_actuel.iloc[0].get("🏷️ Référence de Contrôle")
-                    
+
                     try:
                         supabase.table("suivi_betonnage").update(
                             {"ref_controle": ref_finale}
