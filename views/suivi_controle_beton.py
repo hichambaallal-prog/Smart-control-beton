@@ -324,6 +324,7 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=c).font = font_regular
             ws.cell(row=curr_row, column=c).border = border_cell
 
+    # Fusion unique de la cellule Moyenne dans Excel
     row_end = row_start + max(nb_total, 1) - 1
     if nb_total > 0:
         ws.merge_cells(f"H{row_start}:H{row_end}")
@@ -339,7 +340,7 @@ def generer_pv_excel(export_data, infos_header):
     ws.cell(row=22, column=1).alignment = align_left
 
     ws.merge_cells("B22:H22")
-    
+
     moyenne_cell = f"H{row_start}"
     formule_commentaires = (
         f'=IF(ISBLANK({moyenne_cell}), "", '
@@ -352,14 +353,14 @@ def generer_pv_excel(export_data, infos_header):
         f'"PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES", '
         f'"PERFORMANCES MECANIQUES A 28 JOURS NE SONT PAS CONFORMES"))'
     )
-    
+
     ws.cell(row=22, column=2, value=formule_commentaires).font = font_bold
     ws.cell(row=22, column=2).alignment = align_left
 
     for c in range(1, 9):
         ws.cell(row=22, column=c).border = border_cell
 
-    # Configuration des hauteurs de lignes
+    # Dimensions
     ws.row_dimensions[8].height = 54
     for r in range(1, 23):
         if r != 8:
@@ -368,7 +369,6 @@ def generer_pv_excel(export_data, infos_header):
             else:
                 ws.row_dimensions[r].height = 31
 
-    # Largeurs des colonnes
     col_widths = {
         "A": 10,
         "B": 12,
@@ -844,8 +844,16 @@ def show(supabase):
                         "_section": sec,
                         "Force (kN)": f_kn,
                         "Résistance Fc (MPa)": fc,
+                        "Moyenne Resistance Fc (MPa)": 0.0,
                     })
-                st.session_state[lot_key] = pd.DataFrame(rows_list)
+                df_init = pd.DataFrame(rows_list)
+                
+                # Calcul de la moyenne initiale
+                valides_init = df_init[df_init["Résistance Fc (MPa)"] > 0]
+                moy_init = round(valides_init["Résistance Fc (MPa)"].mean(), 1) if not valides_init.empty else 0.0
+                df_init["Moyenne Resistance Fc (MPa)"] = moy_init
+                
+                st.session_state[lot_key] = df_init
 
             def update_fc():
                 changes = st.session_state.data_editor_ecrasement.get(
@@ -869,6 +877,17 @@ def show(supabase):
                                 row_idx, "Résistance Fc (MPa)"
                             ] = 0.0
 
+                # Calcul et répercussion de la moyenne sur les 3 lignes
+                df_cur = st.session_state[lot_key]
+                forces_valides = df_cur[df_cur["Résistance Fc (MPa)"] > 0]
+                fc_moy = (
+                    round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
+                    if not forces_valides.empty
+                    else 0.0
+                )
+                st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = fc_moy
+
+            # --- Saisie avec colonne moyenne réintégrée sur les 3 lignes ---
             st.data_editor(
                 st.session_state[lot_key],
                 column_config={
@@ -891,6 +910,9 @@ def show(supabase):
                     "Résistance Fc (MPa)": st.column_config.NumberColumn(
                         "💥 Résistance Fc (MPa)", disabled=True, format="%.1f"
                     ),
+                    "Moyenne Resistance Fc (MPa)": st.column_config.NumberColumn(
+                        "📊 Moyenne Resistance Fc (MPa)", disabled=True, format="%.1f"
+                    ),
                 },
                 use_container_width=True,
                 hide_index=True,
@@ -899,19 +921,8 @@ def show(supabase):
             )
 
             df_actuel = st.session_state[lot_key]
-            forces_valides = df_actuel[df_actuel["Résistance Fc (MPa)"] > 0]
-            fc_moy = (
-                round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
-                if not forces_valides.empty
-                else 0.0
-            )
 
-            st.metric(
-                "📊 Moyenne Résistance Fc (MPa) du Lot",
-                f"{fc_moy:.1f} MPa" if fc_moy > 0 else "0.0 MPa",
-            )
-
-            # Data de sortie pour le fichier Excel
+            # Préparation des données d'export Excel
             export_data = []
 
             if essais_anterieurs:
