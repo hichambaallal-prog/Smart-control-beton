@@ -73,7 +73,7 @@ def extraire_num_bl(*sources):
 # 1. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT EXACT LPEE)
 # =========================================================
 def generer_pv_excel(export_data, infos_header):
-    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE avec gestion des états 'En cours' et du commentaire dynamique selon l'échéance."""
+    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE avec gestion des états 'En cours' et du commentaire dynamique."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "PV Écrasement LPEE"
@@ -341,6 +341,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["F13"].font = font_bold
     ws["F13"].alignment = align_center
 
+    ws.font_regular = font_regular
     ws["F14"] = "Compression"
     ws["F14"].font = font_regular
     ws["F14"].alignment = align_center
@@ -363,6 +364,11 @@ def generer_pv_excel(export_data, infos_header):
     nb_total = len(export_data)
 
     groupes_lots = {}
+    
+    # Indicateurs pour vérifier spécifiquement l'état à 28 jours
+    a_des_28j_ecrases = False
+    cellule_moyenne_28j = None
+
     for idx, item in enumerate(export_data):
         curr_row = row_start + idx
 
@@ -384,9 +390,11 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=3, value=str(remplacer_na(dt_essai, "-")))
 
         try:
-            ws.cell(row=curr_row, column=4, value=int(item.get("age", 7)))
+            age_val = int(item.get("age", 7))
         except (ValueError, TypeError):
-            ws.cell(row=curr_row, column=4, value=item.get("age", 7))
+            age_val = item.get("age", 7)
+
+        ws.cell(row=curr_row, column=4, value=age_val)
 
         if is_en_cours:
             ws.cell(row=curr_row, column=5, value="En cours")
@@ -409,14 +417,14 @@ def generer_pv_excel(export_data, infos_header):
 
         cle_lot = f"{item.get('age')}_{item.get('date_essai')}"
         if cle_lot not in groupes_lots:
-            groupes_lots[cle_lot] = {"lignes": [], "en_cours": is_en_cours}
+            groupes_lots[cle_lot] = {"lignes": [], "en_cours": is_en_cours, "age": age_val}
         groupes_lots[cle_lot]["lignes"].append(curr_row)
 
-    derniere_cellule_moyenne = f"H{row_start}"
     for cle_lot, data_lot in groupes_lots.items():
         lignes = data_lot["lignes"]
         start_r = min(lignes)
         end_r = max(lignes)
+        age_lot = data_lot["age"]
 
         if data_lot["en_cours"]:
             if start_r != end_r:
@@ -434,7 +442,14 @@ def generer_pv_excel(export_data, infos_header):
             ws[f"H{start_r}"].number_format = "0.0"
             ws[f"H{start_r}"].alignment = align_center
             ws[f"H{start_r}"].font = font_bold
-            derniere_cellule_moyenne = f"H{start_r}"
+
+            # On conserve la référence de cellule si l'échéance est >= 28 jours et écrasée
+            try:
+                if int(str(age_lot).replace("j", "").replace("jours", "").strip()) >= 28:
+                    a_des_28j_ecrases = True
+                    cellule_moyenne_28j = f"H{start_r}"
+            except (ValueError, TypeError):
+                pass
 
     next_row = max(row_start + nb_total, 21)
 
@@ -444,28 +459,20 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells(f"B{next_row}:H{next_row}")
 
-    # GESTION DES COMMENTAIRES ET ÉCHÉANCES
-    echeances_presentes = [str(item.get("age", "")).strip() for item in export_data]
-    max_age = 0
-    for ech in echeances_presentes:
-        m = re.search(r"\d+", ech)
-        if m:
-            val = int(m.group())
-            if val > max_age:
-                max_age = val
-
+    # GESTION DES COMMENTAIRES DYNAMIQUES
     obs_defaut = infos_header.get(
         "observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
     )
 
-    if max_age < 28:
-        # PV partiel (ex: 3 jours ou 7 jours)
+    # Si aucun essai à 28j n'est encore écrasé (ou tous 'En cours'), afficher le texte demandé
+    if not a_des_28j_ecrases or not cellule_moyenne_28j:
         formule_commentaires = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNEES ULTERIEUREMENT"
     else:
-        # PV à 28 jours ou plus
-        moyenne_cell = derniere_cellule_moyenne
+        # Évaluation dynamique si au moins une moyenne à 28j existe
+        moyenne_cell = cellule_moyenne_28j
         formule_commentaires = (
-            f'=IF(OR(ISBLANK({moyenne_cell}), {moyenne_cell}="En cours"), "", '
+            f'=IF(OR(ISBLANK({moyenne_cell}), {moyenne_cell}="En cours"), '
+            f'"PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNEES ULTERIEUREMENT", '
             f'IF(OR('
                 f'AND(ISNUMBER(SEARCH("C25/30", G8)), {moyenne_cell}>=25), '
                 f'AND(ISNUMBER(SEARCH("C30/37", G8)), {moyenne_cell}>=30), '
