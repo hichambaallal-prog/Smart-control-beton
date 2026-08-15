@@ -358,7 +358,7 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=last_row, column=c).border = border_cell
 
-    # Adjusting Column Widths
+    # Largeurs de colonnes
     col_widths = {
         "A": 8,
         "B": 12,
@@ -846,78 +846,48 @@ def show(supabase):
                     f"📈 **Résistance moyenne du lot : {fc_moy:.1f} MPa**"
                 )
 
+            # --- PREPARATION DU FICHIER PV EXCEL ---
+            export_data = []
+            for _, row in df_actuel.iterrows():
+                export_data.append({
+                    "repere_eprouvette": row["Repère"],
+                    "forme": row["Forme d'éprouvette"],
+                    "section": row["_section"],
+                    "force_kn": row["Force (kN)"],
+                    "fc_mpa": row["Résistance Fc (MPa)"],
+                    "date_essai": sample.get("date_ecrasement", "N/A"),
+                    "age": sample.get("echeance", "28")
+                    .replace(" jours", "")
+                    .replace("j", ""),
+                })
+
+            infos_header = {
+                "re_num": "25/260/LGV/ B/01",
+                "dossier": "2025-260-05985-2025-0247",
+                "client": "TGCC",
+                "num_bl": sample.get("num_bl", "15479"),
+                "ouvrage": sample.get("ouvrage", "N/A"),
+                "classe_beton": sample.get("classe_beton", "C30/37"),
+                "date_coulee": sample.get("date_coulee", "02/06/2025"),
+                "affaissement": sample.get("affaissement", "200"),
+                "temperature": sample.get("temperature", "31"),
+                "observations": obs_globale,
+            }
+
+            excel_file = generer_pv_excel(export_data, infos_header)
+            filename = f"PV_Ecrasement_LPEE_{sample.get('num_bl', 'BL')}.xlsx"
+
+            st.markdown("---")
             col_b1, col_b2 = st.columns(2)
 
             with col_b1:
-                if st.button(
+                btn_enregistrer = st.button(
                     "💾 Valider et Enregistrer Tout le Lot",
                     type="primary",
                     use_container_width=True,
-                ):
-                    if (df_actuel["Force (kN)"] == 0).any():
-                        st.error(
-                            "❌ Une ou plusieurs forces d'écrasement sont à 0.0"
-                            " kN."
-                        )
-                    else:
-                        succes_lot = 0
-                        for _, row in df_actuel.iterrows():
-                            update_payload = {
-                                "force_kn": float(row["Force (kN)"]),
-                                "fc_mpa": float(row["Résistance Fc (MPa)"]),
-                                "technicien": tech_global,
-                                "observations": obs_globale,
-                            }
-                            try:
-                                supabase.table("suivi_controle_beton").update(
-                                    update_payload
-                                ).eq("id", int(row["ID"])).execute()
-                                succes_lot += 1
-                            except Exception as e:
-                                st.error(
-                                    "Erreur sur l'éprouvette"
-                                    f" {row['Repère']} : {e}"
-                                )
-
-                        if succes_lot == len(df_actuel):
-                            del st.session_state[lot_key]
-                            st.success(
-                                f"✅ Lot de {succes_lot} éprouvettes enregistré"
-                                " !"
-                            )
-                            st.rerun()
+                )
 
             with col_b2:
-                export_data = []
-                for _, row in df_actuel.iterrows():
-                    export_data.append({
-                        "repere_eprouvette": row["Repère"],
-                        "forme": row["Forme d'éprouvette"],
-                        "section": row["_section"],
-                        "force_kn": row["Force (kN)"],
-                        "fc_mpa": row["Résistance Fc (MPa)"],
-                        "date_essai": sample.get("date_ecrasement", "N/A"),
-                        "age": sample.get("echeance", "28")
-                        .replace(" jours", "")
-                        .replace("j", ""),
-                    })
-
-                infos_header = {
-                    "re_num": "25/260/LGV/ B/01",
-                    "dossier": "2025-260-05985-2025-0247",
-                    "client": "TGCC",
-                    "num_bl": sample.get("num_bl", "15479"),
-                    "ouvrage": sample.get("ouvrage", "N/A"),
-                    "classe_beton": sample.get("classe_beton", "C30/37"),
-                    "date_coulee": sample.get("date_coulee", "02/06/2025"),
-                    "affaissement": sample.get("affaissement", "200"),
-                    "temperature": sample.get("temperature", "31"),
-                    "observations": obs_globale,
-                }
-
-                excel_file = generer_pv_excel(export_data, infos_header)
-                filename = f"PV_Ecrasement_LPEE_{sample.get('num_bl', 'BL')}.xlsx"
-
                 st.download_button(
                     label="📄 Télécharger le PV d'écrasement (Format LPEE)",
                     data=excel_file,
@@ -927,6 +897,40 @@ def show(supabase):
                     ),
                     use_container_width=True,
                 )
+
+            # --- EXECUTION DE LA SAUVEGARDE EN BASE (SANS DISPARITION DU BOUTON) ---
+            if btn_enregistrer:
+                if (df_actuel["Force (kN)"] == 0).any():
+                    st.error(
+                        "❌ Une ou plusieurs forces d'écrasement sont à 0.0"
+                        " kN. Veuillez saisir toutes les forces."
+                    )
+                else:
+                    succes_lot = 0
+                    for _, row in df_actuel.iterrows():
+                        update_payload = {
+                            "force_kn": float(row["Force (kN)"]),
+                            "fc_mpa": float(row["Résistance Fc (MPa)"]),
+                            "technicien": tech_global,
+                            "observations": obs_globale,
+                        }
+                        try:
+                            supabase.table("suivi_controle_beton").update(
+                                update_payload
+                            ).eq("id", int(row["ID"])).execute()
+                            succes_lot += 1
+                        except Exception as e:
+                            st.error(
+                                f"Erreur sur l'éprouvette {row['Repère']} : {e}"
+                            )
+
+                    if succes_lot == len(df_actuel):
+                        st.balloons()
+                        st.success(
+                            f"✅ Lot de {succes_lot} éprouvettes enregistré dans"
+                            " Supabase ! Vous pouvez télécharger le PV"
+                            " ci-dessus."
+                        )
 
     # ---------------------------------------------------------
     # HISTORIQUE
