@@ -12,9 +12,7 @@ import streamlit as st
 # FONCTION UTILITAIRE : EXTRACTION SÉCURISÉE DU N° BL
 # =========================================================
 def extraire_num_bl(*sources):
-    """
-    Inspecte récursivement les sources pour extraire le N° de Bon de Livraison (BL).
-    """
+    """Inspecte récursivement les sources pour extraire le N° de Bon de Livraison (BL)."""
     clefs_possibles = [
         "num_bl",
         "bl",
@@ -631,7 +629,6 @@ def show(supabase):
                 "ℹ️ Aucun bétonnage en attente de programmation (tous les prélèvements ont déjà été entièrement programmés)."
             )
         else:
-            # OPTION AFFICHAGE ORDRE : Classe de béton -> Date de bétonnage -> Ouvrage
             options_beton = {
                 (
                     f"Classe: {b.get('classe_beton', b.get('classe', 'N/A'))} | "
@@ -1024,7 +1021,12 @@ def show(supabase):
                 
                 for row_idx, updated_cols in changes.items():
                     if "Force (kN)" in updated_cols:
-                        new_force = float(updated_cols["Force (kN)"] or 0.0)
+                        raw_force = updated_cols["Force (kN)"]
+                        try:
+                            new_force = float(raw_force) if raw_force is not None else 0.0
+                        except (ValueError, TypeError):
+                            new_force = 0.0
+
                         sec = float(st.session_state[lot_key].at[row_idx, "_section"])
                         st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
                         
@@ -1034,7 +1036,7 @@ def show(supabase):
                             st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = 0.0
 
                     if "🏷️ Référence de Contrôle" in updated_cols:
-                        nouvelle_ref = updated_cols["🏷️ Référence de Contrôle"]
+                        nouvelle_ref = str(updated_cols["🏷️ Référence de Contrôle"] or "").strip()
                         st.session_state[lot_key].at[row_idx, "🏷️ Référence de Contrôle"] = nouvelle_ref
                         st.session_state[f"ref_controle_beton_{betonnage_id}"] = nouvelle_ref
 
