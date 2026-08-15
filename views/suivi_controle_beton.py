@@ -56,12 +56,15 @@ def generer_pv_excel(export_data, infos_header):
         left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
     )
 
-    # Extraction sécurisée du N° BL
-    default_bl = str(infos_header.get("num_bl") or "N/A")
+    # Extraction sécurisée du N° BL (Priorité absolue au BL de Phase 1)
+    default_bl = str(infos_header.get("num_bl") or infos_header.get("bl") or "").strip()
+    if not default_bl or default_bl.upper() in ["N/A", "NONE", "NAN"]:
+        default_bl = "-"
 
-    def remplacer_na(valeur):
-        if str(valeur).strip().upper() in ["N/A", "NONE", "NAN", ""]:
-            return default_bl
+    def remplacer_na(valeur, fallback=None):
+        val_str = str(valeur).strip()
+        if val_str.upper() in ["N/A", "NONE", "NAN", ""]:
+            return fallback if fallback is not None else default_bl
         return valeur
 
     # --- ENTÊTE DU LABORATOIRE ET RÉFÉRENCES ---
@@ -83,19 +86,19 @@ def generer_pv_excel(export_data, infos_header):
     ws["E1"] = "RE N° :"
     ws["E1"].font = font_bold
     ws.merge_cells("F1:H1")
-    ws["F1"] = remplacer_na(infos_header.get("re_num", "25/260/LGV/ B/01"))
+    ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/01")
     ws["F1"].font = font_regular
 
     ws["E2"] = "DOSSIER :"
     ws["E2"].font = font_bold
     ws.merge_cells("F2:H2")
-    ws["F2"] = remplacer_na(infos_header.get("dossier", "2025-260-05985-2025-0247"))
+    ws["F2"] = remplacer_na(infos_header.get("dossier"), "2025-260-05985-2025-0247")
     ws["F2"].font = font_regular
 
     ws["E3"] = "CLIENT :"
     ws["E3"].font = font_bold
     ws.merge_cells("F3:H3")
-    ws["F3"] = remplacer_na(infos_header.get("client", "TGCC"))
+    ws["F3"] = remplacer_na(infos_header.get("client"), "TGCC")
     ws["F3"].font = font_bold
 
     for r in range(1, 4):
@@ -142,7 +145,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["A7"] = "Date de\nprélèvement"
     ws["A7"].font = font_bold
     ws["A7"].alignment = align_center
-    ws["B7"] = str(remplacer_na(infos_header.get("date_coulee")))
+    ws["B7"] = str(remplacer_na(infos_header.get("date_coulee"), "-"))
     ws["B7"].font = font_bold
     ws["B7"].alignment = align_center
 
@@ -153,7 +156,7 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells("E7:H7")
     ws["E7"] = remplacer_na(
-        infos_header.get("lieu_prelevement", infos_header.get("ouvrage"))
+        infos_header.get("lieu_prelevement", infos_header.get("ouvrage")), "-"
     )
     ws["E7"].font = font_regular
     ws["E7"].alignment = align_center
@@ -164,10 +167,8 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells("B8:D8")
     ws["B8"] = remplacer_na(
-        infos_header.get(
-            "chantier",
-            "Augmentation de la capacité ferroviaire entre Kenitra et Marrakech et au niveau du hub de Casablanca\nTravaux d'exécution de terrassement, ouvrages d'art et rétablissement de communication entre PK 5+450 et PK 10+000-GARE CASA SUD",
-        )
+        infos_header.get("chantier"),
+        "Augmentation de la capacité ferroviaire entre Kenitra et Marrakech et au niveau du hub de Casablanca\nTravaux d'exécution de terrassement, ouvrages d'art et rétablissement de communication entre PK 5+450 et PK 10+000-GARE CASA SUD",
     )
     ws["B8"].font = font_small
     ws["B8"].alignment = align_center
@@ -178,11 +179,11 @@ def generer_pv_excel(export_data, infos_header):
     ws["E8"].alignment = align_center
 
     ws.merge_cells("G8:H8")
-    ws["G8"] = remplacer_na(infos_header.get("classe_beton", "C30/37"))
+    ws["G8"] = remplacer_na(infos_header.get("classe_beton"), "C30/37")
     ws["G8"].font = font_bold
     ws["G8"].alignment = align_center
 
-    centrale_saisie = remplacer_na(infos_header.get("centrale", "Centrale à Béton"))
+    centrale_saisie = remplacer_na(infos_header.get("centrale"), "Centrale à Béton")
     ws.merge_cells("A9:B9")
     ws["A9"] = centrale_saisie
     ws["A9"].font = font_bold
@@ -192,7 +193,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["C9"].font = font_regular
 
     ws.merge_cells("D9:H9")
-    ws["D9"] = remplacer_na(infos_header.get("forme", "Cylindrique 150x300"))
+    ws["D9"] = remplacer_na(infos_header.get("forme"), "Cylindrique 150x300")
     ws["D9"].font = font_bold
     ws["D9"].alignment = align_center
 
@@ -201,7 +202,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["A10"].font = font_small
     ws["A10"].alignment = align_center
 
-    ws["C10"] = str(remplacer_na(infos_header.get("affaissement")))
+    ws["C10"] = str(remplacer_na(infos_header.get("affaissement"), "-"))
     ws["C10"].font = font_bold
     ws["C10"].alignment = align_center
 
@@ -219,7 +220,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["A11"].font = font_regular
     ws["A11"].alignment = align_center
 
-    ws["C11"] = str(remplacer_na(infos_header.get("temperature")))
+    ws["C11"] = str(remplacer_na(infos_header.get("temperature"), "-"))
     ws["C11"].font = font_bold
     ws["C11"].alignment = align_center
 
@@ -316,7 +317,7 @@ def generer_pv_excel(export_data, infos_header):
         ws[f"A{row_start}"].alignment = align_center
 
         ws.merge_cells(f"B{row_start}:B{row_start + nb_total - 1}")
-        ws[f"B{row_start}"] = str(remplacer_na(infos_header.get("date_coulee")))
+        ws[f"B{row_start}"] = str(remplacer_na(infos_header.get("date_coulee"), "-"))
         ws[f"B{row_start}"].font = font_bold
         ws[f"B{row_start}"].alignment = align_center
 
@@ -327,7 +328,7 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(
             row=curr_row,
             column=3,
-            value=str(remplacer_na(item.get("date_essai"))),
+            value=str(remplacer_na(item.get("date_essai"), "-")),
         )
 
         try:
@@ -524,7 +525,7 @@ def show(supabase):
         else:
             options_beton = {
                 (
-                    f"ID #{b['id']} | BL: {b.get('num_bl', 'N/A')} | Ouvrage:"
+                    f"ID #{b['id']} | BL: {b.get('num_bl') or b.get('bl') or 'N/A'} | Ouvrage:"
                     f" {b.get('ouvrage', 'N/A')} | Date:"
                     f" {b.get('date_coulee', b.get('date_livraison', 'N/A'))} |"
                     f" Classe: {b.get('classe_beton', b.get('classe', 'N/A'))}"
@@ -540,10 +541,13 @@ def show(supabase):
             beton_p = options_beton[choix_label_p]
 
             b_id = beton_p.get("id")
-            num_bl_p = str(beton_p.get("num_bl") or "N/A")
-            ouvrage_p = str(beton_p.get("ouvrage") or "N/A")
+            num_bl_p = str(beton_p.get("num_bl") or beton_p.get("bl") or "").strip()
+            if not num_bl_p or num_bl_p.upper() == "N/A":
+                num_bl_p = "-"
+
+            ouvrage_p = str(beton_p.get("ouvrage") or "-")
             classe_beton_p = str(
-                beton_p.get("classe_beton") or beton_p.get("classe") or "N/A"
+                beton_p.get("classe_beton") or beton_p.get("classe") or "-"
             )
 
             raw_nb_ep = beton_p.get("nb_eprouvettes") or beton_p.get(
@@ -574,13 +578,13 @@ def show(supabase):
             )
 
             affaissement_raw = str(
-                beton_p.get("affaissement") or beton_p.get("slump") or "N/A"
+                beton_p.get("affaissement") or beton_p.get("slump") or "-"
             )
             temp_beton_p = str(
-                beton_p.get("temperature") or beton_p.get("temp_beton") or "N/A"
+                beton_p.get("temperature") or beton_p.get("temp_beton") or "-"
             )
             affaissement_p = (
-                f"{affaissement_raw} mm" if affaissement_raw != "N/A" else "N/A"
+                f"{affaissement_raw} mm" if affaissement_raw != "-" else "-"
             )
 
             date_coulee_raw = (
@@ -647,7 +651,7 @@ def show(supabase):
                 st.text_input(
                     "Température Béton Frais (°C)",
                     value=(
-                        f"{temp_beton_p} °C" if temp_beton_p != "N/A" else "N/A"
+                        f"{temp_beton_p} °C" if temp_beton_p != "-" else "-"
                     ),
                     disabled=True,
                     key=f"p_temp_{b_id}",
@@ -816,8 +820,8 @@ def show(supabase):
             for ep in eprouvettes_en_attente:
                 b_id_ep = ep.get("betonnage_id")
                 ech_ep = ep.get("echeance", "28 jours")
-                ouv_ep = ep.get("ouvrage", "N/A")
-                dt_ecras = ep.get("date_ecrasement", "N/A")
+                ouv_ep = ep.get("ouvrage", "-")
+                dt_ecras = ep.get("date_ecrasement", "-")
 
                 cle_groupe = (
                     f"Ouvrage: {ouv_ep} | Échéance: {ech_ep} (Date: {dt_ecras})"
@@ -845,11 +849,23 @@ def show(supabase):
                 supabase, betonnage_id
             )
 
+            # RÉCUPÉRATION EXACTE DU N° BL SAISI DANS LE SUIVI DE BÉTONNAGE (PHASE 1)
+            exact_bl_phase1 = (
+                info_betonnage.get("num_bl")
+                or info_betonnage.get("bl")
+                or sample.get("num_bl")
+                or sample.get("bl")
+                or ""
+            ).strip()
+
+            if not exact_bl_phase1 or exact_bl_phase1.upper() in ["N/A", "NONE", "NAN"]:
+                exact_bl_phase1 = "-"
+
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
             col_l1.metric("Client", "TGCC")
-            col_l2.metric("N° Bon Livraison", str(sample.get("num_bl", "N/A")))
-            col_l3.metric("Ouvrage", str(sample.get("ouvrage", "N/A")))
-            col_l4.metric("Échéance Visée", str(sample.get("echeance", "N/A")))
+            col_l2.metric("N° Bon Livraison", exact_bl_phase1)
+            col_l3.metric("Ouvrage", str(info_betonnage.get("ouvrage") or sample.get("ouvrage") or "-"))
+            col_l4.metric("Échéance Visée", str(sample.get("echeance", "-")))
 
             st.markdown("---")
 
@@ -978,13 +994,13 @@ def show(supabase):
 
                     export_data.append({
                         "repere_eprouvette": ep_ant.get(
-                            "repere_eprouvette", "N/A"
+                            "repere_eprouvette", "-"
                         ),
                         "forme": ep_ant.get("forme", "Cylindrique 150x300"),
                         "section": sec_a,
                         "force_kn": f_a,
                         "fc_mpa": fc_a,
-                        "date_essai": ep_ant.get("date_ecrasement", "N/A"),
+                        "date_essai": ep_ant.get("date_ecrasement", "-"),
                         "age": str(ep_ant.get("echeance", "7"))
                         .replace(" jours", "")
                         .replace("j", ""),
@@ -997,13 +1013,13 @@ def show(supabase):
                     "section": row["_section"],
                     "force_kn": row["Force (kN)"],
                     "fc_mpa": row["Résistance Fc (MPa)"],
-                    "date_essai": sample.get("date_ecrasement", "N/A"),
+                    "date_essai": sample.get("date_ecrasement", "-"),
                     "age": str(sample.get("echeance", "28"))
                     .replace(" jours", "")
                     .replace("j", ""),
                 })
 
-            num_bl_valeur = info_betonnage.get("num_bl") or sample.get("num_bl")
+            num_bl_valeur = exact_bl_phase1
             affaissement_saisi = (
                 info_betonnage.get("affaissement")
                 or info_betonnage.get("slump")
@@ -1045,7 +1061,7 @@ def show(supabase):
             }
 
             excel_file = generer_pv_excel(export_data, infos_header)
-            filename = f"PV_Ecrasement_LPEE_{num_bl_valeur or 'BL'}.xlsx"
+            filename = f"PV_Ecrasement_LPEE_{num_bl_valeur if num_bl_valeur != '-' else 'BL'}.xlsx"
 
             st.markdown("---")
             col_b1, col_b2 = st.columns(2)
@@ -1125,8 +1141,8 @@ def show(supabase):
                     for _, row in df_valides.iterrows():
                         b_id_ep = row.get("betonnage_id")
                         ech_ep = row.get("echeance", "28 jours")
-                        ouv_ep = row.get("ouvrage", "N/A")
-                        dt_ecras = row.get("date_ecrasement", "N/A")
+                        ouv_ep = row.get("ouvrage", "-")
+                        dt_ecras = row.get("date_ecrasement", "-")
 
                         cle_pv = (
                             f"Ouvrage: {ouv_ep} | Échéance: {ech_ep} (Date:"
@@ -1175,13 +1191,19 @@ def show(supabase):
                             "section": sec,
                             "force_kn": f_kn,
                             "fc_mpa": fc,
-                            "date_essai": item.get("date_ecrasement", "N/A"),
+                            "date_essai": item.get("date_ecrasement", "-"),
                             "age": str(item.get("echeance", "28"))
                             .replace(" jours", "")
                             .replace("j", ""),
                         })
 
-                    num_bl_h = info_beton_h.get("num_bl") or sample_h.get("num_bl")
+                    num_bl_h = (
+                        info_beton_h.get("num_bl")
+                        or info_beton_h.get("bl")
+                        or sample_h.get("num_bl")
+                        or sample_h.get("bl")
+                        or "-"
+                    )
                     aff_h = (
                         info_beton_h.get("affaissement")
                         or info_beton_h.get("slump")
@@ -1228,7 +1250,7 @@ def show(supabase):
                     excel_pv_hist = generer_pv_excel(
                         export_data_h, infos_header_h
                     )
-                    file_name_h = f"PV_Ecrasement_RE-EXPORT_{num_bl_h or 'BL'}.xlsx"
+                    file_name_h = f"PV_Ecrasement_RE-EXPORT_{num_bl_h if num_bl_h != '-' else 'BL'}.xlsx"
 
                     st.download_button(
                         label="📄 Télécharger le PV (Excel Format LPEE)",
