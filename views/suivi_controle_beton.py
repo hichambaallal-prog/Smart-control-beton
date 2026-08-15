@@ -844,6 +844,7 @@ def show(supabase):
                         "_section": sec,
                         "Force (kN)": f_kn,
                         "Résistance Fc (MPa)": fc,
+                        "Moyenne Resistance Fc (MPa)": fc,
                     })
                 st.session_state[lot_key] = pd.DataFrame(rows_list)
 
@@ -869,6 +870,13 @@ def show(supabase):
                                 row_idx, "Résistance Fc (MPa)"
                             ] = 0.0
 
+                # Calcul de la moyenne du lot et mise à jour de la colonne dédiée
+                valid_fcs = st.session_state[lot_key][
+                    st.session_state[lot_key]["Résistance Fc (MPa)"] > 0
+                ]["Résistance Fc (MPa)"]
+                avg_val = round(valid_fcs.mean(), 1) if not valid_fcs.empty else 0.0
+                st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = avg_val
+
             st.data_editor(
                 st.session_state[lot_key],
                 column_config={
@@ -890,6 +898,9 @@ def show(supabase):
                     ),
                     "Résistance Fc (MPa)": st.column_config.NumberColumn(
                         "💥 Résistance Fc (MPa)", disabled=True, format="%.1f"
+                    ),
+                    "Moyenne Resistance Fc (MPa)": st.column_config.NumberColumn(
+                        "📊 Moyenne Resistance Fc (MPa)", disabled=True, format="%.1f"
                     ),
                 },
                 use_container_width=True,
