@@ -114,7 +114,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["A7"] = "Date de\nprélèvement"
     ws["A7"].font = font_bold
     ws["A7"].alignment = align_center
-    ws["B7"] = str(infos_header.get("date_coulee", "02/06/2025"))
+    ws["B7"] = str(infos_header.get("date_coulee", "N/A"))
     ws["B7"].font = font_bold
     ws["B7"].alignment = align_center
 
@@ -124,9 +124,10 @@ def generer_pv_excel(export_data, infos_header):
     ws["C7"].alignment = align_center
 
     ws.merge_cells("E7:H7")
+    # Lieu de prélèvement dynamique qui prend la valeur de l'Ouvrage
     ws["E7"] = infos_header.get(
         "lieu_prelevement",
-        "Gros béton de la semelle C1 S2 Pro 745 bis Côté Marrakech 1° Partie",
+        infos_header.get("ouvrage", "N/A"),
     )
     ws["E7"].font = font_regular
     ws["E7"].alignment = align_center
@@ -180,7 +181,8 @@ def generer_pv_excel(export_data, infos_header):
     ws["A11"].font = font_small
     ws["A11"].alignment = align_center
 
-    ws["C11"] = str(infos_header.get("affaissement", "200"))
+    # Valeur dynamique transmise depuis le suivi de bétonnage
+    ws["C11"] = str(infos_header.get("affaissement", "N/A"))
     ws["C11"].font = font_bold
     ws["C11"].alignment = align_center
 
@@ -197,7 +199,8 @@ def generer_pv_excel(export_data, infos_header):
     ws["A12"].font = font_regular
     ws["A12"].alignment = align_center
 
-    ws["C12"] = str(infos_header.get("temperature", "31"))
+    # Valeur dynamique transmise depuis le suivi de bétonnage
+    ws["C12"] = str(infos_header.get("temperature", "N/A"))
     ws["C12"].font = font_bold
     ws["C12"].alignment = align_center
 
@@ -220,7 +223,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["D13"].alignment = align_center
 
     ws.merge_cells("F13:H13")
-    ws["F13"] = str(infos_header.get("num_bl", "15479"))
+    ws["F13"] = str(infos_header.get("num_bl", "N/A"))
     ws["F13"].font = font_bold
     ws["F13"].alignment = align_center
 
@@ -288,7 +291,7 @@ def generer_pv_excel(export_data, infos_header):
         ws[f"A{row_start}"].alignment = align_center
 
         ws.merge_cells(f"B{row_start}:B{row_start + nb_total - 1}")
-        ws[f"B{row_start}"] = str(infos_header.get("date_coulee", "02/06/2025"))
+        ws[f"B{row_start}"] = str(infos_header.get("date_coulee", "N/A"))
         ws[f"B{row_start}"].font = font_bold
         ws[f"B{row_start}"].alignment = align_center
 
@@ -298,10 +301,12 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(
             row=curr_row,
             column=3,
-            value=str(item.get("date_essai", "09/06/2025")),
+            value=str(item.get("date_essai", "N/A")),
         ).alignment = align_center
-        
-        ws.cell(row=curr_row, column=4, value=item.get("age", 7)).alignment = align_center
+
+        ws.cell(
+            row=curr_row, column=4, value=item.get("age", 7)
+        ).alignment = align_center
 
         f_kn = float(item.get("force_kn", 0.0))
         ws.cell(
@@ -402,8 +407,30 @@ def obtenir_historique_betonnage(supabase, betonnage_id):
         )
         return res.data if res.data else []
     except Exception as e:
-        st.warning(f"Note : Historique du bétonnage #{betonnage_id} non disponible : {e}")
+        st.warning(
+            f"Note : Historique du bétonnage #{betonnage_id} non disponible : {e}"
+        )
         return []
+
+
+def obtenir_infos_betonnage_parent(supabase, betonnage_id):
+    """Récupère les détails saisis initialement au niveau de la table suivi_betonnage."""
+    if not betonnage_id:
+        return {}
+    try:
+        res = (
+            supabase.table("suivi_betonnage")
+            .select("*")
+            .eq("id", betonnage_id)
+            .execute()
+        )
+        if res.data:
+            return res.data[0]
+    except Exception as e:
+        st.warning(
+            f"Note : Impossible de charger la fiche parent de bétonnage #{betonnage_id} : {e}"
+        )
+    return {}
 
 
 # =========================================================
@@ -443,14 +470,17 @@ def show(supabase):
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
         if not betonnages_preleves:
-            st.info("ℹ️ Aucun suivi de bétonnage avec prélèvement d'éprouvettes (OUI) trouvé.")
+            st.info(
+                "ℹ️ Aucun suivi de bétonnage avec prélèvement d'éprouvettes"
+                " (OUI) trouvé."
+            )
         else:
             options_beton = {
                 (
                     f"ID #{b['id']} | BL: {b.get('num_bl', 'N/A')} | Ouvrage:"
                     f" {b.get('ouvrage', 'N/A')} | Date:"
-                    f" {b.get('date_coulee', b.get('date_livraison', 'N/A'))} | Classe:"
-                    f" {b.get('classe_beton', b.get('classe', 'N/A'))}"
+                    f" {b.get('date_coulee', b.get('date_livraison', 'N/A'))} |"
+                    f" Classe: {b.get('classe_beton', b.get('classe', 'N/A'))}"
                 ): b
                 for b in betonnages_preleves
             }
@@ -697,13 +727,14 @@ def show(supabase):
                                 succes_cnt += 1
                         except Exception as err:
                             st.error(
-                                f"Erreur lors de la programmation de {rep} : {err}"
+                                f"Erreur lors de la programmation de {rep} :"
+                                f" {err}"
                             )
 
                     if succes_cnt > 0:
                         st.success(
-                            f"✅ {succes_cnt} éprouvette(s) programmée(s) pour le"
-                            f" {date_ecrasement_prevue} ({echeance_p}) !"
+                            f"✅ {succes_cnt} éprouvette(s) programmée(s) pour"
+                            f" le {date_ecrasement_prevue} ({echeance_p}) !"
                         )
                         st.rerun()
 
@@ -760,8 +791,15 @@ def show(supabase):
             sample = lot_selected[0]
             betonnage_id = sample.get("betonnage_id")
 
+            # Récupération des informations initiales saisies au niveau du suivi de bétonnage
+            info_betonnage = obtenir_infos_betonnage_parent(
+                supabase, betonnage_id
+            )
+
             # Récupération automatique des essais déjà effectués (3j, 7j)
-            essais_anterieurs = obtenir_historique_betonnage(supabase, betonnage_id)
+            essais_anterieurs = obtenir_historique_betonnage(
+                supabase, betonnage_id
+            )
 
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
             col_l1.metric("Client", "TGCC")
@@ -803,7 +841,9 @@ def show(supabase):
                     rows_list.append({
                         "ID": ep["id"],
                         "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"),
-                        "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
+                        "Forme d'éprouvette": str(
+                            ep.get("forme") or "Cylindrique 150x300"
+                        ),
                         "_section": sec,
                         "Force (kN)": f_kn,
                         "Résistance Fc (MPa)": fc,
@@ -811,23 +851,37 @@ def show(supabase):
                 st.session_state[lot_key] = pd.DataFrame(rows_list)
 
             def update_fc():
-                changes = st.session_state.data_editor_ecrasement.get("edited_rows", {})
+                changes = st.session_state.data_editor_ecrasement.get(
+                    "edited_rows", {}
+                )
                 for row_idx, updated_cols in changes.items():
                     if "Force (kN)" in updated_cols:
                         new_force = float(updated_cols["Force (kN)"] or 0.0)
-                        sec = float(st.session_state[lot_key].at[row_idx, "_section"])
-                        st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
+                        sec = float(
+                            st.session_state[lot_key].at[row_idx, "_section"]
+                        )
+                        st.session_state[lot_key].at[
+                            row_idx, "Force (kN)"
+                        ] = new_force
                         if sec > 0 and new_force > 0:
-                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1)
+                            st.session_state[lot_key].at[
+                                row_idx, "Résistance Fc (MPa)"
+                            ] = round((new_force * 10.0) / sec, 1)
                         else:
-                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = 0.0
+                            st.session_state[lot_key].at[
+                                row_idx, "Résistance Fc (MPa)"
+                            ] = 0.0
 
             st.data_editor(
                 st.session_state[lot_key],
                 column_config={
                     "ID": st.column_config.NumberColumn("ID", disabled=True),
-                    "Repère": st.column_config.TextColumn("Repère", disabled=True),
-                    "Forme d'éprouvette": st.column_config.TextColumn("Forme d'éprouvette", disabled=True),
+                    "Repère": st.column_config.TextColumn(
+                        "Repère", disabled=True
+                    ),
+                    "Forme d'éprouvette": st.column_config.TextColumn(
+                        "Forme d'éprouvette", disabled=True
+                    ),
                     "_section": None,
                     "Force (kN)": st.column_config.NumberColumn(
                         "⚡ Force (kN)",
@@ -851,27 +905,39 @@ def show(supabase):
             forces_valides = df_actuel[df_actuel["Force (kN)"] > 0]
             if not forces_valides.empty:
                 fc_moy = round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
-                st.success(f"📈 **Résistance moyenne du lot actuel : {fc_moy:.1f} MPa**")
+                st.success(
+                    f"📈 **Résistance moyenne du lot actuel : {fc_moy:.1f} MPa**"
+                )
 
             # Construction des données complètes (Historique + Lot Actuel)
             export_data = []
 
             # 1. Éprouvettes antérieures du même lot
             if essais_anterieurs:
-                st.info(f"ℹ️ {len(essais_anterieurs)} essai(s) antérieur(s) répertorié(s) pour ce béton (Bétonnage ID #{betonnage_id}) et inclus dans l'impression.")
+                st.info(
+                    f"ℹ️ {len(essais_anterieurs)} essai(s) antérieur(s)"
+                    f" répertorié(s) pour ce béton (Bétonnage ID #{betonnage_id})"
+                    " et inclus dans l'impression."
+                )
                 for ep_ant in essais_anterieurs:
                     sec_a = float(ep_ant.get("section") or 176.71)
                     f_a = float(ep_ant.get("force_kn") or 0.0)
-                    fc_a = float(ep_ant.get("fc_mpa") or round((f_a * 10.0) / sec_a, 1))
+                    fc_a = float(
+                        ep_ant.get("fc_mpa") or round((f_a * 10.0) / sec_a, 1)
+                    )
 
                     export_data.append({
-                        "repere_eprouvette": ep_ant.get("repere_eprouvette", "N/A"),
+                        "repere_eprouvette": ep_ant.get(
+                            "repere_eprouvette", "N/A"
+                        ),
                         "forme": ep_ant.get("forme", "Cylindrique 150x300"),
                         "section": sec_a,
                         "force_kn": f_a,
                         "fc_mpa": fc_a,
                         "date_essai": ep_ant.get("date_ecrasement", "N/A"),
-                        "age": str(ep_ant.get("echeance", "7")).replace(" jours", "").replace("j", ""),
+                        "age": str(ep_ant.get("echeance", "7"))
+                        .replace(" jours", "")
+                        .replace("j", ""),
                     })
 
             # 2. Éprouvettes de la saisie actuelle
@@ -883,19 +949,38 @@ def show(supabase):
                     "force_kn": row["Force (kN)"],
                     "fc_mpa": row["Résistance Fc (MPa)"],
                     "date_essai": sample.get("date_ecrasement", "N/A"),
-                    "age": str(sample.get("echeance", "28")).replace(" jours", "").replace("j", ""),
+                    "age": str(sample.get("echeance", "28"))
+                    .replace(" jours", "")
+                    .replace("j", ""),
                 })
+
+            # Extraction dynamique des variables depuis suivi_betonnage
+            affaissement_saisi = (
+                info_betonnage.get("affaissement")
+                or info_betonnage.get("slump")
+                or sample.get("affaissement", "N/A")
+            )
+            temp_saisie = (
+                info_betonnage.get("temperature")
+                or info_betonnage.get("temp_beton")
+                or sample.get("temperature", "N/A")
+            )
+            ouvrage_saisi = (
+                info_betonnage.get("ouvrage")
+                or sample.get("ouvrage", "N/A")
+            )
 
             infos_header = {
                 "re_num": "25/260/LGV/ B/01",
                 "dossier": "2025-260-05985-2025-0247",
                 "client": "TGCC",
                 "num_bl": sample.get("num_bl", "15479"),
-                "ouvrage": sample.get("ouvrage", "N/A"),
+                "ouvrage": ouvrage_saisi,
+                "lieu_prelevement": ouvrage_saisi,  # Remplace la valeur en dur de l'Ouvrage
                 "classe_beton": sample.get("classe_beton", "C30/37"),
-                "date_coulee": sample.get("date_coulee", "02/06/2025"),
-                "affaissement": sample.get("affaissement", "200"),
-                "temperature": sample.get("temperature", "31"),
+                "date_coulee": sample.get("date_coulee", "N/A"),
+                "affaissement": affaissement_saisi,  # Valeur dynamique
+                "temperature": temp_saisie,  # Valeur dynamique
                 "observations": obs_globale,
             }
 
@@ -923,7 +1008,10 @@ def show(supabase):
 
             if btn_enregistrer:
                 if (df_actuel["Force (kN)"] == 0).any():
-                    st.error("❌ Les forces de rupture doivent toutes être saisies (> 0 kN).")
+                    st.error(
+                        "❌ Les forces de rupture doivent toutes être saisies"
+                        " (> 0 kN)."
+                    )
                 else:
                     succes_lot = 0
                     for _, row in df_actuel.iterrows():
@@ -934,14 +1022,22 @@ def show(supabase):
                             "observations": obs_globale,
                         }
                         try:
-                            supabase.table("suivi_controle_beton").update(update_payload).eq("id", int(row["ID"])).execute()
+                            supabase.table("suivi_controle_beton").update(
+                                update_payload
+                            ).eq("id", int(row["ID"])).execute()
                             succes_lot += 1
                         except Exception as e:
-                            st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
+                            st.error(
+                                f"Erreur sur l'éprouvette {row['Repère']} : {e}"
+                            )
 
                     if succes_lot == len(df_actuel):
                         st.balloons()
-                        st.success(f"✅ Lot de {succes_lot} éprouvettes validé dans Supabase ! Vous pouvez télécharger le PV ci-dessus.")
+                        st.success(
+                            f"✅ Lot de {succes_lot} éprouvettes validé dans"
+                            " Supabase ! Vous pouvez télécharger le PV"
+                            " ci-dessus."
+                        )
 
     # ---------------------------------------------------------
     # HISTORIQUE COMPLET & ÉDITION DE PV
@@ -974,7 +1070,8 @@ def show(supabase):
                         dt_ecras = row.get("date_ecrasement", "N/A")
 
                         cle_pv = (
-                            f"Ouvrage: {ouv_ep} | Échéance: {ech_ep} (Date: {dt_ecras}) | Lot ID #{b_id_ep}"
+                            f"Ouvrage: {ouv_ep} | Échéance: {ech_ep} (Date:"
+                            f" {dt_ecras}) | Lot ID #{b_id_ep}"
                         )
 
                         if cle_pv not in groupes_valides:
@@ -991,43 +1088,75 @@ def show(supabase):
                     sample_h = lot_hist[0]
                     b_id_h = sample_h.get("betonnage_id")
 
-                    tous_essais_hist = obtenir_historique_betonnage(supabase, b_id_h)
+                    info_beton_h = obtenir_infos_betonnage_parent(
+                        supabase, b_id_h
+                    )
+                    tous_essais_hist = obtenir_historique_betonnage(
+                        supabase, b_id_h
+                    )
 
                     export_data_h = []
-                    items_a_exporter = tous_essais_hist if tous_essais_hist else lot_hist
+                    items_a_exporter = (
+                        tous_essais_hist if tous_essais_hist else lot_hist
+                    )
 
                     for item in items_a_exporter:
                         sec = float(item.get("section") or 176.71)
                         f_kn = float(item.get("force_kn") or 0.0)
-                        fc = float(item.get("fc_mpa") or round((f_kn * 10.0) / sec, 1))
+                        fc = float(
+                            item.get("fc_mpa")
+                            or round((f_kn * 10.0) / sec, 1)
+                        )
 
                         export_data_h.append({
-                            "repere_eprouvette": item.get("repere_eprouvette", f"/{item['id']}"),
+                            "repere_eprouvette": item.get(
+                                "repere_eprouvette", f"/{item['id']}"
+                            ),
                             "forme": item.get("forme", "Cylindrique 150x300"),
                             "section": sec,
                             "force_kn": f_kn,
                             "fc_mpa": fc,
                             "date_essai": item.get("date_ecrasement", "N/A"),
-                            "age": str(item.get("echeance", "28")).replace(" jours", "").replace("j", ""),
+                            "age": str(item.get("echeance", "28"))
+                            .replace(" jours", "")
+                            .replace("j", ""),
                         })
+
+                    aff_h = (
+                        info_beton_h.get("affaissement")
+                        or info_beton_h.get("slump")
+                        or sample_h.get("affaissement", "N/A")
+                    )
+                    temp_h = (
+                        info_beton_h.get("temperature")
+                        or info_beton_h.get("temp_beton")
+                        or sample_h.get("temperature", "N/A")
+                    )
+                    ouv_h = (
+                        info_beton_h.get("ouvrage")
+                        or sample_h.get("ouvrage", "N/A")
+                    )
 
                     infos_header_h = {
                         "re_num": "25/260/LGV/ B/01",
                         "dossier": "2025-260-05985-2025-0247",
                         "client": "TGCC",
                         "num_bl": sample_h.get("num_bl", "15479"),
-                        "ouvrage": sample_h.get("ouvrage", "N/A"),
+                        "ouvrage": ouv_h,
+                        "lieu_prelevement": ouv_h,  # Remplace la valeur en dur de l'Ouvrage
                         "classe_beton": sample_h.get("classe_beton", "C30/37"),
                         "date_coulee": sample_h.get("date_coulee", "N/A"),
-                        "affaissement": sample_h.get("affaissement", "200"),
-                        "temperature": sample_h.get("temperature", "31"),
+                        "affaissement": aff_h,  # Valeur dynamique
+                        "temperature": temp_h,  # Valeur dynamique
                         "observations": sample_h.get(
                             "observations",
                             "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES",
                         ),
                     }
 
-                    excel_pv_hist = generer_pv_excel(export_data_h, infos_header_h)
+                    excel_pv_hist = generer_pv_excel(
+                        export_data_h, infos_header_h
+                    )
                     file_name_h = f"PV_Ecrasement_RE-EXPORT_{sample_h.get('num_bl', 'BL')}.xlsx"
 
                     st.download_button(
