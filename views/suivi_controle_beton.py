@@ -44,7 +44,7 @@ def extraire_num_bl(*sources):
                     ]:
                         return val_str
 
-            # 2. Reperage dynamique si la clé contient "bl"
+            # 2. Repérage dynamique si la clé contient "bl"
             for key, val in source.items():
                 if "bl" in key.lower() or "bon" in key.lower():
                     if val is not None:
@@ -360,6 +360,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["F14"].font = font_regular
     ws["F14"].alignment = align_center
 
+    ws.merge_cells("G14:G14")
     ws["G14"] = "Traction"
     ws["G14"].font = font_regular
     ws["G14"].alignment = align_center
@@ -376,20 +377,19 @@ def generer_pv_excel(export_data, infos_header):
     row_start = 15
     nb_total = len(export_data)
 
-    if nb_total > 0:
-        ws.merge_cells(f"A{row_start}:A{row_start + nb_total - 1}")
-        ws[f"A{row_start}"] = "B/01"
-        ws[f"A{row_start}"].font = font_bold
-        ws[f"A{row_start}"].alignment = align_center
-
-        ws.merge_cells(f"B{row_start}:B{row_start + nb_total - 1}")
-        ws[f"B{row_start}"] = str(remplacer_na(infos_header.get("date_coulee"), "-"))
-        ws[f"B{row_start}"].font = font_bold
-        ws[f"B{row_start}"].alignment = align_center
-
     groupes_lots = {}
     for idx, item in enumerate(export_data):
         curr_row = row_start + idx
+
+        # Référence / Repère complet dans la colonne A
+        ref_complete = str(item.get("repere_eprouvette", "B/01"))
+        ws.cell(row=curr_row, column=1, value=ref_complete)
+
+        ws.cell(
+            row=curr_row,
+            column=2,
+            value=str(remplacer_na(infos_header.get("date_coulee"), "-")),
+        )
 
         ws.cell(
             row=curr_row,
@@ -484,7 +484,7 @@ def generer_pv_excel(export_data, infos_header):
                 ws.row_dimensions[r].height = 28
 
     col_widths = {
-        "A": 10,
+        "A": 16,
         "B": 12,
         "C": 12,
         "D": 10,
@@ -848,6 +848,7 @@ def show(supabase):
                             "date_coulee": str(date_coulee_p),
                             "echeance": echeance_p,
                             "date_ecrasement": str(date_ecrasement_prevue),
+                            "ref_controle": ref_controle_p,
                             "repere_eprouvette": rep,
                             "forme": forme_p,
                             "section": float(sect_def),
@@ -974,8 +975,14 @@ def show(supabase):
                         else 0.0
                     )
 
+                    ref_ctrl = str(
+                        ep.get("ref_controle")
+                        or f"REF-{betonnage_id}-{info_betonnage.get('ouvrage', 'N/A')}"
+                    )
+
                     rows_list.append({
                         "ID": ep["id"],
+                        "🏷️ Référence de Contrôle": ref_ctrl,
                         "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"),
                         "Forme d'éprouvette": str(
                             ep.get("forme") or "Cylindrique 150x300"
@@ -1009,6 +1016,9 @@ def show(supabase):
                         else:
                             st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = 0.0
 
+                    if "🏷️ Référence de Contrôle" in updated_cols:
+                        st.session_state[lot_key].at[row_idx, "🏷️ Référence de Contrôle"] = updated_cols["🏷️ Référence de Contrôle"]
+
                 df_cur = st.session_state[lot_key]
                 forces_valides = df_cur[df_cur["Résistance Fc (MPa)"] > 0]
                 fc_moy = (
@@ -1022,6 +1032,10 @@ def show(supabase):
                 st.session_state[lot_key],
                 column_config={
                     "ID": st.column_config.NumberColumn("ID", disabled=True),
+                    "🏷️ Référence de Contrôle": st.column_config.TextColumn(
+                        "🏷️ Référence de Contrôle (Préfixe)",
+                        help="Préfixe de référence associé aux repères d'éprouvettes",
+                    ),
                     "Repère": st.column_config.TextColumn(
                         "Repère", disabled=True
                     ),
@@ -1067,10 +1081,14 @@ def show(supabase):
                         ep_ant.get("fc_mpa") or round((f_a * 10.0) / sec_a, 1)
                     )
 
+                    ref_prefix = str(ep_ant.get("ref_controle") or "")
+                    rep_suffix = str(ep_ant.get("repere_eprouvette", "-"))
+                    rep_complet = (
+                        f"{ref_prefix}{rep_suffix}" if ref_prefix else rep_suffix
+                    )
+
                     export_data.append({
-                        "repere_eprouvette": ep_ant.get(
-                            "repere_eprouvette", "-"
-                        ),
+                        "repere_eprouvette": rep_complet,
                         "forme": ep_ant.get("forme", "Cylindrique 150x300"),
                         "section": sec_a,
                         "force_kn": f_a,
@@ -1082,8 +1100,14 @@ def show(supabase):
                     })
 
             for _, row in df_actuel.iterrows():
+                ref_prefix = str(row.get("🏷️ Référence de Contrôle") or "").strip()
+                rep_suffix = str(row["Repère"]).strip()
+                rep_complet = (
+                    f"{ref_prefix}{rep_suffix}" if ref_prefix else rep_suffix
+                )
+
                 export_data.append({
-                    "repere_eprouvette": row["Repère"],
+                    "repere_eprouvette": rep_complet,
                     "forme": row["Forme d'éprouvette"],
                     "section": row["_section"],
                     "force_kn": row["Force (kN)"],
@@ -1167,6 +1191,7 @@ def show(supabase):
                     succes_lot = 0
                     for _, row in df_actuel.iterrows():
                         update_payload = {
+                            "ref_controle": row.get("🏷️ Référence de Contrôle"),
                             "force_kn": float(row["Force (kN)"]),
                             "fc_mpa": float(row["Résistance Fc (MPa)"]),
                             "technicien": tech_global,
@@ -1258,10 +1283,14 @@ def show(supabase):
                             or round((f_kn * 10.0) / sec, 1)
                         )
 
+                        ref_p = str(item.get("ref_controle") or "").strip()
+                        rep_s = str(
+                            item.get("repere_eprouvette", f"/{item['id']}")
+                        ).strip()
+                        rep_c = f"{ref_p}{rep_s}" if ref_p else rep_s
+
                         export_data_h.append({
-                            "repere_eprouvette": item.get(
-                                "repere_eprouvette", f"/{item['id']}"
-                            ),
+                            "repere_eprouvette": rep_c,
                             "forme": item.get("forme", "Cylindrique 150x300"),
                             "section": sec,
                             "force_kn": f_kn,
