@@ -232,7 +232,8 @@ def generer_pv_excel(export_data, infos_header):
     ws["E8"].alignment = align_center
 
     ws.merge_cells("G8:H8")
-    ws["G8"] = remplacer_na(infos_header.get("classe_beton"), "C30/37")
+    classe_beton_val = str(remplacer_na(infos_header.get("classe_beton"), "C35/45")).upper()
+    ws["G8"] = classe_beton_val
     ws["G8"].font = font_bold
     ws["G8"].alignment = align_center
 
@@ -351,7 +352,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["G14"].font = font_regular
     ws["G14"].alignment = align_center
 
-    ws["H14"] = "Moyenne"
+    ws.H14 = "Moyenne"
     ws["H14"].font = font_regular
     ws["H14"].alignment = align_center
 
@@ -448,10 +449,10 @@ def generer_pv_excel(export_data, infos_header):
             except (ValueError, TypeError):
                 pass
 
-    next_row = max(row_start + nb_total, 21)
+    next_row = max(row_start + nb_total, 30)
 
     # ---------------------------------------------------------
-    # COMMENTAIRES DYNAMIQUES (CORRECTION EXCEL DU TEXTE CONFORME)
+    # CORRECTION ET AFFICHAGE DU COMMENTAIRE DANS EXCEL
     # ---------------------------------------------------------
     ws.cell(row=next_row, column=1, value="Commentaire :").font = font_bold
     ws.cell(row=next_row, column=1).alignment = align_left
@@ -459,25 +460,28 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells(f"B{next_row}:H{next_row}")
 
-    obs_defaut = infos_header.get(
-        "observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
-    )
+    obs_defaut = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+
+    # Détermination du seuil de résistance minimale à 28 jours selon la classe
+    seuil_min = 35.0
+    if "C25/30" in classe_beton_val:
+        seuil_min = 25.0
+    elif "C30/37" in classe_beton_val:
+        seuil_min = 30.0
+    elif "C35/45" in classe_beton_val:
+        seuil_min = 35.0
+    elif "C40/50" in classe_beton_val:
+        seuil_min = 40.0
 
     if not a_des_28j_ecrases or not cellule_moyenne_28j:
         formule_commentaires = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
     else:
         moyenne_cell = cellule_moyenne_28j
+        # Formule robuste sans fonction SEARCH qui causait l'erreur #VALEUR! dans Excel
         formule_commentaires = (
             f'=IF(OR(ISBLANK({moyenne_cell}), {moyenne_cell}="En cours"), '
             f'"PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT.", '
-            f'IF(OR('
-                f'AND(ISNUMBER(SEARCH("C25/30", G8)), {moyenne_cell}>=25), '
-                f'AND(ISNUMBER(SEARCH("C30/37", G8)), {moyenne_cell}>=30), '
-                f'AND(ISNUMBER(SEARCH("C35/45", G8)), {moyenne_cell}>=35), '
-                f'AND(ISNUMBER(SEARCH("C40/50", G8)), {moyenne_cell}>=40)'
-            f'), '
-            f'"{obs_defaut}", '
-            f'"PERFORMANCES MECANIQUES NON CONFORMES"))'
+            f'IF({moyenne_cell}>={seuil_min}, "{obs_defaut}", "PERFORMANCES MECANIQUES NON CONFORMES"))'
         )
 
     ws.cell(row=next_row, column=2, value=formule_commentaires).font = font_bold
@@ -487,7 +491,7 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(row=next_row, column=c).border = border_cell
 
     # ---------------------------------------------------------
-    # BLOC DE SIGNATURES (SOUS LE COMMENTAIRE)
+    # BLOC DE SIGNATURES
     # ---------------------------------------------------------
     r_sig_titre = next_row + 2
     r_sig_debut = r_sig_titre + 1
@@ -517,7 +521,7 @@ def generer_pv_excel(export_data, infos_header):
     ws.row_dimensions[8].height = 54
 
     for r in range(1, r_sig_fin + 1):
-        if 15 <= r <= 28:
+        if 15 <= r <= 29:
             ws.row_dimensions[r].height = 22
         elif r in [9, 12, 13, 14]:
             ws.row_dimensions[r].height = 15
@@ -1262,7 +1266,7 @@ def show(supabase):
                 "num_bl": num_bl_valeur,
                 "ouvrage": ouvrage_saisi,
                 "lieu_prelevement": ouvrage_saisi,
-                "classe_beton": sample.get("classe_beton", "C30/37"),
+                "classe_beton": sample.get("classe_beton", "C35/45"),
                 "date_coulee": date_coulee_saisie,
                 "affaissement": affaissement_saisi,
                 "temperature": temp_saisie,
@@ -1462,7 +1466,7 @@ def show(supabase):
                         "num_bl": num_bl_h,
                         "ouvrage": ouv_h,
                         "lieu_prelevement": ouv_h,
-                        "classe_beton": sample_h.get("classe_beton", "C30/37"),
+                        "classe_beton": sample_h.get("classe_beton", "C35/45"),
                         "date_coulee": date_coulee_h,
                         "affaissement": aff_h,
                         "temperature": temp_h,
