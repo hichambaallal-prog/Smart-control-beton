@@ -396,15 +396,15 @@ def generer_pv_excel(export_data, infos_header):
         if age_val == 28 and f_kn > 0:
             has_28_days_ecrases = True
 
-        # Affichage "En cours" si non encore écrasé[cite: 3]
+        # Affichage "En cours" si non encore écrasé
         if f_kn > 0:
             ws.cell(row=curr_row, column=5, value=f_kn)
             ws.cell(row=curr_row, column=6, value=fc_mpa)
             ws.cell(row=curr_row, column=5).number_format = "0.0"
             ws.cell(row=curr_row, column=6).number_format = "0.0"
         else:
-            ws.cell(row=curr_row, column=5, value="En cours")[cite: 3]
-            ws.cell(row=curr_row, column=6, value="En cours")[cite: 3]
+            ws.cell(row=curr_row, column=5, value="En cours")
+            ws.cell(row=curr_row, column=6, value="En cours")
 
         ws.cell(row=curr_row, column=7, value="-")
 
@@ -438,7 +438,7 @@ def generer_pv_excel(export_data, infos_header):
                 ws[f"H{start_r}"] = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
             ws[f"H{start_r}"].number_format = "0.0"
         else:
-            ws[f"H{start_r}"] = "En cours"[cite: 3]
+            ws[f"H{start_r}"] = "En cours"
 
         ws[f"H{start_r}"].alignment = align_center
         ws[f"H{start_r}"].font = font_bold
@@ -454,9 +454,9 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells(f"B{next_row}:H{next_row}")
 
-    # Si l'échéance à 28 jours n'est pas encore écrasée, afficher la mention requise[cite: 3]
+    # Si l'échéance à 28 jours n'est pas encore écrasée, afficher la mention requise
     if not has_28_days_ecrases or not cellule_28j_moyenne:
-        commentaire_final = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNEES ULTERIEUREMENT."[cite: 3]
+        commentaire_final = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNEES ULTERIEUREMENT."
         ws.cell(row=next_row, column=2, value=commentaire_final).font = font_bold
     else:
         obs_defaut = infos_header.get(
