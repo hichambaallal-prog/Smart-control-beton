@@ -295,7 +295,7 @@ def generer_pv_excel(export_data, infos_header):
         "Technicien LPEE"
     )
     ws.merge_cells("A12:C12")
-    ws["A12"] = f"essai effectué par {tech_prelevement}"
+    ws["A12"] = f"prélèvement effectué par {tech_prelevement}"
     ws["A12"].font = font_small
     ws["A12"].alignment = align_center
 
