@@ -449,11 +449,11 @@ def generer_pv_excel(export_data, infos_header):
             except (ValueError, TypeError):
                 pass
 
-    next_row = max(row_start + nb_total, 30)
+    # ---------------------------------------------------------
+    # POSITION DYNAMIQUE : Ligne 27 (12 ep) ou Ligne 30 (15 ep)
+    # ---------------------------------------------------------
+    next_row = row_start + nb_total
 
-    # ---------------------------------------------------------
-    # CORRECTION ET AFFICHAGE DU COMMENTAIRE DANS EXCEL
-    # ---------------------------------------------------------
     ws.cell(row=next_row, column=1, value="Commentaire :").font = font_bold
     ws.cell(row=next_row, column=1).alignment = align_left
     ws.cell(row=next_row, column=1).fill = fill_section_label
@@ -462,7 +462,6 @@ def generer_pv_excel(export_data, infos_header):
 
     obs_defaut = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
 
-    # Détermination du seuil de résistance minimale à 28 jours selon la classe
     seuil_min = 35.0
     if "C25/30" in classe_beton_val:
         seuil_min = 25.0
@@ -477,7 +476,6 @@ def generer_pv_excel(export_data, infos_header):
         formule_commentaires = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
     else:
         moyenne_cell = cellule_moyenne_28j
-        # Formule robuste sans fonction SEARCH qui causait l'erreur #VALEUR! dans Excel
         formule_commentaires = (
             f'=IF(OR(ISBLANK({moyenne_cell}), {moyenne_cell}="En cours"), '
             f'"PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT.", '
@@ -491,7 +489,7 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(row=next_row, column=c).border = border_cell
 
     # ---------------------------------------------------------
-    # BLOC DE SIGNATURES
+    # BLOC DE SIGNATURES (Ajusté sous le commentaire)
     # ---------------------------------------------------------
     r_sig_titre = next_row + 2
     r_sig_debut = r_sig_titre + 1
@@ -521,15 +519,14 @@ def generer_pv_excel(export_data, infos_header):
     ws.row_dimensions[8].height = 54
 
     for r in range(1, r_sig_fin + 1):
-        if 15 <= r <= 29:
-            ws.row_dimensions[r].height = 22
+        if 15 <= r <= 26:
+            ws.row_dimensions[r].height = 32
         elif r in [9, 12, 13, 14]:
             ws.row_dimensions[r].height = 15
-        elif r != 8:
-            if 1 <= r <= 6:
-                ws.row_dimensions[r].height = 16
-            else:
-                ws.row_dimensions[r].height = 28
+        elif r < 15:
+            ws.row_dimensions[r].height = 16
+        else:
+            ws.row_dimensions[r].height = 28
 
     col_widths = {
         "A": 16,
