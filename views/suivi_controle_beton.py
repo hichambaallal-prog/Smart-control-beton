@@ -387,7 +387,14 @@ def generer_pv_excel(export_data, infos_header):
         )
 
         dt_essai = item.get("date_essai")
-        is_en_cours = str(item.get("statut", "")).lower() == "en cours" or float(item.get("force_kn", 0.0)) == 0.0
+        
+        # VÉRIFICATION DU STATUT "EN COURS"
+        try:
+            f_kn_val = float(item.get("force_kn", 0.0))
+        except (ValueError, TypeError):
+            f_kn_val = 0.0
+
+        is_en_cours = str(item.get("statut", "")).lower() == "en cours" or f_kn_val == 0.0
 
         if is_en_cours:
             ws.cell(row=curr_row, column=3, value=str(dt_essai) if dt_essai and dt_essai != "-" else "En cours")
@@ -395,7 +402,7 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=3, value=str(remplacer_na(dt_essai, "-")))
 
         try:
-            age_val = int(item.get("age", 7))
+            age_val = int(str(item.get("age", 7)).replace("j", "").replace("jours", "").strip())
         except (ValueError, TypeError):
             age_val = item.get("age", 7)
 
@@ -405,8 +412,7 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=5, value="En cours")
             ws.cell(row=curr_row, column=6, value="En cours")
         else:
-            f_kn = float(item.get("force_kn", 0.0))
-            ws.cell(row=curr_row, column=5, value=f_kn)
+            ws.cell(row=curr_row, column=5, value=f_kn_val)
             ws.cell(row=curr_row, column=5).number_format = "0.0"
 
             fc_mpa = float(item.get("fc_mpa", 0.0))
@@ -423,6 +429,10 @@ def generer_pv_excel(export_data, infos_header):
         cle_lot = f"{item.get('age')}_{item.get('date_essai')}"
         if cle_lot not in groupes_lots:
             groupes_lots[cle_lot] = {"lignes": [], "en_cours": is_en_cours, "age": age_val}
+        else:
+            if is_en_cours:
+                groupes_lots[cle_lot]["en_cours"] = True
+
         groupes_lots[cle_lot]["lignes"].append(curr_row)
 
     for cle_lot, data_lot in groupes_lots.items():
@@ -529,8 +539,8 @@ def generer_pv_excel(export_data, infos_header):
             ws.row_dimensions[r].height = 48
         elif r in [10, 11]:
             ws.row_dimensions[r].height = 23
-        elif 15 <= r <= 26:
-            ws.row_dimensions[r].height = 32
+        elif 15 <= r <= (15 + nb_total):
+            ws.row_dimensions[r].height = 28
         elif r in [9, 12, 13, 14]:
             ws.row_dimensions[r].height = 15
         elif r < 15:
@@ -1207,39 +1217,41 @@ def show(supabase):
             export_data = []
             dict_actuel = {int(row["ID"]): row for _, row in df_actuel.iterrows()}
 
-            if historique_complet:
-                for ep_h in historique_complet:
-                    ep_id = ep_h["id"]
-                    sec_h = float(ep_h.get("section") or 176.71)
+            # Récupération de tous les essais (pour inclure les éprouvettes non encore saisies)
+            items_source = historique_complet if historique_complet else lot_selected
 
-                    if ep_id in dict_actuel:
-                        row_saisie = dict_actuel[ep_id]
-                        f_kn = float(row_saisie["Force (kN)"])
-                        fc_mpa = float(row_saisie["Résistance Fc (MPa)"])
-                        ref_p = str(row_saisie["🏷️ Référence de Contrôle"]).strip()
-                        rep_s = str(row_saisie["Repère"]).strip()
-                        statut = "En cours" if f_kn == 0 else "Réalisé"
-                    else:
-                        f_kn = float(ep_h.get("force_kn") or 0.0)
-                        fc_mpa = float(ep_h.get("fc_mpa") or (round((f_kn * 10.0) / sec_h, 1) if f_kn > 0 else 0.0))
-                        ref_p = str(ep_h.get("ref_controle") or ref_controle_courante).strip()
-                        rep_s = str(ep_h.get("repere_eprouvette", f"/{ep_id}")).strip()
-                        statut = "En cours" if f_kn == 0 else "Réalisé"
+            for ep_h in items_source:
+                ep_id = ep_h["id"]
+                sec_h = float(ep_h.get("section") or 176.71)
 
-                    rep_c = f"{ref_p}{rep_s}" if ref_p else rep_s
+                if ep_id in dict_actuel:
+                    row_saisie = dict_actuel[ep_id]
+                    f_kn = float(row_saisie["Force (kN)"])
+                    fc_mpa = float(row_saisie["Résistance Fc (MPa)"])
+                    ref_p = str(row_saisie["🏷️ Référence de Contrôle"]).strip()
+                    rep_s = str(row_saisie["Repère"]).strip()
+                    statut = "En cours" if f_kn == 0 else "Réalisé"
+                else:
+                    f_kn = float(ep_h.get("force_kn") or 0.0)
+                    fc_mpa = float(ep_h.get("fc_mpa") or (round((f_kn * 10.0) / sec_h, 1) if f_kn > 0 else 0.0))
+                    ref_p = str(ep_h.get("ref_controle") or ref_controle_courante).strip()
+                    rep_s = str(ep_h.get("repere_eprouvette", f"/{ep_id}")).strip()
+                    statut = "En cours" if f_kn == 0 else "Réalisé"
 
-                    export_data.append({
-                        "repere_eprouvette": rep_c,
-                        "forme": ep_h.get("forme", "Cylindrique 150x300"),
-                        "section": sec_h,
-                        "force_kn": f_kn,
-                        "fc_mpa": fc_mpa,
-                        "date_essai": ep_h.get("date_ecrasement", "-"),
-                        "age": str(ep_h.get("echeance", "28"))
-                        .replace(" jours", "")
-                        .replace("j", ""),
-                        "statut": statut,
-                    })
+                rep_c = f"{ref_p}{rep_s}" if ref_p else rep_s
+
+                export_data.append({
+                    "repere_eprouvette": rep_c,
+                    "forme": ep_h.get("forme", "Cylindrique 150x300"),
+                    "section": sec_h,
+                    "force_kn": f_kn,
+                    "fc_mpa": fc_mpa,
+                    "date_essai": ep_h.get("date_ecrasement", "-"),
+                    "age": str(ep_h.get("echeance", "28"))
+                    .replace(" jours", "")
+                    .replace("j", ""),
+                    "statut": statut,
+                })
 
             num_bl_valeur = exact_bl_phase1
             affaissement_saisi = (
