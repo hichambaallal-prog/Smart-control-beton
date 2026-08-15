@@ -374,6 +374,7 @@ def generer_pv_excel(export_data, infos_header):
     a_des_28j_ecrases = False
     cellule_moyenne_28j = None
 
+    # TRI & INSERTION DE TOUTES LES ÉPROUVETTES (7j, 28j, etc.)
     for idx, item in enumerate(export_data):
         curr_row = row_start + idx
 
@@ -387,8 +388,8 @@ def generer_pv_excel(export_data, infos_header):
         )
 
         dt_essai = item.get("date_essai")
-        
-        # VÉRIFICATION DU STATUT "EN COURS"
+
+        # INSPECTION DU STATUT DE L'ÉPROUVETTE
         try:
             f_kn_val = float(item.get("force_kn", 0.0))
         except (ValueError, TypeError):
@@ -408,6 +409,7 @@ def generer_pv_excel(export_data, infos_header):
 
         ws.cell(row=curr_row, column=4, value=age_val)
 
+        # SI ÉPROUVETTE NON ENCORE ÉCRASÉE -> AFFICHER "En cours"
         if is_en_cours:
             ws.cell(row=curr_row, column=5, value="En cours")
             ws.cell(row=curr_row, column=6, value="En cours")
@@ -435,6 +437,7 @@ def generer_pv_excel(export_data, infos_header):
 
         groupes_lots[cle_lot]["lignes"].append(curr_row)
 
+    # TRAITEMENT DES MOYENNES DE GROUPES DE RÉSULTATS
     for cle_lot, data_lot in groupes_lots.items():
         lignes = data_lot["lignes"]
         start_r = min(lignes)
@@ -465,9 +468,7 @@ def generer_pv_excel(export_data, infos_header):
             except (ValueError, TypeError):
                 pass
 
-    # ---------------------------------------------------------
-    # POSITION DYNAMIQUE DE LA SECTION COMMENTAIRE
-    # ---------------------------------------------------------
+    # SECTION COMMENTAIRE DYNAMIQUE
     next_row = row_start + nb_total
 
     ws.cell(row=next_row, column=1, value="Commentaire :").font = font_bold
@@ -504,9 +505,7 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=next_row, column=c).border = border_cell
 
-    # ---------------------------------------------------------
     # BLOC DE SIGNATURES
-    # ---------------------------------------------------------
     r_sig_titre = next_row + 2
     r_sig_debut = r_sig_titre + 1
     r_sig_fin = r_sig_debut + 3
@@ -529,9 +528,7 @@ def generer_pv_excel(export_data, infos_header):
     ws.cell(row=r_sig_debut, column=6, value="H.BAALLAL").font = font_bold
     ws.cell(row=r_sig_debut, column=6).alignment = align_top_center
 
-    # ---------------------------------------------------------
     # HAUTEURS DE LIGNES & LARGEURS DE COLONNES
-    # ---------------------------------------------------------
     for r in range(1, r_sig_fin + 1):
         if r == 7:
             ws.row_dimensions[r].height = 32
@@ -1075,6 +1072,7 @@ def show(supabase):
                 supabase, betonnage_id
             )
 
+            # RENTRER L'ENSEMBLE DES ÉPROUVETTES DU MÊME BETONNAGE
             historique_complet = obtenir_historique_betonnage(
                 supabase, betonnage_id
             )
@@ -1217,7 +1215,7 @@ def show(supabase):
             export_data = []
             dict_actuel = {int(row["ID"]): row for _, row in df_actuel.iterrows()}
 
-            # Récupération de tous les essais (pour inclure les éprouvettes non encore saisies)
+            # LORS DE L'EXPORT EXCEL : INCLURE TOUTES LES ÉPROUVETTES DU LOT (EX: 12 ÉPROUVETTES)
             items_source = historique_complet if historique_complet else lot_selected
 
             for ep_h in items_source:
