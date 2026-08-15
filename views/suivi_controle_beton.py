@@ -925,10 +925,18 @@ def show(supabase):
                 ech_ep = ep.get("echeance", "28 jours")
                 ouv_ep = ep.get("ouvrage", "-")
                 dt_ecras = ep.get("date_ecrasement", "-")
+                classe_ep = ep.get("classe_beton", "-")
 
+                # Récupération des informations du bétonnage parent si disponibles
+                info_b_temp = obtenir_infos_betonnage_parent(supabase, b_id_ep)
+                ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
+                if not classe_ep or classe_ep == "-":
+                    classe_ep = info_b_temp.get("classe_beton") or info_b_temp.get("classe") or "-"
+
+                # Ordre demandé : Référence de Contrôle | Classe de béton | Ouvrage
                 cle_groupe = (
-                    f"Ouvrage: {ouv_ep} | Échéance: {ech_ep} (Date: {dt_ecras})"
-                    f" | Lot ID #{b_id_ep}"
+                    f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ouv_ep}"
+                    f" | Échéance : {ech_ep} (Date : {dt_ecras}) | Lot ID #{b_id_ep}"
                 )
 
                 if cle_groupe not in groupes_lots:
@@ -1273,10 +1281,16 @@ def show(supabase):
                         ech_ep = row.get("echeance", "28 jours")
                         ouv_ep = row.get("ouvrage", "-")
                         dt_ecras = row.get("date_ecrasement", "-")
+                        classe_ep = row.get("classe_beton", "-")
+
+                        info_b_temp = obtenir_infos_betonnage_parent(supabase, b_id_ep)
+                        ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, row.to_dict())
+                        if not classe_ep or classe_ep == "-":
+                            classe_ep = info_b_temp.get("classe_beton") or info_b_temp.get("classe") or "-"
 
                         cle_pv = (
-                            f"Ouvrage: {ouv_ep} | Échéance: {ech_ep} (Date:"
-                            f" {dt_ecras}) | Lot ID #{b_id_ep}"
+                            f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ouv_ep}"
+                            f" | Échéance : {ech_ep} (Date : {dt_ecras}) | Lot ID #{b_id_ep}"
                         )
 
                         if cle_pv not in groupes_valides:
