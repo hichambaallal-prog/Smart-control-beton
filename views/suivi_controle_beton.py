@@ -13,7 +13,7 @@ import streamlit as st
 # =========================================================
 def extraire_num_bl(*sources):
     """
-    Inspecte récursively les sources pour extraire le N° de Bon de Livraison (BL).
+    Inspecte récursivement les sources pour extraire le N° de Bon de Livraison (BL).
     """
     clefs_possibles = [
         "num_bl",
@@ -1043,9 +1043,9 @@ def show(supabase):
                         st.session_state[f"ref_controle_beton_{betonnage_id}"] = nouvelle_ref
 
                 df_cur = st.session_state[lot_key]
-                forces_valides = df_cur[df_cur["Résistance Fc (MPa)"] > 0]
+                forces_valides = df_cur[df_cur["Résistance Fc (MPa)"].astype(float) > 0]
                 fc_moy = (
-                    round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
+                    round(forces_valides["Résistance Fc (MPa)"].astype(float).mean(), 1)
                     if not forces_valides.empty
                     else 0.0
                 )
@@ -1205,7 +1205,7 @@ def show(supabase):
                 )
 
             if btn_enregistrer:
-                if (df_actuel["Force (kN)"] == 0).any():
+                if (df_actuel["Force (kN)"].astype(float) == 0).any():
                     st.error(
                         "❌ Les forces de rupture doivent toutes être saisies"
                         " (> 0 kN)."
