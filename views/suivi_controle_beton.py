@@ -13,8 +13,7 @@ import streamlit as st
 # =========================================================
 def extraire_num_bl(*sources):
     """
-    Inspecte récursivement les sources (dictionnaires, chaînes) pour extraire 
-    le numéro de Bon de Livraison (BL) sans risquer de renvoyer un simple tiret '-'.
+    Inspecte récursively les sources pour extraire le N° de Bon de Livraison (BL).
     """
     clefs_possibles = [
         "num_bl",
@@ -30,7 +29,6 @@ def extraire_num_bl(*sources):
 
     for source in sources:
         if isinstance(source, dict):
-            # 1. Vérification par clés connues
             for key in clefs_possibles:
                 val = source.get(key)
                 if val is not None:
@@ -44,7 +42,6 @@ def extraire_num_bl(*sources):
                     ]:
                         return val_str
 
-            # 2. Repérage dynamique si la clé contient "bl"
             for key, val in source.items():
                 if "bl" in key.lower() or "bon" in key.lower():
                     if val is not None:
@@ -59,7 +56,6 @@ def extraire_num_bl(*sources):
                             return val_str
 
         elif isinstance(source, str):
-            # 3. Extraction depuis une chaîne formatée (ex: "ID #7 | BL: 45892 | ...")
             match = re.search(r"BL\s*:\s*([^\|]+)", source, re.IGNORECASE)
             if match:
                 val_str = match.group(1).strip()
@@ -102,16 +98,16 @@ def generer_pv_excel(export_data, infos_header):
     font_regular = Font(name="Calibri", size=8.5)
     font_small = Font(name="Calibri", size=8)
 
-    # Couleurs (PatternFill)
+    # Couleurs
     fill_header_dark = PatternFill(
         start_color="1F4E78", end_color="1F4E78", fill_type="solid"
-    )  # Bleu nuit
+    )
     fill_header_table = PatternFill(
         start_color="D9E1F2", end_color="D9E1F2", fill_type="solid"
-    )  # Bleu glacier
+    )
     fill_section_label = PatternFill(
         start_color="F2F2F2", end_color="F2F2F2", fill_type="solid"
-    )  # Gris clair
+    )
 
     # Alignements
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -124,7 +120,6 @@ def generer_pv_excel(export_data, infos_header):
         left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
     )
 
-    # Extraction sécurisée du N° BL
     default_bl = extraire_num_bl(infos_header)
 
     def remplacer_na(valeur, fallback=None):
@@ -133,7 +128,7 @@ def generer_pv_excel(export_data, infos_header):
             return fallback if fallback is not None else default_bl
         return valeur
 
-    # --- ENTÊTE DU LABORATOIRE ET RÉFÉRENCES ---
+    # ENTÊTE
     ws.merge_cells("A1:D1")
     ws["A1"] = "LPEE / CTR CSB"
     ws["A1"].font = font_bold_white
@@ -144,7 +139,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["A2"].font = font_bold_white
     ws["A2"].alignment = align_center
 
-    # Application de la couleur d'entête principale
     for r in range(1, 4):
         for c in range(1, 5):
             ws.cell(row=r, column=c).fill = fill_header_dark
@@ -171,7 +165,7 @@ def generer_pv_excel(export_data, infos_header):
         for c in range(1, 9):
             ws.cell(row=r, column=c).border = border_cell
 
-    # --- TITRE DE L'ESSAI ET TYPE D'ESSAI ---
+    # TITRE
     ws.merge_cells("A4:H4")
     ws["A4"] = "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
     ws["A4"].font = font_title_white
@@ -193,7 +187,6 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=5, column=c).border = border_cell
 
-    # Ligne 6 - Presse & Classe
     ws.merge_cells("A6:F6")
     ws["A6"] = "Presse : Marque: Controls"
     ws["A6"].font = font_bold
@@ -207,7 +200,7 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=6, column=c).border = border_cell
 
-    # --- FICHE TECHNIQUE DE PRÉLÈVEMENT ET CHANTIER ---
+    # FICHE TECHNIQUE
     ws["A7"] = "Date de\nprélèvement"
     ws["A7"].font = font_bold
     ws["A7"].alignment = align_center
@@ -314,7 +307,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["F12"].font = font_bold
     ws["F12"].alignment = align_center
 
-    # Application de la couleur de fond pastel sur les libellés
     labels_coords = ["A7", "C7", "A8", "E8", "A9", "A10", "A11", "A12", "D12"]
     for r in range(7, 13):
         for c in range(1, 9):
@@ -322,7 +314,7 @@ def generer_pv_excel(export_data, infos_header):
             if ws.cell(row=r, column=c).coordinate in labels_coords:
                 ws.cell(row=r, column=c).fill = fill_section_label
 
-    # --- TABLEAU DES RÉSULTATS D'ÉCRASEMENT ---
+    # TABLEAU DES RÉSULTATS
     ws.merge_cells("A13:A14")
     ws["A13"] = "Réf,"
     ws["A13"].font = font_bold
@@ -381,7 +373,6 @@ def generer_pv_excel(export_data, infos_header):
     for idx, item in enumerate(export_data):
         curr_row = row_start + idx
 
-        # Référence / Repère complet dans la colonne A
         ref_complete = str(item.get("repere_eprouvette", "B/01"))
         ws.cell(row=curr_row, column=1, value=ref_complete)
 
@@ -410,11 +401,9 @@ def generer_pv_excel(export_data, infos_header):
 
         ws.cell(row=curr_row, column=7, value="-")
 
-        # Formatting numérique natif
         ws.cell(row=curr_row, column=5).number_format = "0.0"
         ws.cell(row=curr_row, column=6).number_format = "0.0"
 
-        # Application du style et centrage
         for c in range(1, 9):
             ws.cell(row=curr_row, column=c).font = font_regular
             ws.cell(row=curr_row, column=c).border = border_cell
@@ -425,7 +414,6 @@ def generer_pv_excel(export_data, infos_header):
             groupes_lots[cle_lot] = []
         groupes_lots[cle_lot].append(curr_row)
 
-    # Fusion et calcul de la moyenne en Colonne H par lot
     derniere_cellule_moyenne = f"H{row_start}"
     for cle_lot, lignes in groupes_lots.items():
         start_r = min(lignes)
@@ -442,7 +430,6 @@ def generer_pv_excel(export_data, infos_header):
         ws[f"H{start_r}"].font = font_bold
         derniere_cellule_moyenne = f"H{start_r}"
 
-    # Position du bloc commentaire ajustée
     next_row = max(row_start + nb_total, 21)
 
     ws.cell(row=next_row, column=1, value="Commentaire :").font = font_bold
@@ -474,7 +461,6 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=next_row, column=c).border = border_cell
 
-    # Dimensions
     ws.row_dimensions[8].height = 54
     for r in range(1, next_row + 1):
         if r != 8:
@@ -547,6 +533,33 @@ def obtenir_infos_betonnage_parent(supabase, betonnage_id):
     return {}
 
 
+def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
+    """
+    Détermine la référence de contrôle avec priorité :
+    1. Session state active du même prélèvement
+    2. Référence stockée dans la table parent suivi_betonnage
+    3. Référence déjà saisie dans l'éprouvette
+    4. Valeur calculée par défaut
+    """
+    session_key = f"ref_controle_beton_{betonnage_id}"
+    if session_key in st.session_state and st.session_state[session_key]:
+        return st.session_state[session_key]
+
+    ref_parent = info_betonnage.get("ref_controle") if info_betonnage else None
+    if ref_parent and str(ref_parent).strip():
+        st.session_state[session_key] = str(ref_parent).strip()
+        return str(ref_parent).strip()
+
+    ref_ep = sample_ep.get("ref_controle")
+    if ref_ep and str(ref_ep).strip():
+        st.session_state[session_key] = str(ref_ep).strip()
+        return str(ref_ep).strip()
+
+    defaut = f"REF-{betonnage_id}-{info_betonnage.get('ouvrage', 'N/A') if info_betonnage else 'N/A'}"
+    st.session_state[session_key] = defaut
+    return defaut
+
+
 # =========================================================
 # 2. APPLICATION PRINCIPALE STREAMLIT
 # =========================================================
@@ -583,7 +596,6 @@ def show(supabase):
     with tab_prog:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
-        # 1. Compter les éprouvettes déjà programmées par betonnage_id
         prog_counts = {}
         try:
             res_deja_all = (
@@ -599,7 +611,6 @@ def show(supabase):
         except Exception as e:
             st.warning(f"Note lors du contrôle des quotas : {e}")
 
-        # 2. Exclure les bétonnages dont le quota est entièrement programmé
         betonnages_non_programmes = []
         for b in betonnages_preleves:
             b_id = b.get("id")
@@ -612,7 +623,6 @@ def show(supabase):
 
             deja_prog = prog_counts.get(b_id, 0)
             
-            # Conservation uniquement des bétonnages avec du solde disponible
             if (total_prevu - deja_prog) > 0:
                 betonnages_non_programmes.append(b)
 
@@ -683,7 +693,10 @@ def show(supabase):
             except Exception:
                 date_coulee_p = date.today()
 
-            ref_controle_defaut = f"REF-{b_id}-{ouvrage_p}"
+            # Récupération persistante du préfixe de contrôle
+            ref_controle_init = determiner_ref_controle(
+                supabase, b_id, beton_p, {}
+            )
 
             st.markdown("---")
             st.info(
@@ -695,9 +708,11 @@ def show(supabase):
 
             ref_controle_p = st.text_input(
                 "🏷️ Référence de Contrôle (Préfixe du repère)",
-                value=ref_controle_defaut,
+                value=ref_controle_init,
                 key=f"p_ref_ctrl_{b_id}",
             )
+            # Mise à jour globale du préfixe lors de la modification
+            st.session_state[f"ref_controle_beton_{b_id}"] = ref_controle_p
 
             st.markdown("---")
             col_p1, col_p2, col_p3 = st.columns(3)
@@ -838,6 +853,14 @@ def show(supabase):
                     use_container_width=True,
                     key=f"btn_save_prog_{b_id}",
                 ):
+                    # Sauvegarde optionnelle dans la table parent si la colonne existe
+                    try:
+                        supabase.table("suivi_betonnage").update(
+                            {"ref_controle": ref_controle_p}
+                        ).eq("id", b_id).execute()
+                    except Exception:
+                        pass
+
                     succes_cnt = 0
                     for rep in reperes_p:
                         payload_prog = {
@@ -934,7 +957,6 @@ def show(supabase):
                 supabase, betonnage_id
             )
 
-            # EXTRACTION SÉCURISÉE DU BL
             exact_bl_phase1 = extraire_num_bl(sample, info_betonnage, choix_lot)
 
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
@@ -961,9 +983,13 @@ def show(supabase):
 
             st.markdown("##### 📝 Saisie des forces d'écrasement")
 
+            # Récupération persistante de la Référence de Contrôle du prélèvement
+            ref_controle_courante = determiner_ref_controle(
+                supabase, betonnage_id, info_betonnage, sample
+            )
+
             lot_key = f"df_lot_{choix_lot}"
 
-            # Initialisation unique du DataFrame du lot
             if lot_key not in st.session_state:
                 rows_list = []
                 for ep in lot_selected:
@@ -975,14 +1001,9 @@ def show(supabase):
                         else 0.0
                     )
 
-                    ref_ctrl = str(
-                        ep.get("ref_controle")
-                        or f"REF-{betonnage_id}-{info_betonnage.get('ouvrage', 'N/A')}"
-                    )
-
                     rows_list.append({
                         "ID": ep["id"],
-                        "🏷️ Référence de Contrôle": ref_ctrl,
+                        "🏷️ Référence de Contrôle": ref_controle_courante,
                         "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"),
                         "Forme d'éprouvette": str(
                             ep.get("forme") or "Cylindrique 150x300"
@@ -1000,7 +1021,6 @@ def show(supabase):
 
                 st.session_state[lot_key] = df_init
 
-            # Callback d'édition pour mise à jour dynamique
             def update_fc():
                 editor_state = st.session_state.get("data_editor_ecrasement", {})
                 changes = editor_state.get("edited_rows", {})
@@ -1017,7 +1037,10 @@ def show(supabase):
                             st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = 0.0
 
                     if "🏷️ Référence de Contrôle" in updated_cols:
-                        st.session_state[lot_key].at[row_idx, "🏷️ Référence de Contrôle"] = updated_cols["🏷️ Référence de Contrôle"]
+                        nouvelle_ref = updated_cols["🏷️ Référence de Contrôle"]
+                        st.session_state[lot_key].at[row_idx, "🏷️ Référence de Contrôle"] = nouvelle_ref
+                        # Propagation globale à tous les lots du même prélèvement
+                        st.session_state[f"ref_controle_beton_{betonnage_id}"] = nouvelle_ref
 
                 df_cur = st.session_state[lot_key]
                 forces_valides = df_cur[df_cur["Résistance Fc (MPa)"] > 0]
@@ -1034,7 +1057,7 @@ def show(supabase):
                     "ID": st.column_config.NumberColumn("ID", disabled=True),
                     "🏷️ Référence de Contrôle": st.column_config.TextColumn(
                         "🏷️ Référence de Contrôle (Préfixe)",
-                        help="Préfixe de référence associé aux repères d'éprouvettes",
+                        help="Préfixe conservé pour tous les lots du même prélèvement",
                     ),
                     "Repère": st.column_config.TextColumn(
                         "Repère", disabled=True
@@ -1081,8 +1104,8 @@ def show(supabase):
                         ep_ant.get("fc_mpa") or round((f_a * 10.0) / sec_a, 1)
                     )
 
-                    ref_prefix = str(ep_ant.get("ref_controle") or "")
-                    rep_suffix = str(ep_ant.get("repere_eprouvette", "-"))
+                    ref_prefix = str(ep_ant.get("ref_controle") or ref_controle_courante).strip()
+                    rep_suffix = str(ep_ant.get("repere_eprouvette", "-")).strip()
                     rep_complet = (
                         f"{ref_prefix}{rep_suffix}" if ref_prefix else rep_suffix
                     )
@@ -1189,6 +1212,16 @@ def show(supabase):
                     )
                 else:
                     succes_lot = 0
+                    ref_finale = df_actuel.iloc[0].get("🏷️ Référence de Contrôle")
+                    
+                    # Persistance globale dans la table parent
+                    try:
+                        supabase.table("suivi_betonnage").update(
+                            {"ref_controle": ref_finale}
+                        ).eq("id", betonnage_id).execute()
+                    except Exception:
+                        pass
+
                     for _, row in df_actuel.iterrows():
                         update_payload = {
                             "ref_controle": row.get("🏷️ Référence de Contrôle"),
@@ -1211,8 +1244,8 @@ def show(supabase):
                         st.balloons()
                         st.success(
                             f"✅ Lot de {succes_lot} éprouvettes validé dans"
-                            " Supabase ! Vous pouvez télécharger le PV"
-                            " ci-dessus."
+                            " Supabase ! La référence est sauvegardée pour"
+                            " les lots suivants."
                         )
 
     # ---------------------------------------------------------
