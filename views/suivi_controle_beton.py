@@ -207,9 +207,7 @@ def generer_pv_excel(export_data, infos_header):
 
     ws["D10"] = "- Mode confection"
     ws["D10"].font = font_regular
-    ws["D10"].alignment = Alignment(
-        horizontal="left", vertical="center", wrap_text=True
-    )
+    ws["D10"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
     ws.merge_cells("E10:H10")
     ws["E10"] = "Par vibration NF EN 12390-2 (2019)"
@@ -227,14 +225,10 @@ def generer_pv_excel(export_data, infos_header):
 
     ws["D11"] = "- Mode conservation"
     ws["D11"].font = font_regular
-    ws["D11"].alignment = Alignment(
-        horizontal="left", vertical="center", wrap_text=True
-    )
+    ws["D11"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
     ws.merge_cells("E11:H11")
-    ws["E11"] = (
-        "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C"
-    )
+    ws["E11"] = "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C"
     ws["E11"].font = font_bold
     ws["E11"].alignment = align_center
 
@@ -336,17 +330,24 @@ def generer_pv_excel(export_data, infos_header):
             value=str(remplacer_na(item.get("date_essai"))),
         )
 
-        ws.cell(row=curr_row, column=4, value=item.get("age", 7))
+        try:
+            ws.cell(row=curr_row, column=4, value=int(item.get("age", 7)))
+        except (ValueError, TypeError):
+            ws.cell(row=curr_row, column=4, value=item.get("age", 7))
 
         f_kn = float(item.get("force_kn", 0.0))
-        ws.cell(row=curr_row, column=5, value=f"{f_kn:.1f}".replace(".", ","))
+        ws.cell(row=curr_row, column=5, value=f_kn)
 
         fc_mpa = float(item.get("fc_mpa", 0.0))
-        ws.cell(row=curr_row, column=6, value=f"{fc_mpa:.1f}".replace(".", ","))
+        ws.cell(row=curr_row, column=6, value=fc_mpa)
 
         ws.cell(row=curr_row, column=7, value="-")
 
-        # Application du style et centrage de la ligne
+        # Formatting numérique natif
+        ws.cell(row=curr_row, column=5).number_format = "0.0"
+        ws.cell(row=curr_row, column=6).number_format = "0.0"
+
+        # Application du style et centrage
         for c in range(1, 9):
             ws.cell(row=curr_row, column=c).font = font_regular
             ws.cell(row=curr_row, column=c).border = border_cell
@@ -369,40 +370,46 @@ def generer_pv_excel(export_data, infos_header):
             ws.merge_cells(f"H{start_r}:H{end_r}")
             ws[f"H{start_r}"] = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
 
+        ws[f"H{start_r}"].number_format = "0.0"
         ws[f"H{start_r}"].alignment = align_center
         ws[f"H{start_r}"].font = font_bold
         derniere_cellule_moyenne = f"H{start_r}"
 
-    # Insertion et configuration du bloc Commentaire
-    row_comm = row_start + max(nb_total, 1)
-    ws.cell(row=row_comm, column=1, value="Commentaire :").font = font_bold
-    ws.cell(row=row_comm, column=1).alignment = align_left
-    ws.cell(row=row_comm, column=1).fill = fill_section_label
+    # Position du bloc commentaire ajustée
+    next_row = max(row_start + nb_total, 21)
 
-    ws.merge_cells(f"B{row_comm}:H{row_comm}")
+    ws.cell(row=next_row, column=1, value="Commentaire :").font = font_bold
+    ws.cell(row=next_row, column=1).alignment = align_left
+    ws.cell(row=next_row, column=1).fill = fill_section_label
+
+    ws.merge_cells(f"B{next_row}:H{next_row}")
 
     moyenne_cell = derniere_cellule_moyenne
+    obs_defaut = infos_header.get(
+        "observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+    )
+
     formule_commentaires = (
         f'=IF(ISBLANK({moyenne_cell}), "", '
         f'IF(OR('
-        f'AND(ISNUMBER(SEARCH("C25/30", G8)), {moyenne_cell}>=25), '
-        f'AND(ISNUMBER(SEARCH("C30/37", G8)), {moyenne_cell}>=30), '
-        f'AND(ISNUMBER(SEARCH("C35/45", G8)), {moyenne_cell}>=35), '
-        f'AND(ISNUMBER(SEARCH("C40/50", G8)), {moyenne_cell}>=40)'
-        f"), "
-        f'"PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES", '
-        f'"PERFORMANCES MECANIQUES A 28 JOURS NE SONT PAS CONFORMES"))'
+            f'AND(ISNUMBER(SEARCH("C25/30", G8)), {moyenne_cell}>=25), '
+            f'AND(ISNUMBER(SEARCH("C30/37", G8)), {moyenne_cell}>=30), '
+            f'AND(ISNUMBER(SEARCH("C35/45", G8)), {moyenne_cell}>=35), '
+            f'AND(ISNUMBER(SEARCH("C40/50", G8)), {moyenne_cell}>=40)'
+        f'), '
+        f'"{obs_defaut}", '
+        f'"PERFORMANCES MECANIQUES NON CONFORMES"))'
     )
 
-    ws.cell(row=row_comm, column=2, value=formule_commentaires).font = font_bold
-    ws.cell(row=row_comm, column=2).alignment = align_left
+    ws.cell(row=next_row, column=2, value=formule_commentaires).font = font_bold
+    ws.cell(row=next_row, column=2).alignment = align_left
 
     for c in range(1, 9):
-        ws.cell(row=row_comm, column=c).border = border_cell
+        ws.cell(row=next_row, column=c).border = border_cell
 
     # Dimensions
     ws.row_dimensions[8].height = 54
-    for r in range(1, row_comm + 1):
+    for r in range(1, next_row + 1):
         if r != 8:
             if 1 <= r <= 6:
                 ws.row_dimensions[r].height = 16
@@ -429,7 +436,7 @@ def generer_pv_excel(export_data, infos_header):
 
 
 # =========================================================
-# FONCTION AUXILIAIRE : HISTORIQUE D'ÉCRASEMENT D'UN BÉTON
+# FONCTIONS AUXILIAIRES DE SUPABASE
 # =========================================================
 def obtenir_historique_betonnage(supabase, betonnage_id):
     """Récupère l'intégralité des écrasements déjà enregistrés pour un même béton (betonnage_id)."""
@@ -709,7 +716,7 @@ def show(supabase):
                     key=f"p_forme_{b_id}",
                 )
 
-            sect_def = 176.71 if "150x300" in forme_p else 201.06
+            sect_def = 176.71 if "150x300" in forme_p else (201.06 if "160x320" in forme_p else 78.54)
 
             with col_f2:
                 forme_key_clean = forme_p.replace(" ", "_").replace("x", "_")
@@ -890,48 +897,35 @@ def show(supabase):
                 df_init = pd.DataFrame(rows_list)
 
                 valides_init = df_init[df_init["Résistance Fc (MPa)"] > 0]
-                moy_init = (
-                    round(valides_init["Résistance Fc (MPa)"].mean(), 1)
-                    if not valides_init.empty
-                    else 0.0
-                )
+                moy_init = round(valides_init["Résistance Fc (MPa)"].mean(), 1) if not valides_init.empty else 0.0
                 df_init["Moyenne Resistance Fc (MPa)"] = moy_init
 
                 st.session_state[lot_key] = df_init
 
-            # Callback d'édition pour mise à jour réactive des Fc et Moyennes
+            # Callback d'édition pour mise à jour dynamique
             def update_fc():
-                editor_state = st.session_state.get("data_editor_ecrasement")
-                if editor_state and "edited_rows" in editor_state:
-                    changes = editor_state["edited_rows"]
-                    for row_idx, updated_cols in changes.items():
-                        if "Force (kN)" in updated_cols:
-                            new_force = float(updated_cols["Force (kN)"] or 0.0)
-                            sec = float(
-                                st.session_state[lot_key].at[row_idx, "_section"]
-                            )
-                            st.session_state[lot_key].at[
-                                row_idx, "Force (kN)"
-                            ] = new_force
-                            if sec > 0 and new_force > 0:
-                                st.session_state[lot_key].at[
-                                    row_idx, "Résistance Fc (MPa)"
-                                ] = round((new_force * 10.0) / sec, 1)
-                            else:
-                                st.session_state[lot_key].at[
-                                    row_idx, "Résistance Fc (MPa)"
-                                ] = 0.0
+                editor_state = st.session_state.get("data_editor_ecrasement", {})
+                changes = editor_state.get("edited_rows", {})
+                
+                for row_idx, updated_cols in changes.items():
+                    if "Force (kN)" in updated_cols:
+                        new_force = float(updated_cols["Force (kN)"] or 0.0)
+                        sec = float(st.session_state[lot_key].at[row_idx, "_section"])
+                        st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
+                        
+                        if sec > 0 and new_force > 0:
+                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1)
+                        else:
+                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = 0.0
 
-                    df_cur = st.session_state[lot_key]
-                    forces_valides = df_cur[df_cur["Résistance Fc (MPa)"] > 0]
-                    fc_moy = (
-                        round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
-                        if not forces_valides.empty
-                        else 0.0
-                    )
-                    st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = (
-                        fc_moy
-                    )
+                df_cur = st.session_state[lot_key]
+                forces_valides = df_cur[df_cur["Résistance Fc (MPa)"] > 0]
+                fc_moy = (
+                    round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
+                    if not forces_valides.empty
+                    else 0.0
+                )
+                st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = fc_moy
 
             st.data_editor(
                 st.session_state[lot_key],
@@ -956,9 +950,7 @@ def show(supabase):
                         "💥 Résistance Fc (MPa)", disabled=True, format="%.1f"
                     ),
                     "Moyenne Resistance Fc (MPa)": st.column_config.NumberColumn(
-                        "📊 Moyenne Resistance Fc (MPa)",
-                        disabled=True,
-                        format="%.1f",
+                        "📊 Moyenne Resistance Fc (MPa)", disabled=True, format="%.1f"
                     ),
                 },
                 use_container_width=True,
@@ -1022,12 +1014,14 @@ def show(supabase):
                 or info_betonnage.get("temp_beton")
                 or sample.get("temperature")
             )
-            ouvrage_saisi = info_betonnage.get("ouvrage") or sample.get(
-                "ouvrage"
+            ouvrage_saisi = (
+                info_betonnage.get("ouvrage")
+                or sample.get("ouvrage")
             )
-            date_coulee_saisie = info_betonnage.get(
-                "date_coulee"
-            ) or sample.get("date_coulee")
+            date_coulee_saisie = (
+                info_betonnage.get("date_coulee")
+                or sample.get("date_coulee")
+            )
             centrale_saisie = (
                 info_betonnage.get("centrale")
                 or info_betonnage.get("centrale_beton")
@@ -1106,7 +1100,7 @@ def show(supabase):
                         )
 
     # ---------------------------------------------------------
-    # PHASE 3 : HISTORIQUE COMPLET & ÉDITION DE PV
+    # HISTORIQUE COMPLET & ÉDITION DE PV
     # ---------------------------------------------------------
     with tab_hist:
         st.subheader("📋 Historique Général & Consultation des PVs")
@@ -1187,9 +1181,7 @@ def show(supabase):
                             .replace("j", ""),
                         })
 
-                    num_bl_h = info_beton_h.get("num_bl") or sample_h.get(
-                        "num_bl"
-                    )
+                    num_bl_h = info_beton_h.get("num_bl") or sample_h.get("num_bl")
                     aff_h = (
                         info_beton_h.get("affaissement")
                         or info_beton_h.get("slump")
@@ -1200,12 +1192,14 @@ def show(supabase):
                         or info_beton_h.get("temp_beton")
                         or sample_h.get("temperature")
                     )
-                    ouv_h = info_beton_h.get("ouvrage") or sample_h.get(
-                        "ouvrage"
+                    ouv_h = (
+                        info_beton_h.get("ouvrage")
+                        or sample_h.get("ouvrage")
                     )
-                    date_coulee_h = info_beton_h.get(
-                        "date_coulee"
-                    ) or sample_h.get("date_coulee")
+                    date_coulee_h = (
+                        info_beton_h.get("date_coulee")
+                        or sample_h.get("date_coulee")
+                    )
                     centrale_h = (
                         info_beton_h.get("centrale")
                         or info_beton_h.get("centrale_beton")
@@ -1234,9 +1228,7 @@ def show(supabase):
                     excel_pv_hist = generer_pv_excel(
                         export_data_h, infos_header_h
                     )
-                    file_name_h = (
-                        f"PV_Ecrasement_RE-EXPORT_{num_bl_h or 'BL'}.xlsx"
-                    )
+                    file_name_h = f"PV_Ecrasement_RE-EXPORT_{num_bl_h or 'BL'}.xlsx"
 
                     st.download_button(
                         label="📄 Télécharger le PV (Excel Format LPEE)",
