@@ -154,8 +154,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["G8"].font = font_bold
     ws["G8"].alignment = align_center
 
-    # MODIFICATION : Suppression de "EPROUVETTES" en E9:H9 (ligne 9 colonne E-H reste vide ou bordurée)
-
     ws.merge_cells("A10:B10")
     ws["A10"] = infos_header.get("centrale", "TG Prefa Oulad Saleh")
     ws["A10"].font = font_bold
@@ -164,7 +162,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["C10"] = "- Dimensions"
     ws["C10"].font = font_regular
 
-    # MODIFICATION : Remplacement de "Φ", "15" et "30" par la forme sélectionnée dans D10:H10
+    # Inscription dynamique du Type / Forme de l'éprouvette
     ws.merge_cells("D10:H10")
     ws["D10"] = infos_header.get("forme", "Cylindrique 150x300")
     ws["D10"].font = font_bold
@@ -360,9 +358,9 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=last_row, column=c).border = border_cell
 
-    # MODIFICATION : Augmentation de la hauteur des lignes à 35pt
+    # MODIFICATION : Fixation de la hauteur des lignes à 31pt
     for r in range(1, last_row + 1):
-        ws.row_dimensions[r].height = 35
+        ws.row_dimensions[r].height = 31
 
     # Ajustement des largeurs de colonnes
     col_widths = {
@@ -978,7 +976,7 @@ def show(supabase):
                 "date_coulee": sample.get("date_coulee", "N/A"),
                 "affaissement": affaissement_saisi,
                 "temperature": temp_saisie,
-                "forme": forme_saisie,  # Transmit pour l'affichage en D10:H10
+                "forme": forme_saisie,
                 "observations": obs_globale,
             }
 
