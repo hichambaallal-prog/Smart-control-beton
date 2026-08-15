@@ -104,7 +104,7 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=5, column=c).border = border_cell
 
-    # MODIFICATION : Ligne 6 - Alignement à droite pour "Presse : Marque: Controls"
+    # Ligne 6 - Presse & Classe
     ws.merge_cells("A6:F6")
     ws["A6"] = "Presse : Marque: Controls"
     ws["A6"].font = font_bold
@@ -138,7 +138,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["E7"].font = font_regular
     ws["E7"].alignment = align_center
 
-    # MODIFICATION : Hauteur de la ligne 8 à 54 (Suppression de la ligne 9)
     ws["A8"] = "Chantier"
     ws["A8"].font = font_bold
     ws["A8"].alignment = align_center
@@ -163,7 +162,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["G8"].font = font_bold
     ws["G8"].alignment = align_center
 
-    # MODIFICATION : Remplacement de "TG Prefa Oulad Saleh" par la saisie dynamique de la Centrale
     centrale_saisie = remplacer_na(infos_header.get("centrale", "Centrale à Béton"))
     ws.merge_cells("A9:B9")
     ws["A9"] = centrale_saisie
@@ -173,7 +171,6 @@ def generer_pv_excel(export_data, infos_header):
     ws["C9"] = "- Dimensions"
     ws["C9"].font = font_regular
 
-    # Inscription dynamique du Type / Forme de l'éprouvette
     ws.merge_cells("D9:H9")
     ws["D9"] = remplacer_na(infos_header.get("forme", "Cylindrique 150x300"))
     ws["D9"].font = font_bold
@@ -327,7 +324,6 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=c).font = font_regular
             ws.cell(row=curr_row, column=c).border = border_cell
 
-    # MODIFICATION : Remplacement de la case moyenne par la formule dynamique de moyenne du lot (colonne H)
     row_end = row_start + max(nb_total, 1) - 1
     if nb_total > 0:
         ws.merge_cells(f"H{row_start}:H{row_end}")
@@ -335,8 +331,7 @@ def generer_pv_excel(export_data, infos_header):
         ws[f"H{row_start}"].alignment = align_center
         ws[f"H{row_start}"].font = font_bold
 
-    # MODIFICATION : Gestion de la ligne 22 pour le commentaire de conformité
-    # Suppression de l'ancienne ligne 22 et insertion d'une ligne 22 propre
+    # Commentaire de conformité
     ws.delete_rows(22)
     ws.insert_rows(22)
 
@@ -345,8 +340,6 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells("B22:H22")
     
-    # Formule dynamique de conformité en fonction de la classe de béton et de la moyenne à 28 jours (Cellule H15/H_moyenne)
-    # Vérifie si le béton respecte le seuil MPa du projet
     moyenne_cell = f"H{row_start}"
     formule_commentaires = (
         f'=IF(ISBLANK({moyenne_cell}), "", '
@@ -366,7 +359,7 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=22, column=c).border = border_cell
 
-    # MODIFICATION : Configuration des hauteurs de lignes (Hauteur ligne 8 = 54)
+    # Configuration des hauteurs de lignes
     ws.row_dimensions[8].height = 54
     for r in range(1, 23):
         if r != 8:
@@ -798,12 +791,9 @@ def show(supabase):
             sample = lot_selected[0]
             betonnage_id = sample.get("betonnage_id")
 
-            # Récupération des informations initiales saisies au niveau du suivi de bétonnage
             info_betonnage = obtenir_infos_betonnage_parent(
                 supabase, betonnage_id
             )
-
-            # Récupération automatique des essais déjà effectués (3j, 7j)
             essais_anterieurs = obtenir_historique_betonnage(
                 supabase, betonnage_id
             )
@@ -916,10 +906,9 @@ def show(supabase):
                     f"📈 **Résistance moyenne du lot actuel : {fc_moy:.1f} MPa**"
                 )
 
-            # Construction des données complètes (Historique + Lot Actuel)
+            # Data de sortie
             export_data = []
 
-            # 1. Éprouvettes antérieures du même lot
             if essais_anterieurs:
                 st.info(
                     f"ℹ️ {len(essais_anterieurs)} essai(s) antérieur(s)"
@@ -947,7 +936,6 @@ def show(supabase):
                         .replace("j", ""),
                     })
 
-            # 2. Éprouvettes de la saisie actuelle
             for _, row in df_actuel.iterrows():
                 export_data.append({
                     "repere_eprouvette": row["Repère"],
@@ -961,7 +949,6 @@ def show(supabase):
                     .replace("j", ""),
                 })
 
-            # Extraction dynamique des variables depuis suivi_betonnage et fallback
             num_bl_valeur = info_betonnage.get("num_bl") or sample.get("num_bl")
             affaissement_saisi = (
                 info_betonnage.get("affaissement")
@@ -1073,7 +1060,6 @@ def show(supabase):
             if res_all.data:
                 df_all = pd.DataFrame(res_all.data)
 
-                # Extraction des enregistrements validés
                 df_valides = df_all[
                     (df_all["force_kn"].notnull()) & (df_all["force_kn"] > 0)
                 ].copy()
