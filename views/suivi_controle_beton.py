@@ -138,13 +138,8 @@ def generer_pv_excel(export_data, infos_header):
 
     ws["E1"] = "RE N° :"
     ws["E1"].font = font_bold
-    
-    # Prise en compte de la date du tirage / imprimerie dans l'en-tête
-    date_tirage_fmt = infos_header.get("date_tirage", date.today().strftime("%d/%m/%Y"))
-    re_num_val = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/01")
-    
     ws.merge_cells("F1:H1")
-    ws["F1"] = f"{re_num_val} (Tirage du : {date_tirage_fmt})"
+    ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/01")
     ws["F1"].font = font_regular
 
     ws["E2"] = "DOSSIER :"
@@ -503,6 +498,8 @@ def generer_pv_excel(export_data, infos_header):
     ws.cell(row=r_sig_titre, column=2).alignment = align_center
 
     ws.merge_cells(start_row=r_sig_debut, start_column=2, end_row=r_sig_fin, end_column=4)
+    ws.cell(row=r_sig_debut, column=2, value="O.IKKEN").font = font_bold
+    ws.cell(row=r_sig_debut, column=2).alignment = align_center
 
     # Visa Chef du laboratoire (Colonnes F à H)
     ws.merge_cells(start_row=r_sig_titre, start_column=6, end_row=r_sig_titre, end_column=8)
@@ -510,6 +507,8 @@ def generer_pv_excel(export_data, infos_header):
     ws.cell(row=r_sig_titre, column=6).alignment = align_center
 
     ws.merge_cells(start_row=r_sig_debut, start_column=6, end_row=r_sig_fin, end_column=8)
+    ws.cell(row=r_sig_debut, column=6, value="H.BAALLAL").font = font_bold
+    ws.cell(row=r_sig_debut, column=6).alignment = align_center
 
     def appliquer_cadre_signature(r_start, r_end, c_start, c_end):
         for r in range(r_start, r_end + 1):
@@ -529,9 +528,11 @@ def generer_pv_excel(export_data, infos_header):
     # ---------------------------------------------------------
     ws.row_dimensions[8].height = 54
 
-    # Application de la hauteur 15 spécifiquement pour 9, 12, 13, 14
+    # Application de la hauteur 22 spécifiquement pour les lignes 15 à 28
     for r in range(1, r_sig_fin + 1):
-        if r in [9, 12, 13, 14]:
+        if 15 <= r <= 28:
+            ws.row_dimensions[r].height = 22
+        elif r in [9, 12, 13, 14]:
             ws.row_dimensions[r].height = 15
         elif r != 8:
             if 1 <= r <= 6:
@@ -627,16 +628,6 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
 # =========================================================
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
-
-    # 🖨️ MODULE D'IMPRIMERIE : DATE DU TIRAGE DU PV
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🖨️ Configuration Imprimerie")
-    date_tirage_saisie = st.sidebar.date_input(
-        "Date du Tirage du PV",
-        value=date.today(),
-        key="global_date_tirage"
-    )
-    date_tirage_str = date_tirage_saisie.strftime("%d/%m/%Y")
 
     # 🔒 VÉRIFICATION DU RÔLE UTILISATEUR
     est_compte_admin = (
@@ -1291,7 +1282,6 @@ def show(supabase):
                 "forme": sample.get("forme", "Cylindrique 150x300"),
                 "centrale": centrale_saisie,
                 "observations": obs_globale,
-                "date_tirage": date_tirage_str,
             }
 
             excel_file = generer_pv_excel(export_data, infos_header)
@@ -1495,7 +1485,6 @@ def show(supabase):
                             "observations",
                             "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES",
                         ),
-                        "date_tirage": date_tirage_str,
                     }
 
                     excel_pv_hist = generer_pv_excel(
