@@ -287,8 +287,15 @@ def generer_pv_excel(export_data, infos_header):
     ws["E11"].font = font_bold
     ws["E11"].alignment = align_center
 
+    # MODIFICATION CASE LIGNE 12 : Nom du Technicien ayant effectué le prélèvement
+    tech_prelevement = remplacer_na(
+        infos_header.get("technicien_prelevement") 
+        or infos_header.get("preleve_par") 
+        or infos_header.get("technicien"), 
+        "Technicien LPEE"
+    )
     ws.merge_cells("A12:C12")
-    ws["A12"] = "Densité du béton durci NF EN 12390-7(2019)"
+    ws["A12"] = f"essai effectué par {tech_prelevement}"
     ws["A12"].font = font_small
     ws["A12"].alignment = align_center
 
@@ -514,12 +521,16 @@ def generer_pv_excel(export_data, infos_header):
     ws.cell(row=r_sig_debut, column=6).alignment = align_top_center
 
     # ---------------------------------------------------------
-    # DIMENSIONNEMENT ET HAUTEURS DE LIGNES
+    # DIMENSIONNEMENT ET HAUTEURS DE LIGNES MODIFIÉES
     # ---------------------------------------------------------
-    ws.row_dimensions[8].height = 54
-
     for r in range(1, r_sig_fin + 1):
-        if 15 <= r <= 26:
+        if r == 7:
+            ws.row_dimensions[r].height = 32
+        elif r == 8:
+            ws.row_dimensions[r].height = 48
+        elif r in [10, 11]:
+            ws.row_dimensions[r].height = 23
+        elif 15 <= r <= 26:
             ws.row_dimensions[r].height = 32
         elif r in [9, 12, 13, 14]:
             ws.row_dimensions[r].height = 15
@@ -1073,7 +1084,7 @@ def show(supabase):
             with col_g1:
                 tech_global = st.text_input(
                     "Technicien / Opérateur",
-                    value=sample.get("technicien", "Technicien LPEE"),
+                    value=sample.get("technicien", info_betonnage.get("technicien_prelevement", "Technicien LPEE")),
                     key="tech_global",
                 )
             with col_g2:
@@ -1255,6 +1266,12 @@ def show(supabase):
                 or info_betonnage.get("centrale_beton")
                 or sample.get("centrale")
             )
+            tech_prelev = (
+                info_betonnage.get("technicien_prelevement")
+                or info_betonnage.get("preleve_par")
+                or info_betonnage.get("technicien")
+                or tech_global
+            )
 
             infos_header = {
                 "re_num": "25/260/LGV/ B/01",
@@ -1270,6 +1287,7 @@ def show(supabase):
                 "forme": sample.get("forme", "Cylindrique 150x300"),
                 "centrale": centrale_saisie,
                 "observations": obs_globale,
+                "technicien_prelevement": tech_prelev,
             }
 
             excel_file = generer_pv_excel(export_data, infos_header)
@@ -1455,6 +1473,12 @@ def show(supabase):
                         or info_beton_h.get("centrale_beton")
                         or sample_h.get("centrale")
                     )
+                    tech_prelev_h = (
+                        info_beton_h.get("technicien_prelevement")
+                        or info_beton_h.get("preleve_par")
+                        or info_beton_h.get("technicien")
+                        or sample_h.get("technicien")
+                    )
 
                     infos_header_h = {
                         "re_num": "25/260/LGV/ B/01",
@@ -1473,6 +1497,7 @@ def show(supabase):
                             "observations",
                             "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES",
                         ),
+                        "technicien_prelevement": tech_prelev_h,
                     }
 
                     excel_pv_hist = generer_pv_excel(
