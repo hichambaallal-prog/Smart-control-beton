@@ -107,6 +107,7 @@ def generer_pv_excel(export_data, infos_header):
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
     align_left = Alignment(horizontal="left", vertical="center", wrap_text=True)
     align_right = Alignment(horizontal="right", vertical="center", wrap_text=True)
+    align_top_center = Alignment(horizontal="center", vertical="top", wrap_text=True)
 
     thin_side = Side(border_style="thin", color="000000")
     border_cell = Border(
@@ -499,7 +500,7 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells(start_row=r_sig_debut, start_column=2, end_row=r_sig_fin, end_column=4)
     ws.cell(row=r_sig_debut, column=2, value="O.IKKEN").font = font_bold
-    ws.cell(row=r_sig_debut, column=2).alignment = align_center
+    ws.cell(row=r_sig_debut, column=2).alignment = align_top_center
 
     # Visa Chef du laboratoire (Colonnes F à H)
     ws.merge_cells(start_row=r_sig_titre, start_column=6, end_row=r_sig_titre, end_column=8)
@@ -508,20 +509,7 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells(start_row=r_sig_debut, start_column=6, end_row=r_sig_fin, end_column=8)
     ws.cell(row=r_sig_debut, column=6, value="H.BAALLAL").font = font_bold
-    ws.cell(row=r_sig_debut, column=6).alignment = align_center
-
-    def appliquer_cadre_signature(r_start, r_end, c_start, c_end):
-        for r in range(r_start, r_end + 1):
-            for c in range(c_start, c_end + 1):
-                cell = ws.cell(row=r, column=c)
-                top = thin_side if r == r_start else None
-                bottom = thin_side if r == r_end else None
-                left = thin_side if c == c_start else None
-                right = thin_side if c == c_end else None
-                cell.border = Border(top=top, bottom=bottom, left=left, right=right)
-
-    appliquer_cadre_signature(r_sig_titre, r_sig_fin, 2, 4)
-    appliquer_cadre_signature(r_sig_titre, r_sig_fin, 6, 8)
+    ws.cell(row=r_sig_debut, column=6).alignment = align_top_center
 
     # ---------------------------------------------------------
     # DIMENSIONNEMENT ET HAUTEURS DE LIGNES
