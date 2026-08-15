@@ -16,7 +16,6 @@ with tab_saisie:
             .execute()
         )
         if res_att.data:
-            # Filtrage des éprouvettes n'ayant pas encore de force enregistrée
             eprouvettes_en_attente = [
                 e
                 for e in res_att.data
@@ -29,7 +28,7 @@ with tab_saisie:
     if not eprouvettes_en_attente:
         st.info("👍 Aucune éprouvette en attente d'écrasement.")
     else:
-        # Regroupement par lot de bétonnage / échéance / ouvrage
+        # Groupement par lot de bétonnage / échéance / ouvrage
         groupes_lots = {}
         for ep in eprouvettes_en_attente:
             b_id_ep = ep.get("betonnage_id")
@@ -54,7 +53,7 @@ with tab_saisie:
         lot_selected = groupes_lots[choix_lot]
         sample = lot_selected[0]
 
-        # Résumé visuel du lot sélectionné
+        # Résumé visuel du lot
         col_l1, col_l2, col_l3, col_l4 = st.columns(4)
         col_l1.metric("Client", str(sample.get("client", "TGCC")))
         col_l2.metric("Projet", "LGV CASA")
@@ -81,17 +80,20 @@ with tab_saisie:
 
         lot_key = f"df_lot_{choix_lot}"
 
-        # Initialisation du DataFrame dans le Session State si absente
         if lot_key not in st.session_state:
             rows_list = []
             for ep in lot_selected:
                 sec = float(ep.get("section") or 176.71)
                 f_kn = float(ep.get("force_kn") or 0.0)
-                fc = round((f_kn * 10.0) / sec, 1) if sec > 0 and f_kn > 0 else 0.0
+                fc = (
+                    round((f_kn * 10.0) / sec, 1) if sec > 0 and f_kn > 0 else 0.0
+                )
 
                 rows_list.append({
-                    "ID": int(ep["id"]),
-                    "Repère": str(ep.get("repere_eprouvette", f"EPR-{ep['id']}")),
+                    "ID": ep["id"],
+                    "Repère": ep.get(
+                        "repere_eprouvette", f"EPR-{ep['id']}"
+                    ),
                     "Forme d'éprouvette": str(
                         ep.get("forme") or "Cylindrique 150x300"
                     ),
@@ -101,7 +103,6 @@ with tab_saisie:
                 })
             st.session_state[lot_key] = pd.DataFrame(rows_list)
 
-        # Callback pour recalculer dynamiquement la résistance lors de l'édition
         def update_fc():
             changes = st.session_state.data_editor_ecrasement.get(
                 "edited_rows", {}
@@ -112,8 +113,9 @@ with tab_saisie:
                     sec = float(
                         st.session_state[lot_key].at[row_idx, "_section"]
                     )
-                    st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
-                    
+                    st.session_state[lot_key].at[row_idx, "Force (kN)"] = (
+                        new_force
+                    )
                     if sec > 0 and new_force > 0:
                         st.session_state[lot_key].at[
                             row_idx, "Résistance Fc (MPa)"
@@ -131,7 +133,7 @@ with tab_saisie:
                 "Forme d'éprouvette": st.column_config.TextColumn(
                     "Forme d'éprouvette", disabled=True
                 ),
-                "_section": None,  # Colonne masquée
+                "_section": None,  # Masqué dans l'affichage
                 "Force (kN)": st.column_config.NumberColumn(
                     "⚡ Force (kN)",
                     help="Saisissez la force maximale à la rupture en kN",
@@ -157,21 +159,22 @@ with tab_saisie:
             fc_moy = round(forces_valides["Résistance Fc (MPa)"].mean(), 1)
             st.success(f"📈 **Résistance moyenne du lot : {fc_moy:.1f} MPa**")
 
-        # Préparation des données pour la génération Excel
-        export_data = [
-            {
+        # --- PRÉPARATION DU FICHIER PV EXCEL ---
+        export_data = []
+        for _, row in df_actuel.iterrows():
+            export_data.append({
                 "repere_eprouvette": row["Repère"],
                 "forme": row["Forme d'éprouvette"],
                 "section": row["_section"],
                 "force_kn": row["Force (kN)"],
                 "fc_mpa": row["Résistance Fc (MPa)"],
                 "date_essai": sample.get("date_ecrasement", "N/A"),
-                "age": str(sample.get("echeance", "28"))
-                .replace(" jours", "")
-                .replace("j", ""),
-            }
-            for _, row in df_actuel.iterrows()
-        ]
+                "age": (
+                    str(sample.get("echeance", "28"))
+                    .replace(" jours", "")
+                    .replace("j", "")
+                ),
+            })
 
         infos_header = {
             "re_num": sample.get("re_num", "25/260/LGV/ B/01"),
@@ -220,8 +223,8 @@ with tab_saisie:
                     update_payload = {
                         "force_kn": float(row["Force (kN)"]),
                         "fc_mpa": float(row["Résistance Fc (MPa)"]),
-                        "technicien": str(tech_global),
-                        "observations": str(obs_globale),
+                        "technicien": tech_global,
+                        "observations": obs_globale,
                     }
                     try:
                         supabase.table("suivi_controle_beton").update(
@@ -230,7 +233,7 @@ with tab_saisie:
                         succes_lot += 1
                     except Exception as e:
                         st.error(
-                            f"Erreur lors de la mise à jour pour {row['Repère']} : {e}"
+                            f"Erreur sur l'éprouvette {row['Repère']} : {e}"
                         )
 
                 if succes_lot == len(df_actuel):
@@ -256,7 +259,7 @@ with tab_hist:
         if res_all.data:
             df_all = pd.DataFrame(res_all.data)
 
-            # Filtrage des éprouvettes déjà soumises à écrasement
+            # Extraction des essais validés (force_kn > 0)
             df_valides = df_all[
                 (df_all["force_kn"].notnull()) & (df_all["force_kn"] > 0)
             ].copy()
@@ -264,6 +267,7 @@ with tab_hist:
             if not df_valides.empty:
                 st.markdown("##### 📥 Re-télécharger un PV déjà validé")
 
+                # Regroupement par lot d'écrasement
                 groupes_valides = {}
                 for _, row in df_valides.iterrows():
                     b_id_ep = row.get("betonnage_id")
@@ -289,22 +293,27 @@ with tab_hist:
                 lot_hist = groupes_valides[choix_pv_hist]
                 sample_h = lot_hist[0]
 
-                export_data_h = [
-                    {
+                export_data_h = []
+                for item in lot_hist:
+                    sec = float(item.get("section") or 176.71)
+                    f_kn = float(item.get("force_kn") or 0.0)
+                    fc = float(item.get("fc_mpa") or 0.0)
+
+                    export_data_h.append({
                         "repere_eprouvette": item.get(
                             "repere_eprouvette", f"EPR-{item['id']}"
                         ),
                         "forme": item.get("forme", "Cylindrique 150x300"),
-                        "section": float(item.get("section") or 176.71),
-                        "force_kn": float(item.get("force_kn") or 0.0),
-                        "fc_mpa": float(item.get("fc_mpa") or 0.0),
+                        "section": sec,
+                        "force_kn": f_kn,
+                        "fc_mpa": fc,
                         "date_essai": item.get("date_ecrasement", "N/A"),
-                        "age": str(item.get("echeance", "28"))
-                        .replace(" jours", "")
-                        .replace("j", ""),
-                    }
-                    for item in lot_hist
-                ]
+                        "age": (
+                            str(item.get("echeance", "28"))
+                            .replace(" jours", "")
+                            .replace("j", "")
+                        ),
+                    })
 
                 infos_header_h = {
                     "re_num": sample_h.get("re_num", "25/260/LGV/ B/01"),
