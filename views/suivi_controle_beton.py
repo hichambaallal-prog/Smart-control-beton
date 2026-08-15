@@ -11,7 +11,7 @@ import streamlit as st
 # 1. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT EXACT LPEE)
 # =========================================================
 def generer_pv_excel(export_data, infos_header):
-    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant exactement le modèle LPEE / CTR CSB."""
+    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE avec mise en forme et couleurs."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "PV Écrasement LPEE"
@@ -29,8 +29,21 @@ def generer_pv_excel(export_data, infos_header):
 
     # Styles Typographiques
     font_bold = Font(name="Calibri", size=9, bold=True)
+    font_bold_white = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
+    font_title_white = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     font_regular = Font(name="Calibri", size=8.5)
     font_small = Font(name="Calibri", size=8)
+
+    # Couleurs (PatternFill)
+    fill_header_dark = PatternFill(
+        start_color="1F4E78", end_color="1F4E78", fill_type="solid"
+    )  # Bleu nuit
+    fill_header_table = PatternFill(
+        start_color="D9E1F2", end_color="D9E1F2", fill_type="solid"
+    )  # Bleu glacier
+    fill_section_label = PatternFill(
+        start_color="F2F2F2", end_color="F2F2F2", fill_type="solid"
+    )  # Gris clair
 
     # Alignements
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -54,13 +67,18 @@ def generer_pv_excel(export_data, infos_header):
     # --- ENTÊTE DU LABORATOIRE ET RÉFÉRENCES ---
     ws.merge_cells("A1:D1")
     ws["A1"] = "LPEE / CTR CSB"
-    ws["A1"].font = font_bold
+    ws["A1"].font = font_bold_white
     ws["A1"].alignment = align_center
 
     ws.merge_cells("A2:D3")
     ws["A2"] = "Laboratoire de Contrôle Externe"
-    ws["A2"].font = font_bold
+    ws["A2"].font = font_bold_white
     ws["A2"].alignment = align_center
+
+    # Application de la couleur d'entête principale
+    for r in range(1, 4):
+        for c in range(1, 5):
+            ws.cell(row=r, column=c).fill = fill_header_dark
 
     ws["E1"] = "RE N° :"
     ws["E1"].font = font_bold
@@ -87,9 +105,11 @@ def generer_pv_excel(export_data, infos_header):
     # --- TITRE DE L'ESSAI ET TYPE D'ESSAI ---
     ws.merge_cells("A4:H4")
     ws["A4"] = "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
-    ws["A4"].font = Font(name="Calibri", size=11, bold=True)
+    ws["A4"].font = font_title_white
     ws["A4"].alignment = align_center
-    ws["A4"].border = border_cell
+    for c in range(1, 9):
+        ws.cell(row=4, column=c).fill = fill_header_dark
+        ws.cell(row=4, column=c).border = border_cell
 
     ws.merge_cells("A5:D5")
     ws["A5"] = "[X] COMPRESSION NF EN 12390-3 (2019)"
@@ -227,9 +247,13 @@ def generer_pv_excel(export_data, infos_header):
     ws["F12"].font = font_bold
     ws["F12"].alignment = align_center
 
+    # Application de la couleur de fond pastel sur les libellés
+    labels_coords = ["A7", "C7", "A8", "E8", "A9", "A10", "A11", "A12", "D12"]
     for r in range(7, 13):
         for c in range(1, 9):
             ws.cell(row=r, column=c).border = border_cell
+            if ws.cell(row=r, column=c).coordinate in labels_coords:
+                ws.cell(row=r, column=c).fill = fill_section_label
 
     # --- TABLEAU DES RÉSULTATS D'ÉCRASEMENT ---
     ws.merge_cells("A13:A14")
@@ -279,6 +303,7 @@ def generer_pv_excel(export_data, infos_header):
 
     for r in range(13, 15):
         for c in range(1, 9):
+            ws.cell(row=r, column=c).fill = fill_header_table
             ws.cell(row=r, column=c).border = border_cell
 
     row_start = 15
@@ -295,7 +320,6 @@ def generer_pv_excel(export_data, infos_header):
         ws[f"B{row_start}"].font = font_bold
         ws[f"B{row_start}"].alignment = align_center
 
-    # Regroupement par lot (par âge / date d'essai) pour calculer la moyenne de chaque lot séparément
     groupes_lots = {}
     for idx, item in enumerate(export_data):
         curr_row = row_start + idx
@@ -304,34 +328,39 @@ def generer_pv_excel(export_data, infos_header):
             row=curr_row,
             column=3,
             value=str(remplacer_na(item.get("date_essai"))),
-        ).alignment = align_center
+        )
 
-        ws.cell(
-            row=curr_row, column=4, value=item.get("age", 7)
-        ).alignment = align_center
+        ws.cell(row=curr_row, column=4, value=item.get("age", 7))
 
         f_kn = float(item.get("force_kn", 0.0))
         ws.cell(
             row=curr_row, column=5, value=f"{f_kn:.1f}".replace(".", ",")
-        ).alignment = align_right
+        )
 
         fc_mpa = float(item.get("fc_mpa", 0.0))
         ws.cell(
             row=curr_row, column=6, value=f"{fc_mpa:.1f}".replace(".", ",")
-        ).alignment = align_right
+        )
 
-        ws.cell(row=curr_row, column=7, value="-").alignment = align_center
+        ws.cell(row=curr_row, column=7, value="-")
 
+        # Application du style et CENTRAGE TOTAL de la ligne (15 à 20)
         for c in range(1, 9):
             ws.cell(row=curr_row, column=c).font = font_regular
             ws.cell(row=curr_row, column=c).border = border_cell
+            ws.cell(row=curr_row, column=c).alignment = align_center
 
         cle_lot = f"{item.get('age')}_{item.get('date_essai')}"
         if cle_lot not in groupes_lots:
             groupes_lots[cle_lot] = []
         groupes_lots[cle_lot].append(curr_row)
 
-    # Fusion de la colonne H (Moyenne) individuellement POUR CHAQUE LOT
+    # Assurer le centrage même si moins d'éléments sont présents dans export_data sur les lignes 15-20
+    for r in range(15, 21):
+        for c in range(1, 9):
+            ws.cell(row=r, column=c).alignment = align_center
+
+    # Fusion et calcul de la moyenne en Colonne H par lot
     derniere_cellule_moyenne = f"H{row_start}"
     for cle_lot, lignes in groupes_lots.items():
         start_r = min(lignes)
@@ -347,14 +376,15 @@ def generer_pv_excel(export_data, infos_header):
         ws[f"H{start_r}"].font = font_bold
         derniere_cellule_moyenne = f"H{start_r}"
 
-    # Commentaire de conformité
-    ws.delete_rows(22)
-    ws.insert_rows(22)
+    # SUPPRESSION DE LA LIGNE 21
+    ws.delete_rows(21)
 
-    ws.cell(row=22, column=1, value="Commentaire :").font = font_bold
-    ws.cell(row=22, column=1).alignment = align_left
+    # Insertion et configuration du bloc Commentaire à la ligne 21 (position ajustée)
+    ws.cell(row=21, column=1, value="Commentaire :").font = font_bold
+    ws.cell(row=21, column=1).alignment = align_left
+    ws.cell(row=21, column=1).fill = fill_section_label
 
-    ws.merge_cells("B22:H22")
+    ws.merge_cells("B21:H21")
 
     moyenne_cell = derniere_cellule_moyenne
     formule_commentaires = (
@@ -369,20 +399,20 @@ def generer_pv_excel(export_data, infos_header):
         f'"PERFORMANCES MECANIQUES A 28 JOURS NE SONT PAS CONFORMES"))'
     )
 
-    ws.cell(row=22, column=2, value=formule_commentaires).font = font_bold
-    ws.cell(row=22, column=2).alignment = align_left
+    ws.cell(row=21, column=2, value=formule_commentaires).font = font_bold
+    ws.cell(row=21, column=2).alignment = align_left
 
     for c in range(1, 9):
-        ws.cell(row=22, column=c).border = border_cell
+        ws.cell(row=21, column=c).border = border_cell
 
     # Dimensions
     ws.row_dimensions[8].height = 54
-    for r in range(1, 23):
+    for r in range(1, 22):
         if r != 8:
             if 1 <= r <= 6:
                 ws.row_dimensions[r].height = 16
             else:
-                ws.row_dimensions[r].height = 31
+                ws.row_dimensions[r].height = 28
 
     col_widths = {
         "A": 10,
@@ -863,7 +893,6 @@ def show(supabase):
                     })
                 df_init = pd.DataFrame(rows_list)
 
-                # Calcul de la moyenne initiale pour ce lot
                 valides_init = df_init[df_init["Résistance Fc (MPa)"] > 0]
                 moy_init = round(valides_init["Résistance Fc (MPa)"].mean(), 1) if not valides_init.empty else 0.0
                 df_init["Moyenne Resistance Fc (MPa)"] = moy_init
@@ -892,7 +921,6 @@ def show(supabase):
                                 row_idx, "Résistance Fc (MPa)"
                             ] = 0.0
 
-                # Recalcul de la moyenne du lot de la Phase 2
                 df_cur = st.session_state[lot_key]
                 forces_valides = df_cur[df_cur["Résistance Fc (MPa)"] > 0]
                 fc_moy = (
@@ -936,7 +964,6 @@ def show(supabase):
 
             df_actuel = st.session_state[lot_key]
 
-            # Préparation des données d'export Excel
             export_data = []
 
             if essais_anterieurs:
