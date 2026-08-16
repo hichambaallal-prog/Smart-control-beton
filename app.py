@@ -24,10 +24,10 @@ if "can_edit" not in st.session_state:
 
 # Dictionnaire des utilisateurs, mots de passe individuels et rôles
 USERS_DB = {
-    # Administrateur (Accès total + Droit de modification et suppression)
+    # Administrateur (Accès total + Droit exclusif de modification et suppression)
     "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
     
-    # Techniciens Laboratoire (Accès complet à toutes les vues / Pas de modification ni suppression)
+    # Techniciens Laboratoire (Accès complet au Suivi Contrôle Béton)
     "AMINA": {"password": "amina2026", "role": "technicien", "can_edit": False},
     "IKKEN": {"password": "ikken2026", "role": "technicien", "can_edit": False},
     "ELHAMDANI": {"password": "elhamdani2026", "role": "technicien", "can_edit": False},
@@ -115,11 +115,11 @@ with st.sidebar:
         st.markdown("---")
         available_pages = [
             "Accueil", 
-            "Essai à la Plaque", 
-            "Synthèse Plaque", 
-            "Suivi de Bétonnage", 
             "Suivi Contrôle Béton", 
-            "Synthèse Béton"
+            "Suivi de Bétonnage", 
+            "Essai à la Plaque", 
+            "Synthèse Béton", 
+            "Synthèse Plaque"
         ]
     elif current_role == "restricted_betonnage":
         st.info("Rôle : **OPÉRATEUR BÉTONNAGE**")
