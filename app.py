@@ -20,6 +20,14 @@ if "user" not in st.session_state:
 if "role" not in st.session_state:
     st.session_state["role"] = None
 
+# Dictionnaire des utilisateurs autorisés et de leurs rôles
+USERS_DB = {
+    "BAALLAL": {"password": "arwa2020", "role": "admin"},
+    "ADAM": {"password": "ctr2026", "role": "restricted_betonnage"},
+    "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage"},
+    "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage"}
+}
+
 # --- ÉCRAN DE CONNEXION ---
 if st.session_state["user"] is None:
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -29,26 +37,27 @@ if st.session_state["user"] is None:
         st.caption("Veuillez saisir vos identifiants pour accéder à la plateforme.")
         
         with st.form("login_form", clear_on_submit=False):
-            username_input = st.text_input("Nom d'utilisateur").strip()
+            username_input = st.text_input("Nom d'utilisateur").strip().upper()
             password_input = st.text_input("Mot de passe", type="password")
             submit_btn = st.form_submit_button("Se connecter", use_container_width=True, type="primary")
             
             if submit_btn:
-                # Identification spécifique
-                if username_input.upper() == "BAALLAL" and password_input == "arwa2020":
-                    st.session_state["user"] = {"username": "BAALLAL", "role": "admin"}
-                    st.session_state["role"] = "admin"
+                # Vérification via le dictionnaire d'utilisateurs
+                if username_input in USERS_DB and USERS_DB[username_input]["password"] == password_input:
+                    user_role = USERS_DB[username_input]["role"]
+                    st.session_state["user"] = {"username": username_input, "role": user_role}
+                    st.session_state["role"] = user_role
                     st.rerun()
-                # Codes de secours par mot de passe seul
-                elif password_input == "ctr2026":
-                    username = username_input if username_input else "Utilisateur"
-                    st.session_state["user"] = {"username": username, "role": "user"}
-                    st.session_state["role"] = "user"
-                    st.rerun()
+                # Codes de secours globaux
                 elif password_input == "admin2026":
-                    username = username_input if username_input else "Administrateur"
+                    username = username_input if username_input else "ADMIN"
                     st.session_state["user"] = {"username": username, "role": "admin"}
                     st.session_state["role"] = "admin"
+                    st.rerun()
+                elif password_input == "ctr2026":
+                    username = username_input if username_input else "USER"
+                    st.session_state["user"] = {"username": username, "role": "user"}
+                    st.session_state["role"] = "user"
                     st.rerun()
                 else:
                     st.error("❌ Nom d'utilisateur ou mot de passe incorrect.")
@@ -82,15 +91,19 @@ except Exception as e:
 with st.sidebar:
     st.title("LPEE - CTR-CSB")
     current_username = st.session_state["user"]["username"]
-    current_role = st.session_state["role"].upper()
+    current_role = st.session_state["role"]
 
     st.markdown(f"👤 **{current_username}**")
-    st.info(f"Rôle : **{current_role}**")
-    st.markdown("---")
     
-    page = st.radio(
-        "Menu Principal",
-        [
+    # Définition des menus selon le rôle
+    if current_role == "restricted_betonnage":
+        st.info("Rôle : **OPÉRATEUR BÉTONNAGE**")
+        st.markdown("---")
+        available_pages = ["Suivi de Bétonnage"]
+    elif current_role == "admin":
+        st.info("Rôle : **ADMINISTRATEUR**")
+        st.markdown("---")
+        available_pages = [
             "Accueil", 
             "Essai à la Plaque", 
             "Synthèse Plaque", 
@@ -98,7 +111,19 @@ with st.sidebar:
             "Suivi Contrôle Béton", 
             "Synthèse Béton"
         ]
-    )
+    else:
+        st.info(f"Rôle : **{current_role.upper()}**")
+        st.markdown("---")
+        available_pages = [
+            "Accueil", 
+            "Essai à la Plaque", 
+            "Synthèse Plaque", 
+            "Suivi de Bétonnage", 
+            "Suivi Contrôle Béton", 
+            "Synthèse Béton"
+        ]
+    
+    page = st.radio("Menu Principal", available_pages)
     
     st.markdown("---")
     if st.button("🚪 Déconnexion", use_container_width=True):
