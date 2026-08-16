@@ -22,10 +22,16 @@ if "role" not in st.session_state:
 
 # Dictionnaire des utilisateurs autorisés et de leurs rôles
 USERS_DB = {
+    # Administrateur
     "BAALLAL": {"password": "arwa2020", "role": "admin"},
+    
+    # Opérateurs / Techniciens laboratoire (Accès restreint à Suivi Bétonnage)
     "ADAM": {"password": "ctr2026", "role": "restricted_betonnage"},
     "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage"},
-    "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage"}
+    "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage"},
+    "AMINA": {"password": "ctr2026", "role": "restricted_betonnage"},
+    "IKKEN": {"password": "ctr2026", "role": "restricted_betonnage"},
+    "ELHAMDANI": {"password": "ctr2026", "role": "restricted_betonnage"}
 }
 
 # --- ÉCRAN DE CONNEXION ---
@@ -97,7 +103,7 @@ with st.sidebar:
     
     # Définition des menus selon le rôle
     if current_role == "restricted_betonnage":
-        st.info("Rôle : **OPÉRATEUR BÉTONNAGE**")
+        st.info("Rôle : **TECHNICIEN BÉTONNAGE**")
         st.markdown("---")
         available_pages = ["Suivi de Bétonnage"]
     elif current_role == "admin":
