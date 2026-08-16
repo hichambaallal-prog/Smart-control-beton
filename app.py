@@ -27,7 +27,7 @@ USERS_DB = {
     # Administrateur (Accès total + Droit exclusif de modification/suppression)
     "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
     
-    # Techniciens Laboratoire (Rôle fixé sur "laboratoire" pour débloquer la vue)
+    # Techniciens Laboratoire
     "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": False},
     "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False},
     "ELHAMDANI": {"password": "elhamdani2026", "role": "laboratoire", "can_edit": False},
@@ -107,8 +107,12 @@ with st.sidebar:
 
     st.markdown(f"👤 **{current_username}**")
     
+    # Affichage du rôle avec accord au féminin
     if current_role == "laboratoire" or current_role == "technicien":
-        st.info("Rôle : **TECHNICIEN LABORATOIRE**")
+        if current_username == "AMINA":
+            st.info("Rôle : **TECHNICIENNE LABORATOIRE**")
+        else:
+            st.info("Rôle : **TECHNICIEN LABORATOIRE**")
         st.markdown("---")
         available_pages = [
             "Accueil", 
