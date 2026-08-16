@@ -20,18 +20,20 @@ if "user" not in st.session_state:
 if "role" not in st.session_state:
     st.session_state["role"] = None
 
-# Dictionnaire des utilisateurs autorisés et de leurs rôles
+# Dictionnaire des utilisateurs, mots de passe individuels et rôles
 USERS_DB = {
-    # Administrateur
+    # Administrateur (Accès complet + Modification)
     "BAALLAL": {"password": "arwa2020", "role": "admin"},
     
-    # Opérateurs / Techniciens laboratoire (Accès restreint à Suivi Bétonnage)
+    # Techniciens avec Accès Complet en CONSULTATION SEULE (Sans modification)
+    "AMINA": {"password": "amina@2026", "role": "viewer_all"},
+    "IKKEN": {"password": "ikken_2026", "role": "viewer_all"},
+    "ELHAMDANI": {"password": "elhamdani2026", "role": "viewer_all"},
+    
+    # Opérateurs Bétonnage restreints
     "ADAM": {"password": "ctr2026", "role": "restricted_betonnage"},
     "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage"},
-    "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage"},
-    "AMINA": {"password": "ctr2026", "role": "restricted_betonnage"},
-    "IKKEN": {"password": "ctr2026", "role": "restricted_betonnage"},
-    "ELHAMDANI": {"password": "ctr2026", "role": "restricted_betonnage"}
+    "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage"}
 }
 
 # --- ÉCRAN DE CONNEXION ---
@@ -54,7 +56,7 @@ if st.session_state["user"] is None:
                     st.session_state["user"] = {"username": username_input, "role": user_role}
                     st.session_state["role"] = user_role
                     st.rerun()
-                # Codes de secours globaux
+                # Codes de secours
                 elif password_input == "admin2026":
                     username = username_input if username_input else "ADMIN"
                     st.session_state["user"] = {"username": username, "role": "admin"}
@@ -101,9 +103,21 @@ with st.sidebar:
 
     st.markdown(f"👤 **{current_username}**")
     
-    # Définition des menus selon le rôle
-    if current_role == "restricted_betonnage":
-        st.info("Rôle : **TECHNICIEN BÉTONNAGE**")
+    # Définition des accès et affichage des rôles
+    if current_role == "viewer_all":
+        st.info("Rôle : **TECHNICIEN (CONSULTATION SEULE)**")
+        st.markdown("---")
+        available_pages = [
+            "Accueil", 
+            "Essai à la Plaque", 
+            "Synthèse Plaque", 
+            "Suivi de Bétonnage", 
+            "Suivi Contrôle Béton", 
+            "Synthèse Béton"
+        ]
+        st.warning("🔒 Mode lecture seule activé.")
+    elif current_role == "restricted_betonnage":
+        st.info("Rôle : **OPÉRATEUR BÉTONNAGE**")
         st.markdown("---")
         available_pages = ["Suivi de Bétonnage"]
     elif current_role == "admin":
