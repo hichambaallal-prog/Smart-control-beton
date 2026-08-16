@@ -19,21 +19,23 @@ if "user" not in st.session_state:
     st.session_state["user"] = None
 if "role" not in st.session_state:
     st.session_state["role"] = None
+if "can_edit" not in st.session_state:
+    st.session_state["can_edit"] = False
 
 # Dictionnaire des utilisateurs, mots de passe individuels et rôles
 USERS_DB = {
-    # Administrateur (Accès à TOUTES les vues)
-    "BAALLAL": {"password": "arwa2020", "role": "admin"},
+    # Administrateur (Accès total + Droit de modification et suppression)
+    "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
     
-    # Techniciens Laboratoire (Saisie : Plaque, Suivi Bétonnage, Contrôle Béton)
-    "AMINA": {"password": "amina2026", "role": "technicien"},
-    "IKKEN": {"password": "ikken2026", "role": "technicien"},
-    "ELHAMDANI": {"password": "elhamdani2026", "role": "technicien"},
+    # Techniciens Laboratoire (Accès complet à toutes les vues / Pas de modification ni suppression)
+    "AMINA": {"password": "amina2026", "role": "technicien", "can_edit": False},
+    "IKKEN": {"password": "ikken2026", "role": "technicien", "can_edit": False},
+    "ELHAMDANI": {"password": "elhamdani2026", "role": "technicien", "can_edit": False},
     
-    # Opérateurs Bétonnage (Accès restreint à Suivi Bétonnage)
-    "ADAM": {"password": "ctr2026", "role": "restricted_betonnage"},
-    "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage"},
-    "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage"}
+    # Opérateurs Bétonnage (Accès restreint au module Suivi Bétonnage)
+    "ADAM": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
+    "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
+    "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False}
 }
 
 # --- ÉCRAN DE CONNEXION ---
@@ -53,19 +55,23 @@ if st.session_state["user"] is None:
                 # Vérification via le dictionnaire d'utilisateurs
                 if username_input in USERS_DB and USERS_DB[username_input]["password"] == password_input:
                     user_role = USERS_DB[username_input]["role"]
+                    can_edit = USERS_DB[username_input]["can_edit"]
                     st.session_state["user"] = {"username": username_input, "role": user_role}
                     st.session_state["role"] = user_role
+                    st.session_state["can_edit"] = can_edit
                     st.rerun()
                 # Codes de secours
                 elif password_input == "admin2026":
                     username = username_input if username_input else "ADMIN"
                     st.session_state["user"] = {"username": username, "role": "admin"}
                     st.session_state["role"] = "admin"
+                    st.session_state["can_edit"] = True
                     st.rerun()
                 elif password_input == "ctr2026":
                     username = username_input if username_input else "USER"
                     st.session_state["user"] = {"username": username, "role": "user"}
                     st.session_state["role"] = "user"
+                    st.session_state["can_edit"] = False
                     st.rerun()
                 else:
                     st.error("❌ Nom d'utilisateur ou mot de passe incorrect.")
@@ -110,8 +116,10 @@ with st.sidebar:
         available_pages = [
             "Accueil", 
             "Essai à la Plaque", 
+            "Synthèse Plaque", 
             "Suivi de Bétonnage", 
-            "Suivi Contrôle Béton"
+            "Suivi Contrôle Béton", 
+            "Synthèse Béton"
         ]
     elif current_role == "restricted_betonnage":
         st.info("Rôle : **OPÉRATEUR BÉTONNAGE**")
@@ -146,6 +154,7 @@ with st.sidebar:
     if st.button("🚪 Déconnexion", use_container_width=True):
         st.session_state["user"] = None
         st.session_state["role"] = None
+        st.session_state["can_edit"] = False
         st.rerun()
 
 # Routage des vues
