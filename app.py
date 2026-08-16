@@ -22,15 +22,15 @@ if "role" not in st.session_state:
 
 # Dictionnaire des utilisateurs, mots de passe individuels et rôles
 USERS_DB = {
-    # Administrateur (Accès complet + Modification)
+    # Administrateur (Accès à TOUTES les vues)
     "BAALLAL": {"password": "arwa2020", "role": "admin"},
     
-    # Techniciens avec Accès Complet en CONSULTATION SEULE (Sans modification)
-    "AMINA": {"password": "amina@2026", "role": "viewer_all"},
-    "IKKEN": {"password": "ikken_2026", "role": "viewer_all"},
-    "ELHAMDANI": {"password": "elhamdani2026", "role": "viewer_all"},
+    # Techniciens Laboratoire (Saisie : Plaque, Suivi Bétonnage, Contrôle Béton)
+    "AMINA": {"password": "amina2026", "role": "technicien"},
+    "IKKEN": {"password": "ikken2026", "role": "technicien"},
+    "ELHAMDANI": {"password": "elhamdani2026", "role": "technicien"},
     
-    # Opérateurs Bétonnage restreints
+    # Opérateurs Bétonnage (Accès restreint à Suivi Bétonnage)
     "ADAM": {"password": "ctr2026", "role": "restricted_betonnage"},
     "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage"},
     "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage"}
@@ -104,18 +104,15 @@ with st.sidebar:
     st.markdown(f"👤 **{current_username}**")
     
     # Définition des accès et affichage des rôles
-    if current_role == "viewer_all":
-        st.info("Rôle : **TECHNICIEN (CONSULTATION SEULE)**")
+    if current_role == "technicien":
+        st.info("Rôle : **TECHNICIEN LABORATOIRE**")
         st.markdown("---")
         available_pages = [
             "Accueil", 
             "Essai à la Plaque", 
-            "Synthèse Plaque", 
             "Suivi de Bétonnage", 
-            "Suivi Contrôle Béton", 
-            "Synthèse Béton"
+            "Suivi Contrôle Béton"
         ]
-        st.warning("🔒 Mode lecture seule activé.")
     elif current_role == "restricted_betonnage":
         st.info("Rôle : **OPÉRATEUR BÉTONNAGE**")
         st.markdown("---")
