@@ -243,7 +243,8 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws = wb.active
     ws.title = "Synthèse Contrôle Béton"
 
-    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    # Configuration de la page en PORTRAIT A4
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
@@ -280,6 +281,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     mid_col_letter = get_column_letter(mid_col_idx)
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
+    # Entête
     ws.merge_cells(f"A1:{last_col_letter}2")
     ws["A1"].value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU CONTRÔLE BÉTON (MOYENNES)"
     ws["A1"].font = font_title
@@ -315,6 +317,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
+    # Résumé
     row_idx = 7
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📊 RÉSUMÉ GLOBAL"
@@ -337,6 +340,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
+    # Tableau
     row_idx += 3
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📋 MOYENNE DES ÉCRASEMENTS PAR ÉCHÉANCE"
@@ -367,34 +371,9 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         ws.row_dimensions[row_idx].height = 28
         row_idx += 1
 
-    row_idx += 2
-    ws.merge_cells(f"A{row_idx}:{mid_col_letter}{row_idx}")
-    ws[f"A{row_idx}"] = "Responsables d'essai"
-    ws[f"A{row_idx}"].font = font_bold
-    ws[f"A{row_idx}"].alignment = Alignment(horizontal="center", vertical="center")
-
-    ws.merge_cells(f"{next_mid_letter}{row_idx}:{last_col_letter}{row_idx}")
-    ws[f"{next_mid_letter}{row_idx}"] = "Chef du Laboratoire"
-    ws[f"{next_mid_letter}{row_idx}"].font = font_bold
-    ws[f"{next_mid_letter}{row_idx}"].alignment = Alignment(horizontal="center", vertical="center")
-
-    row_idx += 1
-    ws.merge_cells(f"A{row_idx}:{mid_col_letter}{row_idx+3}")
-    ws[f"A{row_idx}"] = "Visa & Signature :"
-    ws[f"A{row_idx}"].alignment = Alignment(horizontal="left", vertical="top")
-
-    ws.merge_cells(f"{next_mid_letter}{row_idx}:{last_col_letter}{row_idx+3}")
-    ws[f"{next_mid_letter}{row_idx}"] = "Visa & Signature :"
-    ws[f"{next_mid_letter}{row_idx}"].alignment = Alignment(horizontal="left", vertical="top")
-
-    for r in range(row_idx - 1, row_idx + 4):
-        for c in range(1, mid_col_idx + 1):
-            ws.cell(row=r, column=c).border = thin_border
-        for c in range(mid_col_idx + 1, nb_cols + 1):
-            ws.cell(row=r, column=c).border = thin_border
-
+    # Largeurs de colonnes ajustées pour Portrait
     for col_idx in range(1, nb_cols + 1):
-        ws.column_dimensions[get_column_letter(col_idx)].width = 20
+        ws.column_dimensions[get_column_letter(col_idx)].width = 16
 
     wb.save(output)
     output.seek(0)
@@ -406,23 +385,15 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 # =========================================================
 
 def load_and_process_controle_data(supabase):
-    """
-    Charge les données de contrôle et effectue une jointure/croisement avec 
-    la table 'suivi_betonnage' pour récupérer automatiquement l'affaissement 
-    et la température si ils ne sont pas présents dans 'suivi_controle_beton'.
-    """
-    # 1. Chargement de la table des écrasements (contrôle)
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_raw = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
     if df_raw.empty:
         return pd.DataFrame()
 
-    # 2. Chargement de la table de suivi du bétonnage (source de l'affaissement/température)
     res_betonnage = supabase.table("suivi_betonnage").select("*").execute()
     df_betonnage = pd.DataFrame(res_betonnage.data) if res_betonnage and res_betonnage.data else pd.DataFrame()
 
-    # Harmonisation initiale des colonnes dans df_raw
     col_mapping_input = {
         'affaissement': 'affaissement_mm',
         'affaissement_mm': 'affaissement_mm',
@@ -437,7 +408,6 @@ def load_and_process_controle_data(supabase):
     if "temp_beton_C" not in df_raw.columns:
         df_raw["temp_beton_C"] = None
 
-    # Harmonisation des colonnes dans df_betonnage pour le croisement
     if not df_betonnage.empty:
         df_betonnage = df_betonnage.rename(columns={
             'affaissement': 'affaissement_mm_b',
@@ -447,7 +417,6 @@ def load_and_process_controle_data(supabase):
             'ouvrage': 'ouvrage_b'
         })
 
-    # Nettoyage des chaînes d'échéance
     def clean_echeance(val):
         val_str = str(val).lower().strip()
         if "3" in val_str:
@@ -486,25 +455,21 @@ def load_and_process_controle_data(supabase):
         first_row = group_df.iloc[0]
         row_dict = {col: first_row[col] for col in existing_group_cols}
         
-        # 1er essai : Chercher dans la table de contrôle directe
         aff_idx = group_df["affaissement_mm"].dropna().first_valid_index()
         temp_idx = group_df["temp_beton_C"].dropna().first_valid_index()
 
         aff_val = group_df.loc[aff_idx, "affaissement_mm"] if aff_idx is not None else None
         temp_val = group_df.loc[temp_idx, "temp_beton_C"] if temp_idx is not None else None
 
-        # 2ème essai (Croisement Fallback) : Si None, récupérer depuis suivi_betonnage
         if (pd.isna(aff_val) or pd.isna(temp_val)) and not df_betonnage.empty:
             ref = str(row_dict.get("ref_controle", "")).strip()
             dt_str = str(row_dict.get("date_coulee", "")).strip()
             ovr = str(row_dict.get("ouvrage", "")).strip()
 
             matched_b = pd.DataFrame()
-            # Priorité 1: Match par Référence du contrôle / Prélèvement
             if ref and "ref_controle_b" in df_betonnage.columns:
                 matched_b = df_betonnage[df_betonnage["ref_controle_b"].astype(str).str.strip() == ref]
 
-            # Priorité 2: Match par Date Coulée + Ouvrage si pas de correspondance par ref
             if matched_b.empty and dt_str and ovr and "date_coulee_b" in df_betonnage.columns and "ouvrage_b" in df_betonnage.columns:
                 matched_b = df_betonnage[
                     (df_betonnage["date_coulee_b"].astype(str).str.strip() == dt_str) &
@@ -524,7 +489,6 @@ def load_and_process_controle_data(supabase):
         valid_dates = group_df["date_dt"].dropna()
         row_dict["date_dt"] = valid_dates.min() if not valid_dates.empty else pd.NaT
 
-        # Moyennes des écrasements
         for ech in ["3 jours", "7 jours", "28 jours"]:
             vals = group_df[group_df["echeance_clean"] == ech]["fc_mpa"].dropna()
             if not vals.empty:
@@ -536,7 +500,6 @@ def load_and_process_controle_data(supabase):
 
     df_pivoted = pd.DataFrame(pivot_rows)
 
-    # Réorganisation explicite avec colonnes insérées juste après Ouvrage
     desired_order = [
         "ref_controle", 
         "date_coulee", 
@@ -786,7 +749,7 @@ def show(supabase):
 
                     excel_file_cj = generate_excel_synthesis_controle(df_display_cj, f"Journée du {selected_date_c.strftime('%d/%m/%Y')}")
                     st.download_button(
-                        label="📥 Télécharger la Synthèse Contrôle Excel (A4 Paysage)",
+                        label="📥 Télécharger la Synthèse Contrôle Excel (A4 Portrait)",
                         data=excel_file_cj,
                         file_name=f"Synthese_Controle_Beton_{selected_date_c}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -822,7 +785,7 @@ def show(supabase):
 
                     excel_file_cm = generate_excel_synthesis_controle(df_display_cm, f"Mois de {mois_selected_c} {annee_c}")
                     st.download_button(
-                        label="📥 Télécharger la Synthèse Mensuelle Contrôle Excel (A4 Paysage)",
+                        label="📥 Télécharger la Synthèse Mensuelle Contrôle Excel (A4 Portrait)",
                         data=excel_file_cm,
                         file_name=f"Synthese_Mensuelle_Controle_{mois_selected_c}_{annee_c}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
