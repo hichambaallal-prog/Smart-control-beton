@@ -1544,7 +1544,28 @@ def show(supabase):
                         st.success(f"Entrée #{id_del_hist} supprimée de la base de données.")
                         st.rerun()
 
-                st.dataframe(df_all, use_container_width=True, hide_index=True)
+                # Réorganisation explicite des colonnes selon votre demande
+                colonnes_ordre = [
+                    "id",
+                    "ref_controle",
+                    "repere_eprouvette",
+                    "date_coulee",
+                    "classe_beton",
+                    "ouvrage",
+                    "date_ecrasement",
+                    "echeance",
+                    "force_kn",
+                    "fc_mpa",
+                    "technicien",
+                ]
+
+                # Filtrer les colonnes existantes pour éviter des erreurs si une colonne manque
+                cols_disponibles = [c for c in colonnes_ordre if c in df_all.columns]
+                # Ajouter le reste des colonnes éventuelles à la fin
+                cols_restantes = [c for c in df_all.columns if c not in cols_disponibles]
+                df_ordered = df_all[cols_disponibles + cols_restantes]
+
+                st.dataframe(df_ordered, use_container_width=True, hide_index=True)
             else:
                 st.info("Aucun enregistrement d'écrasement dans la base.")
         except Exception as e:
