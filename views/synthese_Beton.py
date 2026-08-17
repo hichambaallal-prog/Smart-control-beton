@@ -16,7 +16,7 @@ from openpyxl.utils import get_column_letter
 def extract_numeric(val):
     """
     Extrait les chiffres et décimales d'une chaîne ou d'une valeur.
-    ExExemple: '200 mm' -> 200, '32.0 °C' -> 32.0
+    Exemple: '200 mm' -> 200, '32.0 °C' -> 32.0
     """
     if pd.isna(val) or val is None:
         return None
@@ -411,9 +411,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 def load_and_process_controle_data(supabase):
     """
-    Charge les données de contrôle, récupère l'Affaissement et la Température
-    (directement dans suivi_controle_beton ou via suivi_betonnage en fallback),
-    puis calcule la MOYENNE des résistances (Fc) par référence.
+    Charge les données de contrôle et calcule la MOYENNE des résistances (Fc) par référence.
     """
     # 1. Chargement de la table contrôle
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
@@ -421,10 +419,6 @@ def load_and_process_controle_data(supabase):
 
     if df_raw.empty:
         return pd.DataFrame()
-
-    # 2. Chargement de la table bétonnage (fallback)
-    res_betonnage = supabase.table("suivi_betonnage").select("*").execute()
-    df_betonnage = pd.DataFrame(res_betonnage.data) if res_betonnage and res_betonnage.data else pd.DataFrame()
 
     # Nettoyage des chaînes d'échéance
     def clean_echeance(val):
@@ -461,20 +455,6 @@ def load_and_process_controle_data(supabase):
     else:
         df_raw["date_dt"] = pd.NaT
 
-    # Mapping de secours depuis la table suivi_betonnage
-    aff_map_betonnage = {}
-    temp_map_betonnage = {}
-    if not df_betonnage.empty and "prelevement" in df_betonnage.columns:
-        for _, r in df_betonnage.iterrows():
-            ref = str(r.get("prelevement", "")).strip()
-            if ref and ref != "nan":
-                aff_v = r.get("affaissement") or r.get("affaissement_slump")
-                temp_v = r.get("temperature") or r.get("temperature_beton_frais") or r.get("temperature_beton")
-                if pd.notna(aff_v):
-                    aff_map_betonnage[ref] = extract_numeric(aff_v)
-                if pd.notna(temp_v):
-                    temp_map_betonnage[ref] = extract_numeric(temp_v)
-
     pivot_rows = []
     grouped = df_raw.groupby(existing_group_cols, dropna=False)
 
@@ -484,30 +464,6 @@ def load_and_process_controle_data(supabase):
         
         valid_dates = group_df["date_dt"].dropna()
         row_dict["date_dt"] = valid_dates.min() if not valid_dates.empty else pd.NaT
-
-        ref_str = str(first_row.get("ref_controle", "")).strip()
-
-        # Recherche de l'Affaissement (multi-noms de colonnes + nettoyage texte)
-        val_aff = None
-        for col_name in ["affaissement_slump", "affaissement", "slump", "Affaissement / Slump (mm)"]:
-            if col_name in group_df.columns:
-                cand = group_df[col_name].dropna()
-                if not cand.empty:
-                    val_aff = cand.iloc[0]
-                    break
-        
-        row_dict["affaissement"] = extract_numeric(val_aff) if pd.notna(val_aff) else aff_map_betonnage.get(ref_str, None)
-
-        # Recherche de la Température du Béton (multi-noms de colonnes + nettoyage texte)
-        val_temp = None
-        for col_name in ["temperature_beton_frais", "temperature_beton", "temperature", "temp_beton", "Température Béton Frais (°C)"]:
-            if col_name in group_df.columns:
-                cand = group_df[col_name].dropna()
-                if not cand.empty:
-                    val_temp = cand.iloc[0]
-                    break
-
-        row_dict["temperature"] = extract_numeric(val_temp) if pd.notna(val_temp) else temp_map_betonnage.get(ref_str, None)
 
         # Calcul des moyennes par échéance
         for ech in ["3 jours", "7 jours", "28 jours"]:
@@ -521,14 +477,12 @@ def load_and_process_controle_data(supabase):
 
     df_pivoted = pd.DataFrame(pivot_rows)
 
-    # Ordre désiré des colonnes
+    # Ordre désiré des colonnes (sans affaissement ni temperature)
     desired_order = [
         "ref_controle", 
         "date_coulee", 
         "classe_beton", 
         "ouvrage", 
-        "affaissement", 
-        "temperature", 
         "fc_mpa_3 jours", 
         "fc_mpa_7 jours", 
         "fc_mpa_28 jours",
@@ -543,8 +497,6 @@ def load_and_process_controle_data(supabase):
         "date_coulee": "Date Coulée",
         "classe_beton": "Classe Béton",
         "ouvrage": "Ouvrage",
-        "affaissement": "Affaissement (mm)",
-        "temperature": "Temp. Béton (°C)",
         "fc_mpa_3 jours": "Moy. Fc (MPa) [3 Jours]",
         "fc_mpa_7 jours": "Moy. Fc (MPa) [7 Jours]",
         "fc_mpa_28 jours": "Moy. Fc (MPa) [28 Jours]"
