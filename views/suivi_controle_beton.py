@@ -1118,9 +1118,7 @@ def show(supabase):
                 df_sel = pd.DataFrame(rows_sel)
                 st.dataframe(df_sel, use_container_width=True, hide_index=True)
 
-                # =========================================================
-                # BOUTON DE TÉLÉCHARGEMENT EXCEL (NOUVEAUTÉ)
-                # =========================================================
+                # BOUTON TÉLÉCHARGEMENT EXCEL DU PLANNING
                 excel_planning_date = exporter_dataframe_excel(df_sel, date_filtre_str)
                 st.download_button(
                     label=f"📊 Télécharger cette liste en Excel ({date_filtre_str})",
@@ -1366,7 +1364,7 @@ def show(supabase):
                     "force_kn": f_kn,
                     "fc_mpa": fc_mpa,
                     "date_essai": ep_h.get("date_ecrasement", "-"),
-                    "age": str(item.get("echeance", "28"))
+                    "age": str(ep_h.get("echeance", "28"))
                     .replace(" jours", "")
                     .replace("j", ""),
                     "statut": statut,
