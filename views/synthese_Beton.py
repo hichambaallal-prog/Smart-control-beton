@@ -438,16 +438,16 @@ def load_and_process_controle_data(supabase):
 
 
 def format_controle_dataframe(df_filtered):
-    """Formate les 7 colonnes pour l'affichage de la synthèse du contrôle béton."""
+    """Formate les colonnes pour l'affichage de la synthèse du contrôle béton."""
     df_display = pd.DataFrame()
-    df_display["1. Référence de Contrôle"] = df_filtered["_ref_col"].fillna("-")
-    df_display["2. Date de Prélèvement"] = df_filtered["date_dt"].dt.strftime("%d/%m/%Y").fillna("-")
-    df_display["3. Affaissement (cm)"] = df_filtered.get("affaissement", "-").fillna("-")
-    df_display["4. Température (°C)"] = df_filtered.get("temperature", "-").fillna("-")
+    df_display["Référence de Contrôle"] = df_filtered["_ref_col"].fillna("-")
+    df_display["Date de Prélèvement"] = df_filtered["date_dt"].dt.strftime("%d/%m/%Y").fillna("-")
+    df_display["Affaissement (cm)"] = df_filtered.get("affaissement", "-").fillna("-")
+    df_display["Température (°C)"] = df_filtered.get("temperature", "-").fillna("-")
     
-    df_display["5. Résistance moyenne 3J (MPa)"] = df_filtered["res_3j"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
-    df_display["6. Résistance moyenne 7J (MPa)"] = df_filtered["res_7j"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
-    df_display["7. Résistance moyenne 28J (MPa)"] = df_filtered["res_28j"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
+    df_display["Résistance moyenne 3J (MPa)"] = df_filtered["res_3j"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
+    df_display["Résistance moyenne 7J (MPa)"] = df_filtered["res_7j"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
+    df_display["Résistance moyenne 28J (MPa)"] = df_filtered["res_28j"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
     
     return df_display
 
@@ -466,7 +466,7 @@ def show(supabase):
     ])
 
     # ---------------------------------------------------------
-    # SYNTHÈSE 1 : SUIVI DE BÉTONNAGE (Code original conservé)
+    # SYNTHÈSE 1 : SUIVI DE BÉTONNAGE
     # ---------------------------------------------------------
     with main_tab_betonnage:
         st.subheader("Bilan du Suivi de Bétonnage")
@@ -628,7 +628,7 @@ def show(supabase):
                 st.error(f"Erreur de chargement : {e}")
 
     # ---------------------------------------------------------
-    # SYNTHÈSE 2 : CONTRÔLE BÉTON (Résistances à 3J, 7J et 28J)
+    # SYNTHÈSE 2 : CONTRÔLE BÉTON (Résistances aux écrasements)
     # ---------------------------------------------------------
     with main_tab_controle:
         st.subheader("Bilan du Contrôle Béton (Résistances aux écrasements)")
