@@ -409,7 +409,14 @@ def load_and_process_controle_data(supabase):
     if df_beton.empty:
         return pd.DataFrame()
 
-    ref_col = "ref_controle" if "ref_controle" in df_beton.columns else ("prelevement" if "prelevement" in df_beton.columns else None)
+    # Priorité aux champs de référence d'éprouvette/contrôle (ex: ref_controle, ref_eprouvette, reference, bl_num)
+    possible_ref_cols = ["ref_controle", "ref_eprouvette", "reference", "bl_num"]
+    ref_col = None
+    for col in possible_ref_cols:
+        if col in df_beton.columns:
+            ref_col = col
+            break
+
     date_col = "date_livraison" if "date_livraison" in df_beton.columns else ("date_prelevement" if "date_prelevement" in df_beton.columns else None)
 
     if date_col:
@@ -459,7 +466,7 @@ def format_controle_dataframe(df_filtered):
 def show(supabase):
     st.title("📊 Module de Synthèses du Béton")
 
-    # Utilisation d'onglets principaux pour séparer les 2 synthèses
+    # Onglets principaux
     main_tab_betonnage, main_tab_controle = st.tabs([
         "🏗️ Synthèse de Suivi de Bétonnage", 
         "🧪 Synthèse de Contrôle Béton"
