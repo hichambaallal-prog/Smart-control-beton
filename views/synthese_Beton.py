@@ -244,7 +244,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws = wb.active
     ws.title = "Synthèse Contrôle Béton"
 
-    # Configuration A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -284,7 +283,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     mid_col_letter = get_column_letter(mid_col_idx)
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
-    # Entête - Titre
     ws.merge_cells(f"A1:{last_col_letter}2")
     ws["A1"].value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU CONTRÔLE BÉTON"
     ws["A1"].font = font_title
@@ -323,7 +321,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    # Résumé
     row_idx = 7
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📊 RÉSUMÉ GLOBAL"
@@ -346,7 +343,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    # Tableau Données
     row_idx += 3
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📋 MOYENNE DES ÉCRASEMENTS PAR ÉCHÉANCE"
@@ -419,7 +415,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         "fc28": "I"
     }
 
-    # Calcul dynamique des lignes dans la table statistique
+    # Repérage dynamique des lignes
     row_moy = row_idx + 1
     row_std = row_idx + 3
 
@@ -440,9 +436,10 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         f_moy_fc28 = f"=AVERAGE({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
         f_max_fc28 = f"=MAX({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
 
-        # CORRECTION : Formule ECARTYPE.STANDARD et liaison directe CV% sur les cellules MOY et σ
-        f_std_fc28 = f"=ECARTYPE.STANDARD({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
-        f_cv_fc28 = f"=SIERREUR(({col_map_excel['fc28']}{row_std}/{col_map_excel['fc28']}{row_moy})*100, 0)"
+        # Formule directe de l'écart-type n-1 natif Excel
+        f_std_fc28 = f"=STDEV.S({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
+        # Formule du CV% divisant l'écart-type par la moyenne (I25/I23)*100
+        f_cv_fc28 = f"=IFERROR(({col_map_excel['fc28']}{row_std}/{col_map_excel['fc28']}{row_moy})*100, 0)"
     else:
         f_min_aff = f_moy_aff = f_max_aff = "-"
         f_min_temp = f_moy_temp = f_max_temp = "-"
@@ -479,7 +476,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         ws.row_dimensions[row_idx].height = 22
         row_idx += 1
 
-    # Largeurs de colonnes
     specific_widths = {
         'A': 8, 'B': 11, 'C': 10, 'D': 28, 'E': 10,
         'F': 10, 'G': 14, 'H': 14, 'I': 14
