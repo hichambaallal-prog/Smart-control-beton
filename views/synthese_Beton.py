@@ -409,13 +409,12 @@ def load_and_process_controle_data(supabase):
     if df_beton.empty:
         return pd.DataFrame()
 
-    # Priorité aux champs de référence d'éprouvette/contrôle (ex: ref_controle, ref_eprouvette, reference, bl_num)
-    possible_ref_cols = ["ref_controle", "ref_eprouvette", "reference", "bl_num"]
-    ref_col = None
-    for col in possible_ref_cols:
-        if col in df_beton.columns:
-            ref_col = col
-            break
+    # Clef d'association (N° BL / id_betonnage)
+    join_key_beton = "bl_num" if "bl_num" in df_beton.columns else ("id" if "id" in df_beton.columns else None)
+    join_key_ecrasement = "bl_num" if "bl_num" in df_ecrasement.columns else ("id_betonnage" if "id_betonnage" in df_ecrasement.columns else None)
+
+    # Récupération de la vraie référence de contrôle depuis suivi_controle_beton
+    ref_controle_col = "ref_controle" if "ref_controle" in df_ecrasement.columns else ("prefixe_repere" if "prefixe_repere" in df_ecrasement.columns else None)
 
     date_col = "date_livraison" if "date_livraison" in df_beton.columns else ("date_prelevement" if "date_prelevement" in df_beton.columns else None)
 
@@ -424,30 +423,42 @@ def load_and_process_controle_data(supabase):
     else:
         df_beton["date_dt"] = pd.NaT
 
-    if not df_ecrasement.empty and ref_col and "ref_controle" in df_ecrasement.columns and "resistance" in df_ecrasement.columns and "echeance" in df_ecrasement.columns:
-        df_ecrasement["resistance"] = pd.to_numeric(df_ecrasement["resistance"], errors="coerce")
+    if not df_ecrasement.empty and join_key_beton and join_key_ecrasement:
+        df_ecrasement["resistance"] = pd.to_numeric(df_ecrasement.get("resistance"), errors="coerce")
         
-        res_3j = df_ecrasement[df_ecrasement["echeance"].astype(str).str.lower().isin(["3j", "3 j", "3d", "3 jours"])].groupby("ref_controle")["resistance"].mean().rename("res_3j")
-        res_7j = df_ecrasement[df_ecrasement["echeance"].astype(str).str.lower().isin(["7j", "7 j", "7d", "7 jours"])].groupby("ref_controle")["resistance"].mean().rename("res_7j")
-        res_28j = df_ecrasement[df_ecrasement["echeance"].astype(str).str.lower().isin(["28j", "28 j", "28d", "28 jours"])].groupby("ref_controle")["resistance"].mean().rename("res_28j")
+        # Agrégation des résistances par enregistrement
+        res_3j = df_ecrasement[df_ecrasement["echeance"].astype(str).str.lower().isin(["3j", "3 j", "3d", "3 jours"])].groupby(join_key_ecrasement)["resistance"].mean().rename("res_3j")
+        res_7j = df_ecrasement[df_ecrasement["echeance"].astype(str).str.lower().isin(["7j", "7 j", "7d", "7 jours"])].groupby(join_key_ecrasement)["resistance"].mean().rename("res_7j")
+        res_28j = df_ecrasement[df_ecrasement["echeance"].astype(str).str.lower().isin(["28j", "28 j", "28d", "28 jours"])].groupby(join_key_ecrasement)["resistance"].mean().rename("res_28j")
 
-        df_merged = df_beton.merge(res_3j, left_on=ref_col, right_index=True, how="left")
-        df_merged = df_merged.merge(res_7j, left_on=ref_col, right_index=True, how="left")
-        df_merged = df_merged.merge(res_28j, left_on=ref_col, right_index=True, how="left")
+        # Récupération unique de la référence de contrôle saisie
+        if ref_controle_col:
+            ref_mapping = df_ecrasement.groupby(join_key_ecrasement)[ref_controle_col].first().rename("ref_controle_saisie")
+        else:
+            ref_mapping = pd.Series(dtype=str, name="ref_controle_saisie")
+
+        # Fusions dans le DataFrame principal
+        df_merged = df_beton.merge(ref_mapping, left_on=join_key_beton, right_index=True, how="left")
+        df_merged = df_merged.merge(res_3j, left_on=join_key_beton, right_index=True, how="left")
+        df_merged = df_merged.merge(res_7j, left_on=join_key_beton, right_index=True, how="left")
+        df_merged = df_merged.merge(res_28j, left_on=join_key_beton, right_index=True, how="left")
+        
+        df_merged["_ref_col"] = df_merged["ref_controle_saisie"].fillna("-")
     else:
         df_merged = df_beton
         df_merged["res_3j"] = None
         df_merged["res_7j"] = None
         df_merged["res_28j"] = None
+        df_merged["_ref_col"] = "-"
 
-    df_merged["_ref_col"] = df_merged[ref_col] if ref_col else "-"
     return df_merged
 
 
 def format_controle_dataframe(df_filtered):
     """Formate les colonnes pour l'affichage de la synthèse du contrôle béton."""
     df_display = pd.DataFrame()
-    df_display["Référence de Contrôle"] = df_filtered["_ref_col"].fillna("-")
+    # Affiche la référence saisie issue de suivi_controle_beton (ex: REF-16-PRO 636)
+    df_display["Référence de Contrôle"] = df_filtered["_ref_col"]
     df_display["Date de Prélèvement"] = df_filtered["date_dt"].dt.strftime("%d/%m/%Y").fillna("-")
     df_display["Affaissement (cm)"] = df_filtered.get("affaissement", "-").fillna("-")
     df_display["Température (°C)"] = df_filtered.get("temperature", "-").fillna("-")
