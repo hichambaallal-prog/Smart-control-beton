@@ -392,14 +392,14 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 # =========================================================
 
 def load_and_process_controle_data(supabase):
-    """Charge les données Supabase avec repli automatique si la clé de jointure echoue."""
+    """Charge les données Supabase avec repli automatique si la clé de jointure échoue."""
     res_betonnage = supabase.table("suivi_betonnage").select("*").execute()
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").execute()
 
     df_beton = pd.DataFrame(res_betonnage.data) if res_betonnage and res_betonnage.data else pd.DataFrame()
     df_ecrasement = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
-    # Affichage du diagnostic dans un expander Streamlit
+    # Diagnostic visuel dans Streamlit
     with st.expander("🔍 Diagnostic Supabase (Vérification des colonnes et données)"):
         st.write("**Données `suivi_betonnage` :**", df_beton.head(3) if not df_beton.empty else "Vide")
         st.write("**Données `suivi_controle_beton` :**", df_ecrasement.head(3) if not df_ecrasement.empty else "Vide")
@@ -429,14 +429,12 @@ def load_and_process_controle_data(supabase):
         return df_beton
 
     # Normalisation des colonnes de suivi_controle_beton
-    # Recherche de la colonne de référence
     ref_col = None
     for c in ["ref_controle", "prefixe_repere", "repere", "reference", "code_controle", "id"]:
         if c in df_ecrasement.columns:
             ref_col = c
             break
 
-    # Normalisation de la date d'écrasement/prélèvement
     date_col_ecr = None
     for c in ["date_prelevement", "date_livraison", "date_essai", "date"]:
         if c in df_ecrasement.columns:
@@ -477,10 +475,11 @@ def load_and_process_controle_data(supabase):
         df_ecrasement["key_clean"] = df_ecrasement[join_key_e].astype(str).str.strip().str.upper()
 
         common_keys = set(df_beton["key_clean"]).intersection(set(df_ecrasement["key_clean"]))
-        if common_keys and common_keys != {""}, common_keys != {"NONE"}, common_keys != {"NAN"}:
+        # CORRECTION SYNTAXE : Remplacement des virgules par des 'and'
+        if common_keys and common_keys != {""} and common_keys != {"NONE"} and common_keys != {"NAN"}:
             matched = True
 
-    # TENTATIVE 2 (FALLBACK) : Jointure par Date si la clé directe échoue
+    # TENTATIVE 2 (FALLBACK) : Jointure par Date si la clé directe ne donne aucun résultat
     if not matched:
         df_beton["key_clean"] = df_beton["date_str"]
         df_ecrasement["key_clean"] = df_ecrasement["date_ecr_str"]
