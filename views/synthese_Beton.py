@@ -258,7 +258,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     thin_border_side = Side(style='thin', color='B0C4DE')
     thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
 
-    nb_cols = max(len(df_data.columns), 7)
+    nb_cols = max(len(df_data.columns), 6)
     last_col_letter = get_column_letter(nb_cols)
     mid_col_idx = nb_cols // 2
     mid_col_letter = get_column_letter(mid_col_idx)
@@ -377,7 +377,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(mid_col_idx + 1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    col_widths = [12, 16, 18, 16, 16, 18, 18, 14, 14, 14]
+    col_widths = [16, 18, 16, 16, 22, 18, 14, 14]
     for col_idx, width in enumerate(col_widths, 1):
         if col_idx <= nb_cols:
             ws.column_dimensions[get_column_letter(col_idx)].width = width
@@ -392,21 +392,20 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 # =========================================================
 
 def load_and_process_controle_data(supabase):
-    """Charge directement les données de la table suivi_controle_beton pour l'affichage brut."""
+    """Charge les données de suivi_controle_beton sans les colonnes 'id' et 'force_kn'."""
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_ecrasement = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
     if df_ecrasement.empty:
         return pd.DataFrame()
 
-    # Liste des colonnes attendues issues de la base de données
+    # Colonnes conservées (id et force_kn supprimées)
     expected_cols = [
-        "id", "ref_controle", "repere_eprouvette", "date_coulee", 
+        "ref_controle", "repere_eprouvette", "date_coulee", 
         "classe_beton", "ouvrage", "date_ecrasement", "echeance", 
-        "force_kn", "fc_mpa"
+        "fc_mpa"
     ]
     
-    # Conservation unique des colonnes existantes
     existing_cols = [c for c in expected_cols if c in df_ecrasement.columns]
     df_ecrasement = df_ecrasement[existing_cols]
 
@@ -422,7 +421,7 @@ def load_and_process_controle_data(supabase):
 
 
 def format_controle_dataframe(df_filtered):
-    """Prépare le dataframe d'affichage sans supprimer les colonnes d'origine."""
+    """Prépare le dataframe d'affichage en supprimant la colonne temporaire de date."""
     df_display = df_filtered.copy()
     if "date_dt" in df_display.columns:
         df_display = df_display.drop(columns=["date_dt"])
