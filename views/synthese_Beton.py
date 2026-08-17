@@ -375,7 +375,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         ws.row_dimensions[row_idx].height = 28
         row_idx += 1
 
-    # Application des largeurs de colonnes spécifiques révisées
+    # Application des largeurs de colonnes spécifiques (B: 11, G, H, I: 14)
     specific_widths = {
         'A': 8,
         'B': 11,
@@ -383,9 +383,9 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         'D': 30,
         'E': 10,
         'F': 10,
-        'G': 13.5,
-        'H': 13.5,
-        'I': 13.5
+        'G': 14,
+        'H': 14,
+        'I': 14
     }
 
     for col_letter, width in specific_widths.items():
