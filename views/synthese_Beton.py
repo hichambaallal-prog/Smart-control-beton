@@ -144,7 +144,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
     for row_data in df_data.itertuples(index=False):
         for col_num, val in enumerate(row_data, 1):
             cell = ws.cell(row=row_idx, column=col_num)
-            cell.value = val
+            cell.value = val if pd.notna(val) else ""
             cell.font = font_normal
             cell.border = thin_border
             if isinstance(val, (int, float)):
@@ -227,7 +227,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws = wb.active
     ws.title = "Synthèse Contrôle Béton"
 
-    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
@@ -306,13 +306,13 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
     row_idx += 1
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
-    ws[f"A{row_idx}"].value = "Nombre Total de Contrôles"
+    ws[f"A{row_idx}"].value = "Nombre Total d'Éprouvettes Contrôlées"
     ws[f"A{row_idx}"].font = font_bold
     ws[f"A{row_idx}"].fill = fill_kpi
     ws[f"A{row_idx}"].alignment = Alignment(horizontal="center", vertical="center")
 
     ws.merge_cells(f"A{row_idx+1}:{last_col_letter}{row_idx+1}")
-    ws[f"A{row_idx+1}"].value = f"{len(df_data)} prélèvement(s)"
+    ws[f"A{row_idx+1}"].value = f"{len(df_data)} ligne(s) de prélèvement"
     ws[f"A{row_idx+1}"].font = font_kpi_val
     ws[f"A{row_idx+1}"].fill = fill_kpi
     ws[f"A{row_idx+1}"].alignment = Alignment(horizontal="center", vertical="center")
@@ -323,7 +323,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
     row_idx += 3
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
-    ws[f"A{row_idx}"] = "📋 DÉTAIL DES ESSAIS ET ÉCRASEMENTS"
+    ws[f"A{row_idx}"] = "📋 DÉTAIL DES ESSAIS ET ÉCRASEMENTS PAR ÉCHÉANCE"
     ws[f"A{row_idx}"].font = font_section
     row_idx += 1
 
@@ -341,7 +341,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     for row_data in df_data.itertuples(index=False):
         for col_num, val in enumerate(row_data, 1):
             cell = ws.cell(row=row_idx, column=col_num)
-            cell.value = val
+            cell.value = val if pd.notna(val) else ""
             cell.font = font_normal
             cell.border = thin_border
             if isinstance(val, (int, float)):
@@ -377,10 +377,8 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(mid_col_idx + 1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    col_widths = [16, 18, 16, 16, 22, 18, 14, 14]
-    for col_idx, width in enumerate(col_widths, 1):
-        if col_idx <= nb_cols:
-            ws.column_dimensions[get_column_letter(col_idx)].width = width
+    for col_idx in range(1, nb_cols + 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = 16
 
     wb.save(output)
     output.seek(0)
@@ -388,36 +386,89 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 # =========================================================
-# 2. CHARGEMENT & TRAITEMENT SUPABASE
+# 2. CHARGEMENT & TRAITEMENT SUPABASE (PIVOT PAR ECHEANCE)
 # =========================================================
 
 def load_and_process_controle_data(supabase):
-    """Charge les données de suivi_controle_beton en excluant 'id' et 'force_kn'."""
+    """
+    Charge les données et pivote les échéances (3J, 7J, 28J) horizontalement.
+    """
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
-    df_ecrasement = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
+    df_raw = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
-    if df_ecrasement.empty:
+    if df_raw.empty:
         return pd.DataFrame()
 
-    # Sélection des colonnes sans 'id' ni 'force_kn'
-    expected_cols = [
-        "ref_controle", "repere_eprouvette", "date_coulee", 
-        "classe_beton", "ouvrage", "date_ecrasement", "echeance", 
-        "fc_mpa"
-    ]
-    
-    existing_cols = [c for c in expected_cols if c in df_ecrasement.columns]
-    df_ecrasement = df_ecrasement[existing_cols]
+    # Nettoyage des chaînes d'échéance pour uniformisation
+    def clean_echeance(val):
+        val_str = str(val).lower().strip()
+        if "3" in val_str:
+            return "3 jours"
+        elif "7" in val_str:
+            return "7 jours"
+        elif "28" in val_str:
+            return "28 jours"
+        return val_str
 
-    # Champ DateTime pour les filtres Streamlit
-    if "date_coulee" in df_ecrasement.columns:
-        df_ecrasement["date_dt"] = pd.to_datetime(df_ecrasement["date_coulee"], errors="coerce")
-    elif "date_ecrasement" in df_ecrasement.columns:
-        df_ecrasement["date_dt"] = pd.to_datetime(df_ecrasement["date_ecrasement"], errors="coerce")
+    if "echeance" in df_raw.columns:
+        df_raw["echeance_clean"] = df_raw["echeance"].apply(clean_echeance)
     else:
-        df_ecrasement["date_dt"] = pd.NaT
+        df_raw["echeance_clean"] = ""
 
-    return df_ecrasement
+    # Colonnes clés pour identifier un groupe d'éprouvettes
+    group_cols = ["ref_controle", "repere_eprouvette", "date_coulee", "classe_beton", "ouvrage"]
+    existing_group_cols = [c for c in group_cols if c in df_raw.columns]
+
+    if not existing_group_cols:
+        return pd.DataFrame()
+
+    # Colonne de date pour le filtrage
+    if "date_coulee" in df_raw.columns:
+        df_raw["date_dt"] = pd.to_datetime(df_raw["date_coulee"], errors="coerce")
+    elif "date_ecrasement" in df_raw.columns:
+        df_raw["date_dt"] = pd.to_datetime(df_raw["date_ecrasement"], errors="coerce")
+    else:
+        df_raw["date_dt"] = pd.NaT
+
+    pivot_rows = []
+    
+    # Regroupement horizontal
+    grouped = df_raw.groupby(existing_group_cols, dropna=False)
+
+    for group_key, group_df in grouped:
+        first_row = group_df.iloc[0]
+        row_dict = {col: first_row[col] for col in existing_group_cols}
+        row_dict["date_dt"] = group_df["date_dt"].dropna().min() if not group_df["date_dt"].dropna().empty else pd.NaT
+
+        # Initialisation des colonnes d'échéances
+        for ech in ["3 jours", "7 jours", "28 jours"]:
+            row_dict[f"fc_mpa_{ech}"] = None
+
+        # Remplissage des valeurs fc_mpa selon l'échéance
+        for _, r in group_df.iterrows():
+            ech = r["echeance_clean"]
+            fc_val = r.get("fc_mpa")
+            if ech in ["3 jours", "7 jours", "28 jours"]:
+                row_dict[f"fc_mpa_{ech}"] = fc_val
+
+        pivot_rows.append(row_dict)
+
+    df_pivoted = pd.DataFrame(pivot_rows)
+
+    # Renommage des colonnes pour un affichage propre
+    rename_map = {
+        "ref_controle": "Réf. Contrôle",
+        "repere_eprouvette": "Repère Éprouvette",
+        "date_coulee": "Date Coulée",
+        "classe_beton": "Classe Béton",
+        "ouvrage": "Ouvrage",
+        "fc_mpa_3 jours": "Fc (MPa) [3 Jours]",
+        "fc_mpa_7 jours": "Fc (MPa) [7 Jours]",
+        "fc_mpa_28 jours": "Fc (MPa) [28 Jours]"
+    }
+
+    df_pivoted = df_pivoted.rename(columns=rename_map)
+    return df_pivoted
 
 
 def format_controle_dataframe(df_filtered):
@@ -599,7 +650,7 @@ def show(supabase):
                 st.error(f"Erreur de chargement : {e}")
 
     with main_tab_controle:
-        st.subheader("Bilan du Contrôle Béton (Base de données globale)")
+        st.subheader("Bilan du Contrôle Béton (Vue Horizontalisée par Échéance)")
         tab_j_c, tab_m_c = st.tabs(["📅 Bilan Journalier", "📅 Bilan Mensuel"])
 
         try:
@@ -609,8 +660,8 @@ def show(supabase):
             df_merged = pd.DataFrame()
 
         classes_dispo = ["Toutes"]
-        if not df_merged.empty and "classe_beton" in df_merged.columns:
-            classes_dispo += sorted(list(df_merged["classe_beton"].dropna().unique()))
+        if not df_merged.empty and "Classe Béton" in df_merged.columns:
+            classes_dispo += sorted(list(df_merged["Classe Béton"].dropna().unique()))
 
         with tab_j_c:
             st.markdown("### Filtrage journalier par classe de béton")
@@ -624,8 +675,8 @@ def show(supabase):
                 st.info("Aucune donnée disponible.")
             else:
                 df_j_c = df_merged[df_merged["date_dt"].dt.date == selected_date_c]
-                if selected_class_cj != "Toutes" and "classe_beton" in df_j_c.columns:
-                    df_j_c = df_j_c[df_j_c["classe_beton"] == selected_class_cj]
+                if selected_class_cj != "Toutes" and "Classe Béton" in df_j_c.columns:
+                    df_j_c = df_j_c[df_j_c["Classe Béton"] == selected_class_cj]
 
                 if df_j_c.empty:
                     st.info("Aucun contrôle enregistré pour les critères sélectionnés.")
@@ -633,12 +684,12 @@ def show(supabase):
                     df_display_cj = format_controle_dataframe(df_j_c)
 
                     st.markdown("---")
-                    st.metric("Nombre de Contrôles", f"{len(df_display_cj)}")
+                    st.metric("Nombre de Prélèvements", f"{len(df_display_cj)}")
                     st.markdown("---")
 
                     excel_file_cj = generate_excel_synthesis_controle(df_display_cj, f"Journée du {selected_date_c.strftime('%d/%m/%Y')}")
                     st.download_button(
-                        label="📥 Télécharger la Synthèse Contrôle Excel (A4 Portrait)",
+                        label="📥 Télécharger la Synthèse Contrôle Excel (A4 Paysage)",
                         data=excel_file_cj,
                         file_name=f"Synthese_Controle_Beton_{selected_date_c}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -660,8 +711,8 @@ def show(supabase):
                 st.info("Aucune donnée disponible.")
             else:
                 df_m_c = df_merged[(df_merged["date_dt"].dt.year == annee_c) & (df_merged["date_dt"].dt.month == mois_num_c)]
-                if selected_class_cm != "Toutes" and "classe_beton" in df_m_c.columns:
-                    df_m_c = df_m_c[df_m_c["classe_beton"] == selected_class_cm]
+                if selected_class_cm != "Toutes" and "Classe Béton" in df_m_c.columns:
+                    df_m_c = df_m_c[df_m_c["Classe Béton"] == selected_class_cm]
 
                 if df_m_c.empty:
                     st.info("Aucun contrôle enregistré pour ce mois.")
@@ -674,7 +725,7 @@ def show(supabase):
 
                     excel_file_cm = generate_excel_synthesis_controle(df_display_cm, f"Mois de {mois_selected_c} {annee_c}")
                     st.download_button(
-                        label="📥 Télécharger la Synthèse Mensuelle Contrôle Excel (A4 Portrait)",
+                        label="📥 Télécharger la Synthèse Mensuelle Contrôle Excel (A4 Paysage)",
                         data=excel_file_cm,
                         file_name=f"Synthese_Mensuelle_Controle_{mois_selected_c}_{annee_c}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
