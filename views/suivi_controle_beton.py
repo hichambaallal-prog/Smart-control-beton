@@ -626,7 +626,7 @@ def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
     # ---------------------------------------------------------
-    # 🔒 SÉCURISATION : RESTRICTION D'ACCÈS DU MOULDE
+    # 🔒 SÉCURISATION : RESTRICTION D'ACCÈS DU MODULE
     # ---------------------------------------------------------
     role_utilisateur = str(
         st.session_state.get("user_role")
@@ -1021,10 +1021,71 @@ def show(supabase):
                 st.error(f"Erreur de lecture : {e}")
 
     # ---------------------------------------------------------
-    # PHASE 2 : SAISIE DES ÉCRASEMENTS PAR LOT
+    # PHASE 2 : SAISIE DES ÉCRASEMENTS PAR LOT & LISTE DU JOUR
     # ---------------------------------------------------------
     with tab_saisie:
         st.subheader("💥 2. Saisie Groupée & Édition des PV d'Écrasement")
+
+        # -----------------------------------------------------
+        # NOUVEAU : LISTE DES ÉCRASEMENTS DU JOUR AVEC ÂGE EXACT
+        # -----------------------------------------------------
+        today_str = str(date.today())
+        try:
+            res_jour = (
+                supabase.table("suivi_controle_beton")
+                .select("*")
+                .eq("date_ecrasement", today_str)
+                .order("id", desc=False)
+                .execute()
+            )
+            eprouvettes_jour = res_jour.data if res_jour.data else []
+        except Exception as err_jour:
+            st.warning(f"Impossible de vérifier la liste journalière : {err_jour}")
+            eprouvettes_jour = []
+
+        with st.expander(f"📅 Liste des éprouvettes à écraser aujourd'hui ({today_str}) - [{len(eprouvettes_jour)} éprouvette(s)]", expanded=True):
+            if eprouvettes_jour:
+                rows_jour = []
+                for ep in eprouvettes_jour:
+                    # Calcul de l'âge réel en jours
+                    dt_coul_str = ep.get("date_coulee")
+                    dt_ecras_str = ep.get("date_ecrasement")
+                    age_reel = "-"
+
+                    if dt_coul_str and dt_ecras_str:
+                        try:
+                            d_coul = datetime.strptime(str(dt_coul_str)[:10], "%Y-%m-%d").date()
+                            d_ecras = datetime.strptime(str(dt_ecras_str)[:10], "%Y-%m-%d").date()
+                            age_reel = f"{(d_ecras - d_coul).days} jours"
+                        except Exception:
+                            age_reel = str(ep.get("echeance", "-"))
+
+                    ref_p = str(ep.get("ref_controle") or "").strip()
+                    rep_s = str(ep.get("repere_eprouvette", "")).strip()
+                    rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
+
+                    f_kn_val = float(ep.get("force_kn") or 0.0)
+                    statut_val = "✅ Réalisé" if f_kn_val > 0 else "⏳ En attente"
+
+                    rows_jour.append({
+                        "ID": ep.get("id"),
+                        "Référence / Repère": rep_complet,
+                        "N° BL": extraire_num_bl(ep),
+                        "Ouvrage": ep.get("ouvrage", "-"),
+                        "Classe Béton": ep.get("classe_beton", "-"),
+                        "Date Coulée": dt_coul_str,
+                        "Date Écrasement": dt_ecras_str,
+                        "Échéance Visée": ep.get("echeance", "-"),
+                        "Âge d'Écrasement": age_reel,
+                        "Statut": statut_val
+                    })
+
+                df_jour = pd.DataFrame(rows_jour)
+                st.dataframe(df_jour, use_container_width=True, hide_index=True)
+            else:
+                st.info(f"ℹ️ Aucune éprouvette programmée pour aujourd'hui ({today_str}).")
+
+        st.markdown("---")
 
         eprouvettes_en_attente = []
         try:
@@ -1546,7 +1607,6 @@ def show(supabase):
                         st.success(f"Entrée #{id_del_hist} supprimée de la base de données.")
                         st.rerun()
 
-                # Réorganisation explicite avec ajout des colonnes affaissement et temperature
                 colonnes_ordre = [
                     "id",
                     "ref_controle",
@@ -1563,13 +1623,11 @@ def show(supabase):
                     "technicien",
                 ]
 
-                # Remplacement des noms pour un affichage plus clair
                 renommage_colonnes = {
                     "affaissement": "affaissement_mm",
                     "temperature": "temp_beton_C",
                 }
 
-                # Récupération contextuelle des données de bétonnage si non renseignées dans suivi_controle_beton
                 for idx_row, row_data in df_all.iterrows():
                     b_id_row = row_data.get("betonnage_id")
                     if b_id_row and (pd.isna(row_data.get("affaissement")) or pd.isna(row_data.get("temperature"))):
@@ -1579,7 +1637,6 @@ def show(supabase):
                         if pd.isna(row_data.get("temperature")):
                             df_all.at[idx_row, "temperature"] = parent_info.get("temperature") or parent_info.get("temp_beton") or "-"
 
-                # Filtrer les colonnes existantes pour éviter des erreurs
                 cols_disponibles = [c for c in colonnes_ordre if c in df_all.columns]
                 cols_restantes = [c for c in df_all.columns if c not in cols_disponibles]
                 df_ordered = df_all[cols_disponibles + cols_restantes].rename(columns=renommage_colonnes)
