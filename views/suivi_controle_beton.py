@@ -967,6 +967,8 @@ def show(supabase):
                             "repere_eprouvette": rep,
                             "forme": forme_p,
                             "section": float(sect_def),
+                            "affaissement": beton_p.get("affaissement") or beton_p.get("slump"),
+                            "temperature": beton_p.get("temperature") or beton_p.get("temp_beton"),
                         }
                         try:
                             res = (
@@ -1544,7 +1546,7 @@ def show(supabase):
                         st.success(f"Entrée #{id_del_hist} supprimée de la base de données.")
                         st.rerun()
 
-                # Réorganisation explicite des colonnes selon votre demande
+                # Réorganisation explicite avec ajout des colonnes affaissement et temperature
                 colonnes_ordre = [
                     "id",
                     "ref_controle",
@@ -1552,6 +1554,8 @@ def show(supabase):
                     "date_coulee",
                     "classe_beton",
                     "ouvrage",
+                    "affaissement",
+                    "temperature",
                     "date_ecrasement",
                     "echeance",
                     "force_kn",
@@ -1559,11 +1563,26 @@ def show(supabase):
                     "technicien",
                 ]
 
-                # Filtrer les colonnes existantes pour éviter des erreurs si une colonne manque
+                # Remplacement des noms pour un affichage plus clair
+                renommage_colonnes = {
+                    "affaissement": "affaissement_mm",
+                    "temperature": "temp_beton_C",
+                }
+
+                # Récupération contextuelle des données de bétonnage si non renseignées dans suivi_controle_beton
+                for idx_row, row_data in df_all.iterrows():
+                    b_id_row = row_data.get("betonnage_id")
+                    if b_id_row and (pd.isna(row_data.get("affaissement")) or pd.isna(row_data.get("temperature"))):
+                        parent_info = obtenir_infos_betonnage_parent(supabase, b_id_row)
+                        if pd.isna(row_data.get("affaissement")):
+                            df_all.at[idx_row, "affaissement"] = parent_info.get("affaissement") or parent_info.get("slump") or "-"
+                        if pd.isna(row_data.get("temperature")):
+                            df_all.at[idx_row, "temperature"] = parent_info.get("temperature") or parent_info.get("temp_beton") or "-"
+
+                # Filtrer les colonnes existantes pour éviter des erreurs
                 cols_disponibles = [c for c in colonnes_ordre if c in df_all.columns]
-                # Ajouter le reste des colonnes éventuelles à la fin
                 cols_restantes = [c for c in df_all.columns if c not in cols_disponibles]
-                df_ordered = df_all[cols_disponibles + cols_restantes]
+                df_ordered = df_all[cols_disponibles + cols_restantes].rename(columns=renommage_colonnes)
 
                 st.dataframe(df_ordered, use_container_width=True, hide_index=True)
             else:
