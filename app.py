@@ -27,8 +27,9 @@ USERS_DB = {
     # Administrateur (Accès total + Droit exclusif de modification/suppression)
     "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
     
-    # Techniciens Laboratoire
+    # Techniciens Laboratoire & Responsable de dossier (Même niveau d'accès/sécurité)
     "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": False},
+    "HANINE": {"password": "hanine2026", "role": "laboratoire", "can_edit": False},
     "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False},
     "ELHAMDANI": {"password": "elhamdani2026", "role": "laboratoire", "can_edit": False},
     
@@ -107,9 +108,11 @@ with st.sidebar:
 
     st.markdown(f"👤 **{current_username}**")
     
-    # Affichage du rôle avec accord au féminin
+    # Affichage du rôle spécifique
     if current_role == "laboratoire" or current_role == "technicien":
-        if current_username == "AMINA":
+        if current_username == "HANINE":
+            st.info("Rôle : **RESPONSABLE DE DOSSIER**")
+        elif current_username == "AMINA":
             st.info("Rôle : **TECHNICIENNE LABORATOIRE**")
         else:
             st.info("Rôle : **TECHNICIEN LABORATOIRE**")
