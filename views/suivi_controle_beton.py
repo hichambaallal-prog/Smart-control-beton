@@ -634,10 +634,8 @@ def show(supabase):
         or ""
     ).lower()
 
-    # Liste des rôles autorisés à accéder au dossier de contrôle béton
     roles_autorises = ["laboratoire", "labo", "admin", "responsable_labo", "qualite"]
 
-    # Bloquer immédiatement si l'utilisateur est un technicien de chantier
     if role_utilisateur not in roles_autorises and not st.session_state.get("is_admin", False):
         st.error("⛔ **Accès Restreint**")
         st.warning(
@@ -645,9 +643,8 @@ def show(supabase):
             "réservé exclusivement au personnel du **Laboratoire de Contrôle**.\n\n"
             "Les utilisateurs du chantier ont uniquement accès au suivi des bétonnages."
         )
-        return  # Arrête l'exécution de la fonction ici
+        return
 
-    # 🔒 VÉRIFICATION DU RÔLE ADMINISTRATEUR
     est_compte_admin = (
         role_utilisateur == "admin"
         or st.session_state.get("is_admin") is True
@@ -664,7 +661,7 @@ def show(supabase):
 
     tab_prog, tab_saisie, tab_hist = st.tabs([
         "📅 Phase 1 : Programmation",
-        "💥 Phase 2 : Saisie des Écrasements (Par Lot)",
+        "💥 Phase 2 : Planning Daily & Saisie (Par Lot)",
         "📋 Historique Complet & PVs",
     ])
 
@@ -1021,72 +1018,148 @@ def show(supabase):
                 st.error(f"Erreur de lecture : {e}")
 
     # ---------------------------------------------------------
-    # PHASE 2 : SAISIE DES ÉCRASEMENTS PAR LOT & LISTE DU JOUR
+    # PHASE 2 : PLANNING & SAISIE DES ÉCRASEMENTS
     # ---------------------------------------------------------
     with tab_saisie:
-        st.subheader("💥 2. Saisie Groupée & Édition des PV d'Écrasement")
+        st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
 
-        # -----------------------------------------------------
-        # NOUVEAU : LISTE DES ÉCRASEMENTS DU JOUR AVEC ÂGE EXACT
-        # -----------------------------------------------------
-        today_str = str(date.today())
+        # =========================================================
+        # SYSTEME DE FILTRE & RETARDS MULTI-DATES (SANS RATTER AUCUNE DATE)
+        # =========================================================
+        today_date = date.today()
+        today_str = str(today_date)
+
+        col_f1, col_f2 = st.columns([1, 2])
+        with col_f1:
+            date_filtre = st.date_input(
+                "📅 Choisir une date à consulter",
+                value=today_date,
+                key="filtre_date_planning"
+            )
+            date_filtre_str = str(date_filtre)
+
+        # 1. Récupérer les éprouvettes EN RETARD ou DÉPASSÉES (Non écrasées et date <= aujourd'hui)
         try:
-            res_jour = (
+            res_retards = (
                 supabase.table("suivi_controle_beton")
                 .select("*")
-                .eq("date_ecrasement", today_str)
+                .lte("date_ecrasement", today_str)
+                .or_("force_kn.is.null,force_kn.eq.0")
+                .order("date_ecrasement", desc=False)
+                .execute()
+            )
+            retards_list = res_retards.data if res_retards.data else []
+        except Exception as err_retard:
+            retards_list = []
+            st.warning(f"Note lors de la recherche des échéances dépassées : {err_retard}")
+
+        # Affichage du bloc d'alerte des retards/échéances accumulées
+        if retards_list:
+            nb_retards = len(retards_list)
+            st.error(
+                f"🚨 **ATTENTION : {nb_retards} éprouvette(s) non écrasée(s) ont atteint ou dépassé leur date d'échéance !** "
+                f"Ne ratez aucune date ci-dessous :"
+            )
+            
+            rows_retard = []
+            for ep in retards_list:
+                dt_coul_str = ep.get("date_coulee")
+                dt_ecras_str = ep.get("date_ecrasement")
+                age_actuel = "-"
+
+                if dt_coul_str:
+                    try:
+                        d_coul = datetime.strptime(str(dt_coul_str)[:10], "%Y-%m-%d").date()
+                        age_actuel = f"{(today_date - d_coul).days} j (Aujourd'hui)"
+                    except Exception:
+                        age_actuel = str(ep.get("echeance", "-"))
+
+                ref_p = str(ep.get("ref_controle") or "").strip()
+                rep_s = str(ep.get("repere_eprouvette", "")).strip()
+                rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
+
+                # Niveau d'urgence
+                dt_ecras_obj = datetime.strptime(str(dt_ecras_str)[:10], "%Y-%m-%d").date() if dt_ecras_str else today_date
+                if dt_ecras_obj < today_date:
+                    statut_urgence = f"⚠️ En Retard ({ (today_date - dt_ecras_obj).days } jour(s))"
+                else:
+                    statut_urgence = "🔥 Prévu Aujourd'hui"
+
+                rows_retard.append({
+                    "Priorité": statut_urgence,
+                    "Date Écrasement Prévue": dt_ecras_str,
+                    "Référence / Repère": rep_complet,
+                    "N° BL": extraire_num_bl(ep),
+                    "Ouvrage": ep.get("ouvrage", "-"),
+                    "Classe Béton": ep.get("classe_beton", "-"),
+                    "Date Coulée": dt_coul_str,
+                    "Échéance Visée": ep.get("echeance", "-"),
+                    "Âge Actuel Réel": age_actuel,
+                })
+
+            df_retard = pd.DataFrame(rows_retard)
+            st.dataframe(df_retard, use_container_width=True, hide_index=True)
+            st.markdown("---")
+
+        # 2. Récupérer la liste spécifique à la date sélectionnée dans le calendrier
+        try:
+            res_date_sel = (
+                supabase.table("suivi_controle_beton")
+                .select("*")
+                .eq("date_ecrasement", date_filtre_str)
                 .order("id", desc=False)
                 .execute()
             )
-            eprouvettes_jour = res_jour.data if res_jour.data else []
-        except Exception as err_jour:
-            st.warning(f"Impossible de vérifier la liste journalière : {err_jour}")
-            eprouvettes_jour = []
+            eprouvettes_date_sel = res_date_sel.data if res_date_sel.data else []
+        except Exception as err_sel:
+            eprouvettes_date_sel = []
+            st.warning(f"Note lors du chargement de la date {date_filtre_str} : {err_sel}")
 
-        with st.expander(f"📅 Liste des éprouvettes à écraser aujourd'hui ({today_str}) - [{len(eprouvettes_jour)} éprouvette(s)]", expanded=True):
-            if eprouvettes_jour:
-                rows_jour = []
-                for ep in eprouvettes_jour:
-                    # Calcul de l'âge réel en jours
+        with st.expander(f"📆 Éprouvettes programmées spécifiquement pour le : {date_filtre_str} ({len(eprouvettes_date_sel)} éprouvette(s))", expanded=True):
+            if eprouvettes_date_sel:
+                rows_sel = []
+                for ep in eprouvettes_date_sel:
                     dt_coul_str = ep.get("date_coulee")
                     dt_ecras_str = ep.get("date_ecrasement")
-                    age_reel = "-"
+                    age_calc = "-"
 
                     if dt_coul_str and dt_ecras_str:
                         try:
                             d_coul = datetime.strptime(str(dt_coul_str)[:10], "%Y-%m-%d").date()
                             d_ecras = datetime.strptime(str(dt_ecras_str)[:10], "%Y-%m-%d").date()
-                            age_reel = f"{(d_ecras - d_coul).days} jours"
+                            age_calc = f"{(d_ecras - d_coul).days} jours"
                         except Exception:
-                            age_reel = str(ep.get("echeance", "-"))
+                            age_calc = str(ep.get("echeance", "-"))
 
                     ref_p = str(ep.get("ref_controle") or "").strip()
                     rep_s = str(ep.get("repere_eprouvette", "")).strip()
                     rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
 
                     f_kn_val = float(ep.get("force_kn") or 0.0)
-                    statut_val = "✅ Réalisé" if f_kn_val > 0 else "⏳ En attente"
+                    statut_val = "✅ Écrasée" if f_kn_val > 0 else "⏳ En attente"
 
-                    rows_jour.append({
+                    rows_sel.append({
                         "ID": ep.get("id"),
                         "Référence / Repère": rep_complet,
                         "N° BL": extraire_num_bl(ep),
                         "Ouvrage": ep.get("ouvrage", "-"),
                         "Classe Béton": ep.get("classe_beton", "-"),
                         "Date Coulée": dt_coul_str,
-                        "Date Écrasement": dt_ecras_str,
                         "Échéance Visée": ep.get("echeance", "-"),
-                        "Âge d'Écrasement": age_reel,
+                        "Âge Théorique": age_calc,
                         "Statut": statut_val
                     })
 
-                df_jour = pd.DataFrame(rows_jour)
-                st.dataframe(df_jour, use_container_width=True, hide_index=True)
+                df_sel = pd.DataFrame(rows_sel)
+                st.dataframe(df_sel, use_container_width=True, hide_index=True)
             else:
-                st.info(f"ℹ️ Aucune éprouvette programmée pour aujourd'hui ({today_str}).")
+                st.info(f"ℹ️ Aucune éprouvette programmée spécifiquement pour la date du {date_filtre_str}.")
 
         st.markdown("---")
 
+        # -----------------------------------------------------
+        # FORMULAIRE DE SAISIE PAR LOT DES FORCES D'ÉCRASEMENT
+        # -----------------------------------------------------
         eprouvettes_en_attente = []
         try:
             res_att = (
@@ -1109,7 +1182,7 @@ def show(supabase):
             st.error(f"Erreur de chargement des essais en attente : {e}")
 
         if not eprouvettes_en_attente:
-            st.info("👍 Aucune éprouvette disponible pour la saisie.")
+            st.info("👍 Aucune éprouvette en attente de saisie.")
         else:
             groupes_lots = {}
             for ep in eprouvettes_en_attente:
@@ -1126,7 +1199,7 @@ def show(supabase):
 
                 cle_groupe = (
                     f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ouv_ep}"
-                    f" | Échéance : {ech_ep} (Date : {dt_ecras}) | Lot ID #{b_id_ep}"
+                    f" | Échéance : {ech_ep} (Date Prévue : {dt_ecras}) | Lot ID #{b_id_ep}"
                 )
 
                 if cle_groupe not in groupes_lots:
