@@ -446,12 +446,13 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         f_min_fc7 = f_moy_fc7 = f_max_fc7 = "-"
         f_min_fc28 = f_moy_fc28 = f_max_fc28 = f_std_fc28 = f_cv_fc28 = "-"
 
+    # MISE À JOUR : Libellés modifiés pour conserver uniquement les abréviations
     stat_rows = [
-        ("Minimum (MIN)", f_min_aff, f_min_temp, f_min_fc7, f_min_fc28),
-        ("Moyenne (MOY)", f_moy_aff, f_moy_temp, f_moy_fc7, f_moy_fc28),
-        ("Maximum (MAX)", f_max_aff, f_max_temp, f_max_fc7, f_max_fc28),
-        ("Écart-type (σ)", "-", "-", "-", f_std_fc28),
-        ("Coeff. Variation (CV %)", "-", "-", "-", f_cv_fc28)
+        ("MIN", f_min_aff, f_min_temp, f_min_fc7, f_min_fc28),
+        ("MOY", f_moy_aff, f_moy_temp, f_moy_fc7, f_moy_fc28),
+        ("MAX", f_max_aff, f_max_temp, f_max_fc7, f_max_fc28),
+        ("σ", "-", "-", "-", f_std_fc28),
+        ("CV %", "-", "-", "-", f_cv_fc28)
     ]
 
     for label, v_aff, v_temp, v_fc7, v_fc28 in stat_rows:
@@ -660,8 +661,9 @@ def compute_statistics_df(df_display):
         "Moy. Fc (MPa) [28 Jours]"
     ]
     
+    # MISE À JOUR : Libellés modifiés pour ne garder que les abréviations
     stats_data = {
-        "Indicateur": ["Minimum (MIN)", "Moyenne (MOY)", "Maximum (MAX)", "Écart-type (σ)", "Coeff. Variation (CV %)"]
+        "Indicateur": ["MIN", "MOY", "MAX", "σ", "CV %"]
     }
     
     for col in cols_target:
