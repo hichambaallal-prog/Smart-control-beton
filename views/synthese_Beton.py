@@ -281,14 +281,14 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     mid_col_letter = get_column_letter(mid_col_idx)
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
-    # Entête - Titre sans le mot (MOYENNES)
+    # Entête - Titre
     ws.merge_cells(f"A1:{last_col_letter}2")
     ws["A1"].value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU CONTRÔLE BÉTON"
     ws["A1"].font = font_title
     ws["A1"].fill = fill_title
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # Hauteur des lignes 1 et 2 à 25
+    # Hauteur des lignes 1 et 2
     ws.row_dimensions[1].height = 25
     ws.row_dimensions[2].height = 25
 
@@ -375,17 +375,17 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         ws.row_dimensions[row_idx].height = 28
         row_idx += 1
 
-    # Application des largeurs de colonnes spécifiques
+    # Application des largeurs de colonnes spécifiques révisées
     specific_widths = {
         'A': 8,
-        'B': 10,
+        'B': 11,
         'C': 10,
         'D': 30,
         'E': 10,
         'F': 10,
-        'G': 13,
-        'H': 13,
-        'I': 13
+        'G': 13.5,
+        'H': 13.5,
+        'I': 13.5
     }
 
     for col_letter, width in specific_widths.items():
