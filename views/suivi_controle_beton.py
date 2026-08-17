@@ -358,6 +358,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["G14"].font = font_regular
     ws["G14"].alignment = align_center
 
+    ws.merge_cells("H14:H14")
     ws["H14"] = "Moyenne"
     ws["H14"].font = font_regular
     ws["H14"].alignment = align_center
@@ -556,10 +557,23 @@ def generer_pv_excel(export_data, infos_header):
 
 
 # =========================================================
+# FONCTION UTILITAIRE : EXPORT EXCEL DU PLANNING DE LA DATE
+# =========================================================
+def exporter_dataframe_excel(df, date_chaine):
+    """Génère un fichier Excel à partir du DataFrame de la liste du planning."""
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=f"Planning_{date_chaine}")
+
+    buffer.seek(0)
+    return buffer
+
+
+# =========================================================
 # FONCTIONS AUXILIAIRES DE SUPABASE
 # =========================================================
 def obtenir_historique_betonnage(supabase, betonnage_id):
-    """Récupère l'intégralité des éprouvettes (écrasées ou programmées) pour un même béton (betonnage_id)."""
+    """Récupère l'intégralité des éprouvettes pour un même béton (betonnage_id)."""
     if not betonnage_id:
         return []
     try:
@@ -625,9 +639,7 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # ---------------------------------------------------------
-    # 🔒 SÉCURISATION : RESTRICTION D'ACCÈS DU MODULE
-    # ---------------------------------------------------------
+    # RESTRICTION D'ACCÈS
     role_utilisateur = str(
         st.session_state.get("user_role")
         or st.session_state.get("role")
@@ -639,9 +651,7 @@ def show(supabase):
     if role_utilisateur not in roles_autorises and not st.session_state.get("is_admin", False):
         st.error("⛔ **Accès Restreint**")
         st.warning(
-            "Ce module (Programmation, Saisie d'écrasement et Historique) est "
-            "réservé exclusivement au personnel du **Laboratoire de Contrôle**.\n\n"
-            "Les utilisateurs du chantier ont uniquement accès au suivi des bétonnages."
+            "Ce module est réservé exclusivement au personnel du **Laboratoire de Contrôle**."
         )
         return
 
@@ -657,7 +667,7 @@ def show(supabase):
         st.sidebar.subheader("🔒 Mode Administration")
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Edition", value=False)
         if mode_admin:
-            st.sidebar.warning("⚠️ Vous êtes en Mode Administrateur. Vous avez le droit de modifier/supprimer les données.")
+            st.sidebar.warning("⚠️ Mode Administrateur Actif.")
 
     tab_prog, tab_saisie, tab_hist = st.tabs([
         "📅 Phase 1 : Programmation",
@@ -683,9 +693,7 @@ def show(supabase):
     except Exception as e:
         st.error(f"❌ Erreur lors du chargement des bétonnages : {e}")
 
-    # ---------------------------------------------------------
     # PHASE 1 : PROGRAMMATION
-    # ---------------------------------------------------------
     with tab_prog:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
@@ -718,9 +726,7 @@ def show(supabase):
                 betonnages_non_programmes.append(b)
 
         if not betonnages_non_programmes:
-            st.info(
-                "ℹ️ Aucun bétonnage en attente de programmation (tous les prélèvements ont déjà été entièrement programmés)."
-            )
+            st.info("ℹ️ Aucun bétonnage en attente de programmation.")
         else:
             options_beton = {
                 (
@@ -952,7 +958,6 @@ def show(supabase):
 
                     succes_cnt = 0
                     for rep in reperes_p:
-                        # SUPPRESSION des champs non présents dans la table `suivi_controle_beton`
                         payload_prog = {
                             "betonnage_id": b_id,
                             "num_bl": num_bl_p,
@@ -987,38 +992,7 @@ def show(supabase):
                         )
                         st.rerun()
 
-        if mode_admin:
-            st.markdown("---")
-            st.subheader("🛠️ [ADMIN] Gérer / Modifier les Programmations Existantes")
-            try:
-                prog_existantes = (
-                    supabase.table("suivi_controle_beton")
-                    .select("*")
-                    .or_("force_kn.is.null,force_kn.eq.0")
-                    .execute()
-                )
-                if prog_existantes.data:
-                    df_prog = pd.DataFrame(prog_existantes.data)
-                    st.write("Éprouvettes programmées en attente d'écrasement :")
-
-                    id_to_del = st.selectbox(
-                        "Sélectionner une éprouvette programmée à supprimer :",
-                        df_prog["id"].tolist(),
-                        format_func=lambda x: f"ID #{x} | Repère: {df_prog[df_prog['id']==x]['repere_eprouvette'].values[0]} | Ouvrage: {df_prog[df_prog['id']==x]['ouvrage'].values[0]}"
-                    )
-
-                    if st.button("🗑️ Supprimer l'éprouvette programmée", type="secondary"):
-                        supabase.table("suivi_controle_beton").delete().eq("id", id_to_del).execute()
-                        st.success(f"Éprouvette #{id_to_del} supprimée !")
-                        st.rerun()
-                else:
-                    st.info("Aucune programmation modifiable.")
-            except Exception as e:
-                st.error(f"Erreur de lecture : {e}")
-
-    # ---------------------------------------------------------
     # PHASE 2 : PLANNING & SAISIE DES ÉCRASEMENTS
-    # ---------------------------------------------------------
     with tab_saisie:
         st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
 
@@ -1051,8 +1025,7 @@ def show(supabase):
         if retards_list:
             nb_retards = len(retards_list)
             st.error(
-                f"🚨 **ATTENTION : {nb_retards} éprouvette(s) non écrasée(s) ont atteint ou dépassé leur date d'échéance !** "
-                f"Ne ratez aucune date ci-dessous :"
+                f"🚨 **ATTENTION : {nb_retards} éprouvette(s) non écrasée(s) ont atteint ou dépassé leur date d'échéance !**"
             )
             
             rows_retard = []
@@ -1144,6 +1117,19 @@ def show(supabase):
 
                 df_sel = pd.DataFrame(rows_sel)
                 st.dataframe(df_sel, use_container_width=True, hide_index=True)
+
+                # =========================================================
+                # BOUTON DE TÉLÉCHARGEMENT EXCEL (NOUVEAUTÉ)
+                # =========================================================
+                excel_planning_date = exporter_dataframe_excel(df_sel, date_filtre_str)
+                st.download_button(
+                    label=f"📊 Télécharger cette liste en Excel ({date_filtre_str})",
+                    data=excel_planning_date,
+                    file_name=f"Planning_Ecrasement_{date_filtre_str}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="btn_download_planning_excel",
+                )
             else:
                 st.info(f"ℹ️ Aucune éprouvette programmée spécifiquement pour la date du {date_filtre_str}.")
 
@@ -1380,7 +1366,7 @@ def show(supabase):
                     "force_kn": f_kn,
                     "fc_mpa": fc_mpa,
                     "date_essai": ep_h.get("date_ecrasement", "-"),
-                    "age": str(ep_h.get("echeance", "28"))
+                    "age": str(item.get("echeance", "28"))
                     .replace(" jours", "")
                     .replace("j", ""),
                     "statut": statut,
@@ -1497,9 +1483,7 @@ def show(supabase):
                             f"✅ Lot de {succes_lot} éprouvettes mis à jour / validé !"
                         )
 
-    # ---------------------------------------------------------
     # HISTORIQUE COMPLET & ÉDITION DE PV
-    # ---------------------------------------------------------
     with tab_hist:
         st.subheader("📋 Historique Général & Consultation des PVs")
         try:
@@ -1657,29 +1641,6 @@ def show(supabase):
                 st.markdown("---")
                 st.markdown("##### 📊 Base de données globale")
 
-                if mode_admin:
-                    st.warning("🛠️ [ADMIN] Zone de Suppression Définitive")
-                    id_del_hist = st.number_input("Entrez l'ID de l'essai à supprimer :", min_value=1, step=1)
-                    if st.button("❌ Supprimer définitivement l'entrée"):
-                        supabase.table("suivi_controle_beton").delete().eq("id", id_del_hist).execute()
-                        st.success(f"Entrée #{id_del_hist} supprimée de la base de données.")
-                        st.rerun()
-
-                colonnes_ordre = [
-                    "id",
-                    "ref_controle",
-                    "repere_eprouvette",
-                    "date_coulee",
-                    "classe_beton",
-                    "ouvrage",
-                    "date_ecrasement",
-                    "echeance",
-                    "force_kn",
-                    "fc_mpa",
-                    "technicien",
-                ]
-
-                # Récupération dynamique depuis la table parent
                 if "affaissement" not in df_all.columns:
                     df_all["affaissement"] = None
                 if "temperature" not in df_all.columns:
@@ -1696,6 +1657,20 @@ def show(supabase):
                     "affaissement": "affaissement_mm",
                     "temperature": "temp_beton_C",
                 }
+
+                colonnes_ordre = [
+                    "id",
+                    "ref_controle",
+                    "repere_eprouvette",
+                    "date_coulee",
+                    "classe_beton",
+                    "ouvrage",
+                    "date_ecrasement",
+                    "echeance",
+                    "force_kn",
+                    "fc_mpa",
+                    "technicien",
+                ]
 
                 cols_disponibles = [c for c in colonnes_ordre if c in df_all.columns]
                 cols_restantes = [c for c in df_all.columns if c not in cols_disponibles]
