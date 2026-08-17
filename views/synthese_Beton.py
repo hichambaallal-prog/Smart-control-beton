@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from datetime import datetime, date
 import io
 import re
@@ -243,7 +244,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws = wb.active
     ws.title = "Synthèse Contrôle Béton"
 
-    # Configuration de la page en PORTRAIT A4
+    # Configuration A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -259,6 +260,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     color_header = "2D572C"
     color_card_bg = "F7F9FA"
     color_kpi_bg = "EDF2F8"
+    color_stat_hdr = "1F4E79"
 
     font_title = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
     font_section = Font(name="Calibri", size=12, bold=True, color=color_primary)
@@ -271,11 +273,12 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     fill_th = PatternFill(start_color=color_header, end_color=color_header, fill_type="solid")
     fill_card = PatternFill(start_color=color_card_bg, end_color=color_card_bg, fill_type="solid")
     fill_kpi = PatternFill(start_color=color_kpi_bg, end_color=color_kpi_bg, fill_type="solid")
+    fill_stat_hdr = PatternFill(start_color=color_stat_hdr, end_color=color_stat_hdr, fill_type="solid")
 
     thin_border_side = Side(style='thin', color='B0C4DE')
     thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
 
-    nb_cols = max(len(df_data.columns), 6)
+    nb_cols = max(len(df_data.columns), 9)
     last_col_letter = get_column_letter(nb_cols)
     mid_col_idx = nb_cols // 2
     mid_col_letter = get_column_letter(mid_col_idx)
@@ -288,7 +291,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws["A1"].fill = fill_title
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # Hauteur des lignes 1 et 2
     ws.row_dimensions[1].height = 25
     ws.row_dimensions[2].height = 25
 
@@ -344,7 +346,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    # Tableau
+    # Tableau Données
     row_idx += 3
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📋 MOYENNE DES ÉCRASEMENTS PAR ÉCHÉANCE"
@@ -362,6 +364,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws.row_dimensions[row_idx].height = 35
     row_idx += 1
 
+    start_data_row = row_idx
     for row_data in df_data.itertuples(index=False):
         for col_num, val in enumerate(row_data, 1):
             cell = ws.cell(row=row_idx, column=col_num)
@@ -374,20 +377,110 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         ws.row_dimensions[row_idx].height = 28
         row_idx += 1
+    end_data_row = row_idx - 1
 
-    # Application des largeurs de colonnes spécifiques (B: 11, G, H, I: 14)
-    specific_widths = {
-        'A': 8,
-        'B': 11,
-        'C': 10,
-        'D': 30,
-        'E': 10,
-        'F': 10,
-        'G': 14,
-        'H': 14,
-        'I': 14
+    # =========================================================
+    # TABLEAU DE SYNTHÈSE STATISTIQUE DANS EXCEL
+    # =========================================================
+    row_idx += 2
+    ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
+    ws[f"A{row_idx}"] = "📈 SYNTHÈSE STATISTIQUE DES PARAMÈTRES"
+    ws[f"A{row_idx}"].font = font_section
+    row_idx += 1
+
+    stat_headers = ["Indicateur", "Affaissement (mm)", "Temp. Béton (°C)", "Fc (MPa) [7 Jours]", "Fc (MPa) [28 Jours]"]
+    
+    # Headers statistiques
+    for idx, h in enumerate(stat_headers):
+        col_start = 1 if idx == 0 else 2 + (idx - 1) * 2
+        col_end = 1 if idx == 0 else col_start + 1
+        
+        if col_start == col_end:
+            c = ws.cell(row=row_idx, column=col_start)
+            c.value = h
+        else:
+            ws.merge_cells(start_row=row_idx, start_column=col_start, end_row=row_idx, end_column=col_end)
+            c = ws.cell(row=row_idx, column=col_start)
+            c.value = h
+            
+        c.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        c.fill = fill_stat_hdr
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for c_i in range(1, nb_cols + 1):
+        ws.cell(row=row_idx, column=c_i).border = thin_border
+
+    ws.row_dimensions[row_idx].height = 25
+    row_idx += 1
+
+    # Correspondance colonnes Excel
+    col_map_excel = {
+        "aff": "E",
+        "temp": "F",
+        "fc7": "H",
+        "fc28": "I"
     }
 
+    if start_data_row <= end_data_row:
+        f_min_aff = f"=MIN({col_map_excel['aff']}{start_data_row}:{col_map_excel['aff']}{end_data_row})"
+        f_moy_aff = f"=AVERAGE({col_map_excel['aff']}{start_data_row}:{col_map_excel['aff']}{end_data_row})"
+        f_max_aff = f"=MAX({col_map_excel['aff']}{start_data_row}:{col_map_excel['aff']}{end_data_row})"
+
+        f_min_temp = f"=MIN({col_map_excel['temp']}{start_data_row}:{col_map_excel['temp']}{end_data_row})"
+        f_moy_temp = f"=AVERAGE({col_map_excel['temp']}{start_data_row}:{col_map_excel['temp']}{end_data_row})"
+        f_max_temp = f"=MAX({col_map_excel['temp']}{start_data_row}:{col_map_excel['temp']}{end_data_row})"
+
+        f_min_fc7 = f"=MIN({col_map_excel['fc7']}{start_data_row}:{col_map_excel['fc7']}{end_data_row})"
+        f_moy_fc7 = f"=AVERAGE({col_map_excel['fc7']}{start_data_row}:{col_map_excel['fc7']}{end_data_row})"
+        f_max_fc7 = f"=MAX({col_map_excel['fc7']}{start_data_row}:{col_map_excel['fc7']}{end_data_row})"
+
+        f_min_fc28 = f"=MIN({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
+        f_moy_fc28 = f"=AVERAGE({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
+        f_max_fc28 = f"=MAX({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
+
+        f_std_fc28 = f"=STDEV.S({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
+        f_cv_fc28 = f"=IFERROR(({col_map_excel['fc28']}{row_idx+3}/{col_map_excel['fc28']}{row_idx+1})*100, 0)"
+    else:
+        f_min_aff = f_moy_aff = f_max_aff = "-"
+        f_min_temp = f_moy_temp = f_max_temp = "-"
+        f_min_fc7 = f_moy_fc7 = f_max_fc7 = "-"
+        f_min_fc28 = f_moy_fc28 = f_max_fc28 = f_std_fc28 = f_cv_fc28 = "-"
+
+    stat_rows = [
+        ("Minimum (MIN)", f_min_aff, f_min_temp, f_min_fc7, f_min_fc28),
+        ("Moyenne (MOY)", f_moy_aff, f_moy_temp, f_moy_fc7, f_moy_fc28),
+        ("Maximum (MAX)", f_max_aff, f_max_temp, f_max_fc7, f_max_fc28),
+        ("Écart-type (σ)", "-", "-", "-", f_std_fc28),
+        ("Coeff. Variation (CV %)", "-", "-", "-", f_cv_fc28)
+    ]
+
+    for label, v_aff, v_temp, v_fc7, v_fc28 in stat_rows:
+        ws.cell(row=row_idx, column=1, value=label).font = font_bold
+        ws.cell(row=row_idx, column=1).alignment = Alignment(horizontal="left", vertical="center")
+
+        vals = [v_aff, v_temp, v_fc7, v_fc28]
+        for idx, val in enumerate(vals):
+            c_start = 2 + idx * 2
+            c_end = c_start + 1
+            ws.merge_cells(start_row=row_idx, start_column=c_start, end_row=row_idx, end_column=c_end)
+            c = ws.cell(row=row_idx, column=c_start)
+            c.value = val
+            c.font = font_normal
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            if isinstance(val, str) and val.startswith("="):
+                c.number_format = '0.0'
+
+        for c_i in range(1, nb_cols + 1):
+            ws.cell(row=row_idx, column=c_i).border = thin_border
+
+        ws.row_dimensions[row_idx].height = 22
+        row_idx += 1
+
+    # Largeurs de colonnes
+    specific_widths = {
+        'A': 8, 'B': 11, 'C': 10, 'D': 28, 'E': 10,
+        'F': 10, 'G': 14, 'H': 14, 'I': 14
+    }
     for col_letter, width in specific_widths.items():
         ws.column_dimensions[col_letter].width = width
 
@@ -553,6 +646,44 @@ def format_controle_dataframe(df_filtered):
     if "date_dt" in df_display.columns:
         df_display = df_display.drop(columns=["date_dt"])
     return df_display
+
+
+# =========================================================
+# CALCULS STATISTIQUES PANDAS
+# =========================================================
+
+def compute_statistics_df(df_display):
+    cols_target = [
+        "Affaissement (mm)", 
+        "Temp. Béton (°C)", 
+        "Moy. Fc (MPa) [7 Jours]", 
+        "Moy. Fc (MPa) [28 Jours]"
+    ]
+    
+    stats_data = {
+        "Indicateur": ["Minimum (MIN)", "Moyenne (MOY)", "Maximum (MAX)", "Écart-type (σ)", "Coeff. Variation (CV %)"]
+    }
+    
+    for col in cols_target:
+        if col in df_display.columns:
+            s = pd.to_numeric(df_display[col], errors='coerce').dropna()
+            if not s.empty:
+                v_min = round(s.min(), 1)
+                v_moy = round(s.mean(), 1)
+                v_max = round(s.max(), 1)
+                
+                if col == "Moy. Fc (MPa) [28 Jours]":
+                    v_std = round(s.std(ddof=1), 2) if len(s) > 1 else 0.0
+                    v_cv = round((v_std / v_moy) * 100, 1) if v_moy > 0 else 0.0
+                    stats_data[col] = [v_min, v_moy, v_max, v_std, f"{v_cv} %"]
+                else:
+                    stats_data[col] = [v_min, v_moy, v_max, "-", "-"]
+            else:
+                stats_data[col] = ["-", "-", "-", "-", "-"]
+        else:
+            stats_data[col] = ["-", "-", "-", "-", "-"]
+
+    return pd.DataFrame(stats_data)
 
 
 # =========================================================
@@ -772,6 +903,10 @@ def show(supabase):
                     )
                     st.dataframe(df_display_cj, use_container_width=True)
 
+                    st.markdown("### 📈 Synthèse Statistique")
+                    df_stats_j = compute_statistics_df(df_display_cj)
+                    st.dataframe(df_stats_j, use_container_width=True)
+
         with tab_m_c:
             st.markdown("### Bilan mensuel par classe de béton")
             col_m1, col_m2 = st.columns(2)
@@ -807,3 +942,7 @@ def show(supabase):
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                     st.dataframe(df_display_cm, use_container_width=True)
+
+                    st.markdown("### 📈 Synthèse Statistique Mensuelle")
+                    df_stats_m = compute_statistics_df(df_display_cm)
+                    st.dataframe(df_stats_m, use_container_width=True)
