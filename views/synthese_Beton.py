@@ -265,7 +265,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
     ws.merge_cells(f"A1:{last_col_letter}2")
-    ws["A1"].value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU CONTRÔLE BÉTON"
+    ws["A1"].value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU CONTRÔLE BÉTON (MOYENNES)"
     ws["A1"].font = font_title
     ws["A1"].fill = fill_title
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -306,13 +306,13 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
     row_idx += 1
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
-    ws[f"A{row_idx}"].value = "Nombre Total d'Éprouvettes Contrôlées"
+    ws[f"A{row_idx}"].value = "Nombre Total de Prélèvements Contrôlés"
     ws[f"A{row_idx}"].font = font_bold
     ws[f"A{row_idx}"].fill = fill_kpi
     ws[f"A{row_idx}"].alignment = Alignment(horizontal="center", vertical="center")
 
     ws.merge_cells(f"A{row_idx+1}:{last_col_letter}{row_idx+1}")
-    ws[f"A{row_idx+1}"].value = f"{len(df_data)} ligne(s) de prélèvement"
+    ws[f"A{row_idx+1}"].value = f"{len(df_data)} prélèvement(s)"
     ws[f"A{row_idx+1}"].font = font_kpi_val
     ws[f"A{row_idx+1}"].fill = fill_kpi
     ws[f"A{row_idx+1}"].alignment = Alignment(horizontal="center", vertical="center")
@@ -323,7 +323,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
     row_idx += 3
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
-    ws[f"A{row_idx}"] = "📋 DÉTAIL DES ESSAIS ET ÉCRASEMENTS PAR ÉCHÉANCE"
+    ws[f"A{row_idx}"] = "📋 MOYENNE DES ÉCRASEMENTS PAR ÉCHÉANCE"
     ws[f"A{row_idx}"].font = font_section
     row_idx += 1
 
@@ -378,7 +378,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
             ws.cell(row=r, column=c).border = thin_border
 
     for col_idx in range(1, nb_cols + 1):
-        ws.column_dimensions[get_column_letter(col_idx)].width = 16
+        ws.column_dimensions[get_column_letter(col_idx)].width = 18
 
     wb.save(output)
     output.seek(0)
@@ -386,12 +386,13 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 # =========================================================
-# 2. CHARGEMENT & TRAITEMENT SUPABASE (PIVOT PAR ECHEANCE)
+# 2. CHARGEMENT & TRAITEMENT SUPABASE (MOYENNE PAR ECHEANCE)
 # =========================================================
 
 def load_and_process_controle_data(supabase):
     """
-    Charge les données et pivote les échéances (3J, 7J, 28J) horizontalement.
+    Charge les données de contrôle et calcule la MOYENNE des résistances (Fc) 
+    par référence de contrôle (ref_controle) pour chaque échéance (3J, 7J, 28J).
     """
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_raw = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
@@ -399,7 +400,7 @@ def load_and_process_controle_data(supabase):
     if df_raw.empty:
         return pd.DataFrame()
 
-    # Nettoyage des chaînes d'échéance pour uniformisation
+    # Nettoyage des chaînes d'échéance
     def clean_echeance(val):
         val_str = str(val).lower().strip()
         if "3" in val_str:
@@ -415,8 +416,12 @@ def load_and_process_controle_data(supabase):
     else:
         df_raw["echeance_clean"] = ""
 
-    # Colonnes clés pour identifier un groupe d'éprouvettes
-    group_cols = ["ref_controle", "repere_eprouvette", "date_coulee", "classe_beton", "ouvrage"]
+    # Conversion de la valeur Fc en numérique
+    if "fc_mpa" in df_raw.columns:
+        df_raw["fc_mpa"] = pd.to_numeric(df_raw["fc_mpa"], errors="coerce")
+
+    # Groupement par prélèvement
+    group_cols = ["ref_controle", "date_coulee", "classe_beton", "ouvrage"]
     existing_group_cols = [c for c in group_cols if c in df_raw.columns]
 
     if not existing_group_cols:
@@ -431,8 +436,6 @@ def load_and_process_controle_data(supabase):
         df_raw["date_dt"] = pd.NaT
 
     pivot_rows = []
-    
-    # Regroupement horizontal
     grouped = df_raw.groupby(existing_group_cols, dropna=False)
 
     for group_key, group_df in grouped:
@@ -440,31 +443,27 @@ def load_and_process_controle_data(supabase):
         row_dict = {col: first_row[col] for col in existing_group_cols}
         row_dict["date_dt"] = group_df["date_dt"].dropna().min() if not group_df["date_dt"].dropna().empty else pd.NaT
 
-        # Initialisation des colonnes d'échéances
+        # Calcul des moyennes par échéance
         for ech in ["3 jours", "7 jours", "28 jours"]:
-            row_dict[f"fc_mpa_{ech}"] = None
-
-        # Remplissage des valeurs fc_mpa selon l'échéance
-        for _, r in group_df.iterrows():
-            ech = r["echeance_clean"]
-            fc_val = r.get("fc_mpa")
-            if ech in ["3 jours", "7 jours", "28 jours"]:
-                row_dict[f"fc_mpa_{ech}"] = fc_val
+            vals = group_df[group_df["echeance_clean"] == ech]["fc_mpa"].dropna()
+            if not vals.empty:
+                row_dict[f"fc_mpa_{ech}"] = round(vals.mean(), 1)
+            else:
+                row_dict[f"fc_mpa_{ech}"] = None
 
         pivot_rows.append(row_dict)
 
     df_pivoted = pd.DataFrame(pivot_rows)
 
-    # Renommage des colonnes pour un affichage propre
+    # Intitulés de colonnes
     rename_map = {
         "ref_controle": "Réf. Contrôle",
-        "repere_eprouvette": "Repère Éprouvette",
         "date_coulee": "Date Coulée",
         "classe_beton": "Classe Béton",
         "ouvrage": "Ouvrage",
-        "fc_mpa_3 jours": "Fc (MPa) [3 Jours]",
-        "fc_mpa_7 jours": "Fc (MPa) [7 Jours]",
-        "fc_mpa_28 jours": "Fc (MPa) [28 Jours]"
+        "fc_mpa_3 jours": "Moy. Fc (MPa) [3 Jours]",
+        "fc_mpa_7 jours": "Moy. Fc (MPa) [7 Jours]",
+        "fc_mpa_28 jours": "Moy. Fc (MPa) [28 Jours]"
     }
 
     df_pivoted = df_pivoted.rename(columns=rename_map)
@@ -650,7 +649,7 @@ def show(supabase):
                 st.error(f"Erreur de chargement : {e}")
 
     with main_tab_controle:
-        st.subheader("Bilan du Contrôle Béton (Vue Horizontalisée par Échéance)")
+        st.subheader("Bilan du Contrôle Béton (Moyennes par Prélèvement)")
         tab_j_c, tab_m_c = st.tabs(["📅 Bilan Journalier", "📅 Bilan Mensuel"])
 
         try:
