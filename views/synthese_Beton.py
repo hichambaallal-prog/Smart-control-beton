@@ -14,10 +14,6 @@ from openpyxl.utils import get_column_letter
 # =========================================================
 
 def extract_numeric(val):
-    """
-    Extrait les chiffres et décimales d'une chaîne ou d'une valeur.
-    Exemple: '200 mm' -> 200, '32.0 °C' -> 32.0
-    """
     if pd.isna(val) or val is None:
         return None
     val_str = str(val).replace(',', '.')
@@ -406,22 +402,27 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 # =========================================================
-# 2. CHARGEMENT & TRAITEMENT SUPABASE
+# 2. CHARGEMENT & TRAITEMENT SUPABASE AVEC RECHERCHE CROISÉE
 # =========================================================
 
 def load_and_process_controle_data(supabase):
     """
-    Charge les données de contrôle et calcule la MOYENNE des résistances (Fc) par référence.
-    Mappe dynamiquement les colonnes de température et d'affaissement de Supabase
-    pour les insérer immédiatement après la colonne 'ouvrage'.
+    Charge les données de contrôle et effectue une jointure/croisement avec 
+    la table 'suivi_betonnage' pour récupérer automatiquement l'affaissement 
+    et la température si ils ne sont pas présents dans 'suivi_controle_beton'.
     """
+    # 1. Chargement de la table des écrasements (contrôle)
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_raw = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
     if df_raw.empty:
         return pd.DataFrame()
 
-    # Mapping dynamique pour harmoniser les variations de noms de colonnes Supabase
+    # 2. Chargement de la table de suivi du bétonnage (source de l'affaissement/température)
+    res_betonnage = supabase.table("suivi_betonnage").select("*").execute()
+    df_betonnage = pd.DataFrame(res_betonnage.data) if res_betonnage and res_betonnage.data else pd.DataFrame()
+
+    # Harmonisation initiale des colonnes dans df_raw
     col_mapping_input = {
         'affaissement': 'affaissement_mm',
         'affaissement_mm': 'affaissement_mm',
@@ -431,11 +432,20 @@ def load_and_process_controle_data(supabase):
     }
     df_raw = df_raw.rename(columns={k: v for k, v in col_mapping_input.items() if k in df_raw.columns})
 
-    # S'assurer que les colonnes existent
     if "affaissement_mm" not in df_raw.columns:
         df_raw["affaissement_mm"] = None
     if "temp_beton_C" not in df_raw.columns:
         df_raw["temp_beton_C"] = None
+
+    # Harmonisation des colonnes dans df_betonnage pour le croisement
+    if not df_betonnage.empty:
+        df_betonnage = df_betonnage.rename(columns={
+            'affaissement': 'affaissement_mm_b',
+            'temperature': 'temp_beton_C_b',
+            'prelevement': 'ref_controle_b',
+            'date_livraison': 'date_coulee_b',
+            'ouvrage': 'ouvrage_b'
+        })
 
     # Nettoyage des chaînes d'échéance
     def clean_echeance(val):
@@ -453,18 +463,15 @@ def load_and_process_controle_data(supabase):
     else:
         df_raw["echeance_clean"] = ""
 
-    # Conversion de Fc en numérique
     if "fc_mpa" in df_raw.columns:
         df_raw["fc_mpa"] = pd.to_numeric(df_raw["fc_mpa"], errors="coerce")
 
-    # Groupement par prélèvement / contrôle
     base_group_cols = ["ref_controle", "date_coulee", "classe_beton", "ouvrage"]
     existing_group_cols = [c for c in base_group_cols if c in df_raw.columns]
 
     if not existing_group_cols:
         return pd.DataFrame()
 
-    # Colonne de date pour le filtrage
     if "date_coulee" in df_raw.columns:
         df_raw["date_dt"] = pd.to_datetime(df_raw["date_coulee"], errors="coerce")
     elif "date_ecrasement" in df_raw.columns:
@@ -479,17 +486,45 @@ def load_and_process_controle_data(supabase):
         first_row = group_df.iloc[0]
         row_dict = {col: first_row[col] for col in existing_group_cols}
         
-        # Récupération sécurisée de la première valeur non nulle du groupe
+        # 1er essai : Chercher dans la table de contrôle directe
         aff_idx = group_df["affaissement_mm"].dropna().first_valid_index()
         temp_idx = group_df["temp_beton_C"].dropna().first_valid_index()
 
-        row_dict["affaissement_mm"] = group_df.loc[aff_idx, "affaissement_mm"] if aff_idx is not None else None
-        row_dict["temp_beton_C"] = group_df.loc[temp_idx, "temp_beton_C"] if temp_idx is not None else None
+        aff_val = group_df.loc[aff_idx, "affaissement_mm"] if aff_idx is not None else None
+        temp_val = group_df.loc[temp_idx, "temp_beton_C"] if temp_idx is not None else None
+
+        # 2ème essai (Croisement Fallback) : Si None, récupérer depuis suivi_betonnage
+        if (pd.isna(aff_val) or pd.isna(temp_val)) and not df_betonnage.empty:
+            ref = str(row_dict.get("ref_controle", "")).strip()
+            dt_str = str(row_dict.get("date_coulee", "")).strip()
+            ovr = str(row_dict.get("ouvrage", "")).strip()
+
+            matched_b = pd.DataFrame()
+            # Priorité 1: Match par Référence du contrôle / Prélèvement
+            if ref and "ref_controle_b" in df_betonnage.columns:
+                matched_b = df_betonnage[df_betonnage["ref_controle_b"].astype(str).str.strip() == ref]
+
+            # Priorité 2: Match par Date Coulée + Ouvrage si pas de correspondance par ref
+            if matched_b.empty and dt_str and ovr and "date_coulee_b" in df_betonnage.columns and "ouvrage_b" in df_betonnage.columns:
+                matched_b = df_betonnage[
+                    (df_betonnage["date_coulee_b"].astype(str).str.strip() == dt_str) &
+                    (df_betonnage["ouvrage_b"].astype(str).str.strip() == ovr)
+                ]
+
+            if not matched_b.empty:
+                b_row = matched_b.iloc[0]
+                if pd.isna(aff_val) and "affaissement_mm_b" in b_row:
+                    aff_val = b_row["affaissement_mm_b"]
+                if pd.isna(temp_val) and "temp_beton_C_b" in b_row:
+                    temp_val = b_row["temp_beton_C_b"]
+
+        row_dict["affaissement_mm"] = extract_numeric(aff_val)
+        row_dict["temp_beton_C"] = extract_numeric(temp_val)
 
         valid_dates = group_df["date_dt"].dropna()
         row_dict["date_dt"] = valid_dates.min() if not valid_dates.empty else pd.NaT
 
-        # Calcul des moyennes par échéance
+        # Moyennes des écrasements
         for ech in ["3 jours", "7 jours", "28 jours"]:
             vals = group_df[group_df["echeance_clean"] == ech]["fc_mpa"].dropna()
             if not vals.empty:
@@ -501,7 +536,7 @@ def load_and_process_controle_data(supabase):
 
     df_pivoted = pd.DataFrame(pivot_rows)
 
-    # Ordre strict des colonnes : Affaissement et Température placés directement après Ouvrage
+    # Réorganisation explicite avec colonnes insérées juste après Ouvrage
     desired_order = [
         "ref_controle", 
         "date_coulee", 
@@ -535,7 +570,6 @@ def load_and_process_controle_data(supabase):
 
 
 def format_controle_dataframe(df_filtered):
-    """Prépare le dataframe d'affichage en retirant la colonne technique date_dt."""
     df_display = df_filtered.copy()
     if "date_dt" in df_display.columns:
         df_display = df_display.drop(columns=["date_dt"])
