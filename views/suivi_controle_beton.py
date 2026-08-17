@@ -557,13 +557,102 @@ def generer_pv_excel(export_data, infos_header):
 
 
 # =========================================================
-# FONCTION UTILITAIRE : EXPORT EXCEL DU PLANNING DE LA DATE
+# FONCTION UTILITAIRE : EXPORT EXCEL DU PLANNING (FORMAT A4 PRO)
 # =========================================================
 def exporter_dataframe_excel(df, date_chaine):
-    """Génère un fichier Excel à partir du DataFrame de la liste du planning."""
+    """Génère un fichier Excel stylisé, coloré et prêt à l'impression A4 Paysage."""
     buffer = io.BytesIO()
+    
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=f"Planning_{date_chaine}")
+        sheet_name = f"Planning_{date_chaine}"
+        
+        # On écrit d'abord le DataFrame en réservant les premières lignes pour le titre
+        df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=3)
+        
+        wb = writer.book
+        ws = writer.sheets[sheet_name]
+        
+        # 1. Configuration de l'impression A4 Paysage
+        ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+        ws.page_setup.paperSize = ws.PAPERSIZE_A4
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.page_margins = PageMargins(left=0.4, right=0.4, top=0.5, bottom=0.5, header=0.3, footer=0.3)
+        
+        # 2. Styles de polices, couleurs et bordures
+        font_title = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+        font_header = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        font_body = Font(name="Calibri", size=9.5)
+        font_bold = Font(name="Calibri", size=9.5, bold=True)
+        
+        fill_title = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")  # Bleu Nuit
+        fill_header = PatternFill(start_color="2F5597", end_color="2F5597", fill_type="solid") # Bleu Standard
+        fill_zebra = PatternFill(start_color="F2F4F8", end_color="F2F4F8", fill_type="solid")  # Gris/Bleu clair
+        fill_statut_ok = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid") # Vert clair
+        
+        thin_side = Side(border_style="thin", color="D9D9D9")
+        border_cell = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+        
+        align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        
+        # 3. Banner / Titre principal (Lignes 1-2)
+        max_col = len(df.columns)
+        ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=max_col)
+        title_cell = ws.cell(row=1, column=1)
+        title_cell.value = f"PLANNING ET SUIVI DES ÉCRASEMENTS BÉTON — {date_chaine}"
+        title_cell.font = font_title
+        title_cell.alignment = align_center
+        
+        for r in range(1, 3):
+            for c in range(1, max_col + 1):
+                ws.cell(row=r, column=c).fill = fill_title
+        
+        # 4. En-têtes de colonnes (Ligne 4)
+        ws.row_dimensions[4].height = 25
+        for col_idx, col_name in enumerate(df.columns, 1):
+            cell = ws.cell(row=4, column=col_idx)
+            cell.font = font_header
+            cell.fill = fill_header
+            cell.alignment = align_center
+            cell.border = border_cell
+        
+        # 5. Formatage des données (Ligne 5 à Fin)
+        start_row_data = 5
+        for row_idx, row in df.iterrows():
+            curr_row = start_row_data + row_idx
+            ws.row_dimensions[curr_row].height = 20
+            is_even = (row_idx % 2 == 0)
+            
+            for col_idx, value in enumerate(row, 1):
+                cell = ws.cell(row=curr_row, column=col_idx)
+                cell.font = font_body
+                cell.border = border_cell
+                cell.alignment = align_center
+                
+                # Alternance de couleurs (Zebraing)
+                if is_even:
+                    cell.fill = fill_zebra
+                
+                # Mise en valeur de la colonne Statut
+                col_header = str(df.columns[col_idx - 1]).lower()
+                if "statut" in col_header:
+                    val_str = str(value).lower()
+                    if "écrasée" in val_str or "ecras" in val_str or "ok" in val_str:
+                        cell.fill = fill_statut_ok
+                        cell.font = font_bold
+
+        # 6. Ajustement automatique de la largeur des colonnes
+        for col in ws.columns:
+            max_len = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                if cell.row <= 2:
+                    continue
+                val = str(cell.value or '')
+                if len(val) > max_len:
+                    max_len = len(val)
+            ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
 
     buffer.seek(0)
     return buffer
@@ -1118,7 +1207,7 @@ def show(supabase):
                 df_sel = pd.DataFrame(rows_sel)
                 st.dataframe(df_sel, use_container_width=True, hide_index=True)
 
-                # BOUTON TÉLÉCHARGEMENT EXCEL DU PLANNING
+                # BOUTON TÉLÉCHARGEMENT EXCEL DU PLANNING FORMAT A4
                 excel_planning_date = exporter_dataframe_excel(df_sel, date_filtre_str)
                 st.download_button(
                     label=f"📊 Télécharger cette liste en Excel ({date_filtre_str})",
