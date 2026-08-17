@@ -377,7 +377,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(mid_col_idx + 1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    col_widths = [20, 16, 16, 16, 18, 18, 18]
+    col_widths = [12, 16, 18, 16, 16, 18, 18, 14, 14, 14]
     for col_idx, width in enumerate(col_widths, 1):
         if col_idx <= nb_cols:
             ws.column_dimensions[get_column_letter(col_idx)].width = width
@@ -388,143 +388,44 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 # =========================================================
-# 2. CHARGEMENT & JOINTURE ADAPTÉE À SUPABASE
+# 2. CHARGEMENT & TRAITEMENT SUPABASE
 # =========================================================
 
 def load_and_process_controle_data(supabase):
-    """Charge et associe les données de bétonnage et de contrôle écrasement."""
-    res_betonnage = supabase.table("suivi_betonnage").select("*").execute()
-    res_ecrasement = supabase.table("suivi_controle_beton").select("*").execute()
-
-    df_beton = pd.DataFrame(res_betonnage.data) if res_betonnage and res_betonnage.data else pd.DataFrame()
+    """Charge directement les données de la table suivi_controle_beton pour l'affichage brut."""
+    res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_ecrasement = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
-    with st.expander("🔍 Diagnostic Supabase (Vérification des colonnes et données)"):
-        st.write("**Données `suivi_betonnage` :**", df_beton.head(3) if not df_beton.empty else "Vide")
-        st.write("**Données `suivi_controle_beton` :**", df_ecrasement.head(3) if not df_ecrasement.empty else "Vide")
-
-    if df_beton.empty:
+    if df_ecrasement.empty:
         return pd.DataFrame()
 
-    # 1. Normalisation de la date de bétonnage
-    date_col_beton = None
-    for col in ["date_livraison", "date_prelevement", "date", "created_at"]:
-        if col in df_beton.columns:
-            date_col_beton = col
-            break
-
-    if date_col_beton:
-        df_beton["date_dt"] = pd.to_datetime(df_beton[date_col_beton], errors="coerce")
-        df_beton["date_str"] = df_beton["date_dt"].dt.strftime("%Y-%m-%d")
-    else:
-        df_beton["date_dt"] = pd.NaT
-        df_beton["date_str"] = ""
-
-    if df_ecrasement.empty:
-        df_beton["res_3j"] = None
-        df_beton["res_7j"] = None
-        df_beton["res_28j"] = None
-        df_beton["_ref_col"] = "-"
-        return df_beton
-
-    # 2. Identification des colonnes réelles de suivi_controle_beton (repere_eprouvette, date_coulee)
-    ref_col = None
-    for c in ["repere_eprouvette", "ref_controle", "prefixe_repere", "repere", "reference"]:
-        if c in df_ecrasement.columns:
-            ref_col = c
-            break
-
-    date_col_ecr = None
-    for c in ["date_coulee", "date_prelevement", "date_livraison", "date_essai"]:
-        if c in df_ecrasement.columns:
-            date_col_ecr = c
-            break
-
-    if date_col_ecr:
-        df_ecrasement["date_ecr_str"] = pd.to_datetime(df_ecrasement[date_col_ecr], errors="coerce").dt.strftime("%Y-%m-%d")
-    else:
-        df_ecrasement["date_ecr_str"] = ""
-
-    # Nettoyage de la résistance et extraction de l'échéance (3, 7, 28)
-    df_ecrasement["resistance_num"] = pd.to_numeric(df_ecrasement.get("resistance"), errors="coerce")
-    df_ecrasement["echeance_clean"] = (
-        df_ecrasement.get("echeance", "")
-        .astype(str)
-        .str.extract(r'(\d+)')[0]
-    )
-
-    # 3. Identification des clés de jointure (bl_num <-> num_bl ou betonnage_id <-> id)
-    join_key_b = "bl_num" if "bl_num" in df_beton.columns else "id"
+    # Liste des colonnes attendues issues de la base de données
+    expected_cols = [
+        "id", "ref_controle", "repere_eprouvette", "date_coulee", 
+        "classe_beton", "ouvrage", "date_ecrasement", "echeance", 
+        "force_kn", "fc_mpa"
+    ]
     
-    join_key_e = None
-    for k in ["num_bl", "bl_num", "betonnage_id", "bl", "id_betonnage"]:
-        if k in df_ecrasement.columns:
-            join_key_e = k
-            break
+    # Conservation unique des colonnes existantes
+    existing_cols = [c for c in expected_cols if c in df_ecrasement.columns]
+    df_ecrasement = df_ecrasement[existing_cols]
 
-    # TENTATIVE 1: Jointure directe
-    matched = False
-    if join_key_b and join_key_e:
-        df_beton["key_clean"] = df_beton[join_key_b].astype(str).str.strip().str.upper()
-        df_ecrasement["key_clean"] = df_ecrasement[join_key_e].astype(str).str.strip().str.upper()
-
-        common_keys = set(df_beton["key_clean"]).intersection(set(df_ecrasement["key_clean"]))
-        if common_keys and common_keys != {""} and common_keys != {"NONE"} and common_keys != {"NAN"}:
-            matched = True
-
-    # TENTATIVE 2 (FALLBACK): Jointure par date (date_livraison <-> date_coulee)
-    if not matched:
-        df_beton["key_clean"] = df_beton["date_str"]
-        df_ecrasement["key_clean"] = df_ecrasement["date_ecr_str"]
-
-    # 4. Regroupement des résistances et repères par clé de jointure
-    res_3j = df_ecrasement[df_ecrasement["echeance_clean"] == "3"].groupby("key_clean")["resistance_num"].mean().rename("res_3j")
-    res_7j = df_ecrasement[df_ecrasement["echeance_clean"] == "7"].groupby("key_clean")["resistance_num"].mean().rename("res_7j")
-    res_28j = df_ecrasement[df_ecrasement["echeance_clean"] == "28"].groupby("key_clean")["resistance_num"].mean().rename("res_28j")
-
-    if ref_col:
-        refs = (
-            df_ecrasement[df_ecrasement[ref_col].notnull() & (df_ecrasement[ref_col].astype(str).str.strip() != "")]
-            .groupby("key_clean")[ref_col]
-            .first()
-            .rename("ref_controle_found")
-        )
+    # Dérivation d'un champ DateTime pour les filtres de dates Streamlit
+    if "date_coulee" in df_ecrasement.columns:
+        df_ecrasement["date_dt"] = pd.to_datetime(df_ecrasement["date_coulee"], errors="coerce")
+    elif "date_ecrasement" in df_ecrasement.columns:
+        df_ecrasement["date_dt"] = pd.to_datetime(df_ecrasement["date_ecrasement"], errors="coerce")
     else:
-        refs = pd.Series(dtype=str, name="ref_controle_found")
+        df_ecrasement["date_dt"] = pd.NaT
 
-    # Fusion globale
-    df_merged = df_beton.merge(refs, left_on="key_clean", right_index=True, how="left")
-    df_merged = df_merged.merge(res_3j, left_on="key_clean", right_index=True, how="left")
-    df_merged = df_merged.merge(res_7j, left_on="key_clean", right_index=True, how="left")
-    df_merged = df_merged.merge(res_28j, left_on="key_clean", right_index=True, how="left")
-
-    df_merged["_ref_col"] = df_merged["ref_controle_found"].fillna("-")
-
-    return df_merged
+    return df_ecrasement
 
 
 def format_controle_dataframe(df_filtered):
-    """Formatage propre pour le tableau d'affichage Streamlit avec conversion d'unités."""
-    df_display = pd.DataFrame()
-    
-    df_display["Référence de Contrôle"] = df_filtered["_ref_col"]
-    df_display["Date de Prélèvement"] = df_filtered["date_dt"].dt.strftime("%d/%m/%Y").fillna("-")
-    
-    # Conversion automatique mm -> cm si la valeur dépasse 50 (ex: 180 mm -> 18.0 cm)
-    def convert_affaissement(val):
-        try:
-            v = float(val)
-            return f"{v / 10:.1f}" if v > 50 else f"{v:.1f}"
-        except:
-            return "-"
-
-    df_display["Affaissement (cm)"] = df_filtered.get("affaissement", "-").apply(convert_affaissement)
-    df_display["Température (°C)"] = df_filtered.get("temperature", "-").fillna("-")
-    
-    df_display["Résistance moyenne 3J (MPa)"] = df_filtered["res_3j"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
-    df_display["Résistance moyenne 7J (MPa)"] = df_filtered["res_7j"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
-    df_display["Résistance moyenne 28J (MPa)"] = df_filtered["res_28j"].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "-")
-    
+    """Prépare le dataframe d'affichage sans supprimer les colonnes d'origine."""
+    df_display = df_filtered.copy()
+    if "date_dt" in df_display.columns:
+        df_display = df_display.drop(columns=["date_dt"])
     return df_display
 
 
@@ -699,7 +600,7 @@ def show(supabase):
                 st.error(f"Erreur de chargement : {e}")
 
     with main_tab_controle:
-        st.subheader("Bilan du Contrôle Béton (Résistances aux écrasements)")
+        st.subheader("Bilan du Contrôle Béton (Base de données globale)")
         tab_j_c, tab_m_c = st.tabs(["📅 Bilan Journalier", "📅 Bilan Mensuel"])
 
         try:
