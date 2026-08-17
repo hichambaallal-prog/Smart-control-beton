@@ -952,6 +952,7 @@ def show(supabase):
 
                     succes_cnt = 0
                     for rep in reperes_p:
+                        # Dictionnaire épuré sans affaissement et temperature
                         payload_prog = {
                             "betonnage_id": b_id,
                             "num_bl": num_bl_p,
@@ -964,8 +965,6 @@ def show(supabase):
                             "repere_eprouvette": rep,
                             "forme": forme_p,
                             "section": float(sect_def),
-                            "affaissement": beton_p.get("affaissement") or beton_p.get("slump"),
-                            "temperature": beton_p.get("temperature") or beton_p.get("temp_beton"),
                         }
                         try:
                             res = (
@@ -1023,9 +1022,6 @@ def show(supabase):
     with tab_saisie:
         st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
 
-        # =========================================================
-        # SYSTEME DE FILTRE & RETARDS MULTI-DATES (SANS RATTER AUCUNE DATE)
-        # =========================================================
         today_date = date.today()
         today_str = str(today_date)
 
@@ -1038,7 +1034,6 @@ def show(supabase):
             )
             date_filtre_str = str(date_filtre)
 
-        # 1. Récupérer les éprouvettes EN RETARD ou DÉPASSÉES (Non écrasées et date <= aujourd'hui)
         try:
             res_retards = (
                 supabase.table("suivi_controle_beton")
@@ -1053,7 +1048,6 @@ def show(supabase):
             retards_list = []
             st.warning(f"Note lors de la recherche des échéances dépassées : {err_retard}")
 
-        # Affichage du bloc d'alerte des retards/échéances accumulées
         if retards_list:
             nb_retards = len(retards_list)
             st.error(
@@ -1078,7 +1072,6 @@ def show(supabase):
                 rep_s = str(ep.get("repere_eprouvette", "")).strip()
                 rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
 
-                # Niveau d'urgence
                 dt_ecras_obj = datetime.strptime(str(dt_ecras_str)[:10], "%Y-%m-%d").date() if dt_ecras_str else today_date
                 if dt_ecras_obj < today_date:
                     statut_urgence = f"⚠️ En Retard ({ (today_date - dt_ecras_obj).days } jour(s))"
@@ -1101,7 +1094,6 @@ def show(supabase):
             st.dataframe(df_retard, use_container_width=True, hide_index=True)
             st.markdown("---")
 
-        # 2. Récupérer la liste spécifique à la date sélectionnée dans le calendrier
         try:
             res_date_sel = (
                 supabase.table("suivi_controle_beton")
@@ -1391,7 +1383,7 @@ def show(supabase):
                     "force_kn": f_kn,
                     "fc_mpa": fc_mpa,
                     "date_essai": ep_h.get("date_ecrasement", "-"),
-                    "age": str(ep_h.get("echeance", "28"))
+                    "age": str(item.get("echeance", "28"))
                     .replace(" jours", "")
                     .replace("j", ""),
                     "statut": statut,
@@ -1687,8 +1679,6 @@ def show(supabase):
                     "date_coulee",
                     "classe_beton",
                     "ouvrage",
-                    "affaissement",
-                    "temperature",
                     "date_ecrasement",
                     "echeance",
                     "force_kn",
@@ -1696,23 +1686,9 @@ def show(supabase):
                     "technicien",
                 ]
 
-                renommage_colonnes = {
-                    "affaissement": "affaissement_mm",
-                    "temperature": "temp_beton_C",
-                }
-
-                for idx_row, row_data in df_all.iterrows():
-                    b_id_row = row_data.get("betonnage_id")
-                    if b_id_row and (pd.isna(row_data.get("affaissement")) or pd.isna(row_data.get("temperature"))):
-                        parent_info = obtenir_infos_betonnage_parent(supabase, b_id_row)
-                        if pd.isna(row_data.get("affaissement")):
-                            df_all.at[idx_row, "affaissement"] = parent_info.get("affaissement") or parent_info.get("slump") or "-"
-                        if pd.isna(row_data.get("temperature")):
-                            df_all.at[idx_row, "temperature"] = parent_info.get("temperature") or parent_info.get("temp_beton") or "-"
-
                 cols_disponibles = [c for c in colonnes_ordre if c in df_all.columns]
                 cols_restantes = [c for c in df_all.columns if c not in cols_disponibles]
-                df_ordered = df_all[cols_disponibles + cols_restantes].rename(columns=renommage_colonnes)
+                df_ordered = df_all[cols_disponibles + cols_restantes]
 
                 st.dataframe(df_ordered, use_container_width=True, hide_index=True)
             else:
