@@ -412,13 +412,30 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 def load_and_process_controle_data(supabase):
     """
     Charge les données de contrôle et calcule la MOYENNE des résistances (Fc) par référence.
-    Inclut affaissement_mm et temp_beton_C directement après la colonne Ouvrage.
+    Mappe dynamiquement les colonnes de température et d'affaissement de Supabase
+    pour les insérer immédiatement après la colonne 'ouvrage'.
     """
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_raw = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
     if df_raw.empty:
         return pd.DataFrame()
+
+    # Mapping dynamique pour harmoniser les variations de noms de colonnes Supabase
+    col_mapping_input = {
+        'affaissement': 'affaissement_mm',
+        'affaissement_mm': 'affaissement_mm',
+        'temperature': 'temp_beton_C',
+        'temp_beton': 'temp_beton_C',
+        'temp_beton_C': 'temp_beton_C'
+    }
+    df_raw = df_raw.rename(columns={k: v for k, v in col_mapping_input.items() if k in df_raw.columns})
+
+    # S'assurer que les colonnes existent
+    if "affaissement_mm" not in df_raw.columns:
+        df_raw["affaissement_mm"] = None
+    if "temp_beton_C" not in df_raw.columns:
+        df_raw["temp_beton_C"] = None
 
     # Nettoyage des chaînes d'échéance
     def clean_echeance(val):
@@ -441,8 +458,8 @@ def load_and_process_controle_data(supabase):
         df_raw["fc_mpa"] = pd.to_numeric(df_raw["fc_mpa"], errors="coerce")
 
     # Groupement par prélèvement / contrôle
-    group_cols = ["ref_controle", "date_coulee", "classe_beton", "ouvrage", "affaissement_mm", "temp_beton_C"]
-    existing_group_cols = [c for c in group_cols if c in df_raw.columns]
+    base_group_cols = ["ref_controle", "date_coulee", "classe_beton", "ouvrage"]
+    existing_group_cols = [c for c in base_group_cols if c in df_raw.columns]
 
     if not existing_group_cols:
         return pd.DataFrame()
@@ -462,6 +479,13 @@ def load_and_process_controle_data(supabase):
         first_row = group_df.iloc[0]
         row_dict = {col: first_row[col] for col in existing_group_cols}
         
+        # Récupération sécurisée de la première valeur non nulle du groupe
+        aff_idx = group_df["affaissement_mm"].dropna().first_valid_index()
+        temp_idx = group_df["temp_beton_C"].dropna().first_valid_index()
+
+        row_dict["affaissement_mm"] = group_df.loc[aff_idx, "affaissement_mm"] if aff_idx is not None else None
+        row_dict["temp_beton_C"] = group_df.loc[temp_idx, "temp_beton_C"] if temp_idx is not None else None
+
         valid_dates = group_df["date_dt"].dropna()
         row_dict["date_dt"] = valid_dates.min() if not valid_dates.empty else pd.NaT
 
@@ -477,7 +501,7 @@ def load_and_process_controle_data(supabase):
 
     df_pivoted = pd.DataFrame(pivot_rows)
 
-    # Ordre des colonnes avec Affaissement et Température placés juste après Ouvrage
+    # Ordre strict des colonnes : Affaissement et Température placés directement après Ouvrage
     desired_order = [
         "ref_controle", 
         "date_coulee", 
