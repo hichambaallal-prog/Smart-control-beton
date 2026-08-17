@@ -390,7 +390,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
     stat_headers = ["Indicateur", "Affaissement (mm)", "Temp. Béton (°C)", "Fc (MPa) [7 Jours]", "Fc (MPa) [28 Jours]"]
     
-    # Headers statistiques
     for idx, h in enumerate(stat_headers):
         col_start = 1 if idx == 0 else 2 + (idx - 1) * 2
         col_end = 1 if idx == 0 else col_start + 1
@@ -413,13 +412,16 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws.row_dimensions[row_idx].height = 25
     row_idx += 1
 
-    # Correspondance colonnes Excel
     col_map_excel = {
         "aff": "E",
         "temp": "F",
         "fc7": "H",
         "fc28": "I"
     }
+
+    # Calcul dynamique des lignes dans la table statistique
+    row_moy = row_idx + 1
+    row_std = row_idx + 3
 
     if start_data_row <= end_data_row:
         f_min_aff = f"=MIN({col_map_excel['aff']}{start_data_row}:{col_map_excel['aff']}{end_data_row})"
@@ -438,9 +440,9 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         f_moy_fc28 = f"=AVERAGE({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
         f_max_fc28 = f"=MAX({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
 
-        # MODIFICATION : ECARTYPE.STANDARD pour compatibilité avec Excel en français (résout l'erreur #NOM?)
+        # CORRECTION : Formule ECARTYPE.STANDARD et liaison directe CV% sur les cellules MOY et σ
         f_std_fc28 = f"=ECARTYPE.STANDARD({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
-        f_cv_fc28 = f"=IFERROR(({col_map_excel['fc28']}{row_idx+3}/{col_map_excel['fc28']}{row_idx+1})*100, 0)"
+        f_cv_fc28 = f"=SIERREUR(({col_map_excel['fc28']}{row_std}/{col_map_excel['fc28']}{row_moy})*100, 0)"
     else:
         f_min_aff = f_moy_aff = f_max_aff = "-"
         f_min_temp = f_moy_temp = f_max_temp = "-"
@@ -469,7 +471,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
             c.font = font_normal
             c.alignment = Alignment(horizontal="center", vertical="center")
             if isinstance(val, str) and val.startswith("="):
-                c.number_format = '0.0'
+                c.number_format = '0.00' if label in ["σ", "CV %"] else '0.0'
 
         for c_i in range(1, nb_cols + 1):
             ws.cell(row=row_idx, column=c_i).border = thin_border
