@@ -2,10 +2,30 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 import io
+import re
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+
+# =========================================================
+# UTILITAIRE D'EXTRACTION NUMÉRIQUE
+# =========================================================
+
+def extract_numeric(val):
+    """
+    Extrait les chiffres et décimales d'une chaîne ou d'une valeur.
+    ExExemple: '200 mm' -> 200, '32.0 °C' -> 32.0
+    """
+    if pd.isna(val) or val is None:
+        return None
+    val_str = str(val).replace(',', '.')
+    match = re.search(r"[-+]?\d*\.\d+|\d+", val_str)
+    if match:
+        num = float(match.group())
+        return int(num) if num.is_integer() else num
+    return None
 
 
 # =========================================================
@@ -386,24 +406,24 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 # =========================================================
-# 2. CHARGEMENT & TRAITEMENT SUPABASE (INCLUANT AFFAISSEMENT & TEMP. BETON)
+# 2. CHARGEMENT & TRAITEMENT SUPABASE
 # =========================================================
 
 def load_and_process_controle_data(supabase):
     """
-    Charge les données de contrôle, effectue une jonction avec la table de suivi du bétonnage 
-    pour récupérer l'Affaissement et la Température du Béton par référence de contrôle, 
+    Charge les données de contrôle, récupère l'Affaissement et la Température
+    (directement dans suivi_controle_beton ou via suivi_betonnage en fallback),
     puis calcule la MOYENNE des résistances (Fc) par référence.
     """
-    # 1. Chargement des données d'écrasement
+    # 1. Chargement de la table contrôle
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_raw = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
     if df_raw.empty:
         return pd.DataFrame()
 
-    # 2. Récupération des données de bétonnage (Affaissement & Température du béton)
-    res_betonnage = supabase.table("suivi_betonnage").select("prelevement, affaissement, temperature").execute()
+    # 2. Chargement de la table bétonnage (fallback)
+    res_betonnage = supabase.table("suivi_betonnage").select("*").execute()
     df_betonnage = pd.DataFrame(res_betonnage.data) if res_betonnage and res_betonnage.data else pd.DataFrame()
 
     # Nettoyage des chaînes d'échéance
@@ -422,11 +442,11 @@ def load_and_process_controle_data(supabase):
     else:
         df_raw["echeance_clean"] = ""
 
-    # Conversion de la valeur Fc en numérique
+    # Conversion de Fc en numérique
     if "fc_mpa" in df_raw.columns:
         df_raw["fc_mpa"] = pd.to_numeric(df_raw["fc_mpa"], errors="coerce")
 
-    # Groupement par prélèvement
+    # Groupement par prélèvement / contrôle
     group_cols = ["ref_controle", "date_coulee", "classe_beton", "ouvrage"]
     existing_group_cols = [c for c in group_cols if c in df_raw.columns]
 
@@ -441,19 +461,19 @@ def load_and_process_controle_data(supabase):
     else:
         df_raw["date_dt"] = pd.NaT
 
-    # Mapping affaissement et température depuis la table suivi_betonnage si non présents dans suivi_controle_beton
-    aff_map = {}
-    temp_map = {}
+    # Mapping de secours depuis la table suivi_betonnage
+    aff_map_betonnage = {}
+    temp_map_betonnage = {}
     if not df_betonnage.empty and "prelevement" in df_betonnage.columns:
-        # On cast en string pour sécuriser la correspondance
-        df_betonnage["prelevement_str"] = df_betonnage["prelevement"].astype(str).str.strip()
-        for _, row in df_betonnage.iterrows():
-            ref = row["prelevement_str"]
+        for _, r in df_betonnage.iterrows():
+            ref = str(r.get("prelevement", "")).strip()
             if ref and ref != "nan":
-                if "affaissement" in row and pd.notna(row["affaissement"]):
-                    aff_map[ref] = row["affaissement"]
-                if "temperature" in row and pd.notna(row["temperature"]):
-                    temp_map[ref] = row["temperature"]
+                aff_v = r.get("affaissement") or r.get("affaissement_slump")
+                temp_v = r.get("temperature") or r.get("temperature_beton_frais") or r.get("temperature_beton")
+                if pd.notna(aff_v):
+                    aff_map_betonnage[ref] = extract_numeric(aff_v)
+                if pd.notna(temp_v):
+                    temp_map_betonnage[ref] = extract_numeric(temp_v)
 
     pivot_rows = []
     grouped = df_raw.groupby(existing_group_cols, dropna=False)
@@ -461,23 +481,33 @@ def load_and_process_controle_data(supabase):
     for group_key, group_df in grouped:
         first_row = group_df.iloc[0]
         row_dict = {col: first_row[col] for col in existing_group_cols}
-        row_dict["date_dt"] = group_df["date_dt"].dropna().min() if not group_df["date_dt"].dropna().empty else pd.NaT
+        
+        valid_dates = group_df["date_dt"].dropna()
+        row_dict["date_dt"] = valid_dates.min() if not valid_dates.empty else pd.NaT
 
         ref_str = str(first_row.get("ref_controle", "")).strip()
 
-        # Récupération de l'affaissement (depuis suivi_controle_beton si présent, sinon depuis la jointure)
-        if "affaissement" in group_df.columns and pd.notna(first_row["affaissement"]):
-            row_dict["affaissement"] = first_row["affaissement"]
-        else:
-            row_dict["affaissement"] = aff_map.get(ref_str, None)
+        # Recherche de l'Affaissement (multi-noms de colonnes + nettoyage texte)
+        val_aff = None
+        for col_name in ["affaissement_slump", "affaissement", "slump", "Affaissement / Slump (mm)"]:
+            if col_name in group_df.columns:
+                cand = group_df[col_name].dropna()
+                if not cand.empty:
+                    val_aff = cand.iloc[0]
+                    break
+        
+        row_dict["affaissement"] = extract_numeric(val_aff) if pd.notna(val_aff) else aff_map_betonnage.get(ref_str, None)
 
-        # Récupération de la température du béton
-        if "temperature" in group_df.columns and pd.notna(first_row["temperature"]):
-            row_dict["temperature"] = first_row["temperature"]
-        elif "temperature_beton" in group_df.columns and pd.notna(first_row["temperature_beton"]):
-            row_dict["temperature"] = first_row["temperature_beton"]
-        else:
-            row_dict["temperature"] = temp_map.get(ref_str, None)
+        # Recherche de la Température du Béton (multi-noms de colonnes + nettoyage texte)
+        val_temp = None
+        for col_name in ["temperature_beton_frais", "temperature_beton", "temperature", "temp_beton", "Température Béton Frais (°C)"]:
+            if col_name in group_df.columns:
+                cand = group_df[col_name].dropna()
+                if not cand.empty:
+                    val_temp = cand.iloc[0]
+                    break
+
+        row_dict["temperature"] = extract_numeric(val_temp) if pd.notna(val_temp) else temp_map_betonnage.get(ref_str, None)
 
         # Calcul des moyennes par échéance
         for ech in ["3 jours", "7 jours", "28 jours"]:
@@ -491,7 +521,7 @@ def load_and_process_controle_data(supabase):
 
     df_pivoted = pd.DataFrame(pivot_rows)
 
-    # Réorganisation explicite des colonnes (Affaissement et Température placés juste après Ouvrage)
+    # Ordre désiré des colonnes
     desired_order = [
         "ref_controle", 
         "date_coulee", 
@@ -505,11 +535,9 @@ def load_and_process_controle_data(supabase):
         "date_dt"
     ]
     
-    # Conservation unique des colonnes existantes
     existing_cols = [c for c in desired_order if c in df_pivoted.columns]
     df_pivoted = df_pivoted[existing_cols]
 
-    # Renommage des entêtes pour l'affichage et l'exportation
     rename_map = {
         "ref_controle": "Réf. Contrôle",
         "date_coulee": "Date Coulée",
