@@ -281,12 +281,16 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     mid_col_letter = get_column_letter(mid_col_idx)
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
-    # Entête
+    # Entête - Titre sans le mot (MOYENNES)
     ws.merge_cells(f"A1:{last_col_letter}2")
-    ws["A1"].value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU CONTRÔLE BÉTON (MOYENNES)"
+    ws["A1"].value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU CONTRÔLE BÉTON"
     ws["A1"].font = font_title
     ws["A1"].fill = fill_title
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # Hauteur des lignes 1 et 2 à 25
+    ws.row_dimensions[1].height = 25
+    ws.row_dimensions[2].height = 25
 
     ws.merge_cells(f"A4:{mid_col_letter}4")
     ws["A4"].value = "   CLIENT :   TGCC"
@@ -371,9 +375,21 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         ws.row_dimensions[row_idx].height = 28
         row_idx += 1
 
-    # Largeurs de colonnes ajustées pour Portrait
-    for col_idx in range(1, nb_cols + 1):
-        ws.column_dimensions[get_column_letter(col_idx)].width = 16
+    # Application des largeurs de colonnes spécifiques
+    specific_widths = {
+        'A': 8,
+        'B': 10,
+        'C': 10,
+        'D': 30,
+        'E': 10,
+        'F': 10,
+        'G': 13,
+        'H': 13,
+        'I': 13
+    }
+
+    for col_letter, width in specific_widths.items():
+        ws.column_dimensions[col_letter].width = width
 
     wb.save(output)
     output.seek(0)
