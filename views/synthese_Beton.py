@@ -9,11 +9,10 @@ from openpyxl.utils import get_column_letter
 
 
 # =========================================================
-# 1. FONCTIONS GENERATION EXCEL (FORMAT A4 PORTRAIT)
+# 1. GENERATION EXCEL
 # =========================================================
 
 def generate_excel_synthesis_betonnage(df_data, titre_periode):
-    """Génère le fichier Excel pour la Synthèse de Suivi de Bétonnage."""
     output = io.BytesIO()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -57,7 +56,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
     mid_col_letter = get_column_letter(mid_col_idx)
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
-    # Entête
     ws.merge_cells(f"A1:{last_col_letter}2")
     cell_title = ws["A1"]
     cell_title.value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU BÉTONNAGE"
@@ -67,7 +65,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
     ws.row_dimensions[1].height = 28
     ws.row_dimensions[2].height = 28
 
-    # Infos Client/Projet
     ws.merge_cells(f"A4:{mid_col_letter}4")
     ws["A4"].value = "   CLIENT :   TGCC"
     ws["A4"].font = font_bold
@@ -97,7 +94,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    # KPI Volume
     row_idx = 7
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📊 RÉSUMÉ GLOBAL"
@@ -127,7 +123,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
     ws.row_dimensions[row_idx+1].height = 36
     row_idx += 3
 
-    # Tableau
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📋 DÉTAIL DES CONTRÔLES"
     ws[f"A{row_idx}"].font = font_section
@@ -180,7 +175,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
 
     row_idx += 3
 
-    # Signatures
     ws.merge_cells(f"A{row_idx}:{mid_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "Responsables d'essai"
     ws[f"A{row_idx}"].font = font_bold
@@ -228,7 +222,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
 
 
 def generate_excel_synthesis_controle(df_data, titre_periode):
-    """Génère le fichier Excel pour la Synthèse de Contrôle Béton (avec résistances)."""
     output = io.BytesIO()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -395,102 +388,129 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 # =========================================================
-# 2. FONCTION DE TRAITEMENT ET DE CONSOLIDATION DES DONNÉES
+# 2. CHARGEMENT & FUSION AVEC FALLBACK ET DEBOGAGE
 # =========================================================
 
 def load_and_process_controle_data(supabase):
-    """Charge et fusionne les données de bétonnage avec les écrasements."""
+    """Charge les données Supabase avec repli automatique si la clé de jointure echoue."""
     res_betonnage = supabase.table("suivi_betonnage").select("*").execute()
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").execute()
 
     df_beton = pd.DataFrame(res_betonnage.data) if res_betonnage and res_betonnage.data else pd.DataFrame()
     df_ecrasement = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
+    # Affichage du diagnostic dans un expander Streamlit
+    with st.expander("🔍 Diagnostic Supabase (Vérification des colonnes et données)"):
+        st.write("**Données `suivi_betonnage` :**", df_beton.head(3) if not df_beton.empty else "Vide")
+        st.write("**Données `suivi_controle_beton` :**", df_ecrasement.head(3) if not df_ecrasement.empty else "Vide")
+
     if df_beton.empty:
         return pd.DataFrame()
 
-    # Détection de la colonne clé dans bétonnage
-    join_key_beton = None
-    for k in ["bl_num", "bl", "id", "id_betonnage"]:
-        if k in df_beton.columns:
-            join_key_beton = k
+    # Normalisation de la date bétonnage
+    date_col_beton = None
+    for col in ["date_livraison", "date_prelevement", "date", "created_at"]:
+        if col in df_beton.columns:
+            date_col_beton = col
             break
 
-    # Détection de la colonne clé dans écrasement
-    join_key_ecrasement = None
-    for k in ["bl_num", "bl", "id_betonnage", "id_beton", "id"]:
-        if k in df_ecrasement.columns:
-            join_key_ecrasement = k
-            break
-
-    # Détection de la colonne de référence dans écrasement
-    ref_controle_col = None
-    for k in ["ref_controle", "prefixe_repere", "prefixe", "repere", "reference"]:
-        if k in df_ecrasement.columns:
-            ref_controle_col = k
-            break
-
-    date_col = "date_livraison" if "date_livraison" in df_beton.columns else ("date_prelevement" if "date_prelevement" in df_beton.columns else None)
-    if date_col:
-        df_beton["date_dt"] = pd.to_datetime(df_beton[date_col], errors="coerce")
+    if date_col_beton:
+        df_beton["date_dt"] = pd.to_datetime(df_beton[date_col_beton], errors="coerce")
+        df_beton["date_str"] = df_beton["date_dt"].dt.strftime("%Y-%m-%d")
     else:
         df_beton["date_dt"] = pd.NaT
+        df_beton["date_str"] = ""
 
-    if not df_ecrasement.empty and join_key_beton and join_key_ecrasement:
-        # Standardisation des clés de jointure pour éviter les échecs de fusion (ex: int vs str ou espaces)
-        df_beton["join_key_clean"] = df_beton[join_key_beton].astype(str).str.strip()
-        df_ecrasement["join_key_clean"] = df_ecrasement[join_key_ecrasement].astype(str).str.strip()
+    if df_ecrasement.empty:
+        df_beton["res_3j"] = None
+        df_beton["res_7j"] = None
+        df_beton["res_28j"] = None
+        df_beton["_ref_col"] = "-"
+        return df_beton
 
-        # Conversion numérique de la résistance
-        df_ecrasement["resistance"] = pd.to_numeric(df_ecrasement.get("resistance"), errors="coerce")
+    # Normalisation des colonnes de suivi_controle_beton
+    # Recherche de la colonne de référence
+    ref_col = None
+    for c in ["ref_controle", "prefixe_repere", "repere", "reference", "code_controle", "id"]:
+        if c in df_ecrasement.columns:
+            ref_col = c
+            break
 
-        # Nettoyage et normalisation du champ échéance
-        df_ecrasement["echeance_clean"] = (
-            df_ecrasement.get("echeance", "")
-            .astype(str)
-            .str.lower()
-            .str.replace("jours", "")
-            .str.replace("jour", "")
-            .str.replace("j", "")
-            .str.replace("d", "")
-            .str.strip()
-        )
+    # Normalisation de la date d'écrasement/prélèvement
+    date_col_ecr = None
+    for c in ["date_prelevement", "date_livraison", "date_essai", "date"]:
+        if c in df_ecrasement.columns:
+            date_col_ecr = c
+            break
 
-        # Agrégation des résistances par clé
-        res_3j = df_ecrasement[df_ecrasement["echeance_clean"] == "3"].groupby("join_key_clean")["resistance"].mean().rename("res_3j")
-        res_7j = df_ecrasement[df_ecrasement["echeance_clean"] == "7"].groupby("join_key_clean")["resistance"].mean().rename("res_7j")
-        res_28j = df_ecrasement[df_ecrasement["echeance_clean"] == "28"].groupby("join_key_clean")["resistance"].mean().rename("res_28j")
-
-        # Récupération de la référence saisie dans suivi_controle_beton
-        if ref_controle_col:
-            ref_mapping = (
-                df_ecrasement[df_ecrasement[ref_controle_col].notnull() & (df_ecrasement[ref_controle_col] != "")]
-                .groupby("join_key_clean")[ref_controle_col]
-                .first()
-                .rename("ref_controle_saisie")
-            )
-        else:
-            ref_mapping = pd.Series(dtype=str, name="ref_controle_saisie")
-
-        # Fusions dans le DataFrame principal
-        df_merged = df_beton.merge(ref_mapping, left_on="join_key_clean", right_index=True, how="left")
-        df_merged = df_merged.merge(res_3j, left_on="join_key_clean", right_index=True, how="left")
-        df_merged = df_merged.merge(res_7j, left_on="join_key_clean", right_index=True, how="left")
-        df_merged = df_merged.merge(res_28j, left_on="join_key_clean", right_index=True, how="left")
-
-        df_merged["_ref_col"] = df_merged["ref_controle_saisie"].fillna("-")
+    if date_col_ecr:
+        df_ecrasement["date_ecr_str"] = pd.to_datetime(df_ecrasement[date_col_ecr], errors="coerce").dt.strftime("%Y-%m-%d")
     else:
-        df_merged = df_beton
-        df_merged["res_3j"] = None
-        df_merged["res_7j"] = None
-        df_merged["res_28j"] = None
-        df_merged["_ref_col"] = "-"
+        df_ecrasement["date_ecr_str"] = ""
+
+    # Nettoyage échéance et résistance
+    df_ecrasement["resistance_num"] = pd.to_numeric(df_ecrasement.get("resistance"), errors="coerce")
+    df_ecrasement["echeance_clean"] = (
+        df_ecrasement.get("echeance", "")
+        .astype(str)
+        .str.lower()
+        .str.extract(r'(\d+)')[0]
+    )
+
+    # Recherche clé de jointure directe
+    join_key_b = None
+    for k in ["bl_num", "bl", "id_betonnage", "id"]:
+        if k in df_beton.columns:
+            join_key_b = k
+            break
+
+    join_key_e = None
+    for k in ["bl_num", "bl", "id_betonnage", "id_beton"]:
+        if k in df_ecrasement.columns:
+            join_key_e = k
+            break
+
+    # TENTATIVE 1: Jointure directe par clé (ex: N° BL)
+    matched = False
+    if join_key_b and join_key_e:
+        df_beton["key_clean"] = df_beton[join_key_b].astype(str).str.strip().str.upper()
+        df_ecrasement["key_clean"] = df_ecrasement[join_key_e].astype(str).str.strip().str.upper()
+
+        common_keys = set(df_beton["key_clean"]).intersection(set(df_ecrasement["key_clean"]))
+        if common_keys and common_keys != {""}, common_keys != {"NONE"}, common_keys != {"NAN"}:
+            matched = True
+
+    # TENTATIVE 2 (FALLBACK) : Jointure par Date si la clé directe échoue
+    if not matched:
+        df_beton["key_clean"] = df_beton["date_str"]
+        df_ecrasement["key_clean"] = df_ecrasement["date_ecr_str"]
+
+    # Agrégation des résistances par key_clean
+    res_3j = df_ecrasement[df_ecrasement["echeance_clean"] == "3"].groupby("key_clean")["resistance_num"].mean().rename("res_3j")
+    res_7j = df_ecrasement[df_ecrasement["echeance_clean"] == "7"].groupby("key_clean")["resistance_num"].mean().rename("res_7j")
+    res_28j = df_ecrasement[df_ecrasement["echeance_clean"] == "28"].groupby("key_clean")["resistance_num"].mean().rename("res_28j")
+
+    if ref_col:
+        refs = (
+            df_ecrasement[df_ecrasement[ref_col].notnull() & (df_ecrasement[ref_col].astype(str).str.strip() != "")]
+            .groupby("key_clean")[ref_col]
+            .first()
+            .rename("ref_controle_found")
+        )
+    else:
+        refs = pd.Series(dtype=str, name="ref_controle_found")
+
+    df_merged = df_beton.merge(refs, left_on="key_clean", right_index=True, how="left")
+    df_merged = df_merged.merge(res_3j, left_on="key_clean", right_index=True, how="left")
+    df_merged = df_merged.merge(res_7j, left_on="key_clean", right_index=True, how="left")
+    df_merged = df_merged.merge(res_28j, left_on="key_clean", right_index=True, how="left")
+
+    df_merged["_ref_col"] = df_merged["ref_controle_found"].fillna("-")
 
     return df_merged
 
 
 def format_controle_dataframe(df_filtered):
-    """Formate les colonnes pour l'affichage de la synthèse du contrôle béton."""
     df_display = pd.DataFrame()
     
     df_display["Référence de Contrôle"] = df_filtered["_ref_col"]
@@ -506,26 +526,21 @@ def format_controle_dataframe(df_filtered):
 
 
 # =========================================================
-# 3. VUE PRINCIPALE STREAMLIT
+# 3. STREAMLIT APP
 # =========================================================
 
 def show(supabase):
     st.title("📊 Module de Synthèses du Béton")
 
-    # Onglets principaux
     main_tab_betonnage, main_tab_controle = st.tabs([
         "🏗️ Synthèse de Suivi de Bétonnage", 
         "🧪 Synthèse de Contrôle Béton"
     ])
 
-    # ---------------------------------------------------------
-    # SYNTHÈSE 1 : SUIVI DE BÉTONNAGE
-    # ---------------------------------------------------------
     with main_tab_betonnage:
         st.subheader("Bilan du Suivi de Bétonnage")
         tab_j_b, tab_m_b = st.tabs(["📅 Bilan Journalier", "📅 Bilan Mensuel"])
 
-        # --- Bilan Journalier Bétonnage ---
         with tab_j_b:
             st.markdown("### Filtrage par jour et par classe de béton")
             col1, col2 = st.columns(2)
@@ -600,7 +615,6 @@ def show(supabase):
             except Exception as e:
                 st.error(f"Erreur de chargement : {e}")
 
-        # --- Bilan Mensuel Bétonnage ---
         with tab_m_b:
             st.markdown("### Bilan mensuel global")
             col_m1, col_m2 = st.columns(2)
@@ -680,9 +694,6 @@ def show(supabase):
             except Exception as e:
                 st.error(f"Erreur de chargement : {e}")
 
-    # ---------------------------------------------------------
-    # SYNTHÈSE 2 : CONTRÔLE BÉTON (Résistances aux écrasements)
-    # ---------------------------------------------------------
     with main_tab_controle:
         st.subheader("Bilan du Contrôle Béton (Résistances aux écrasements)")
         tab_j_c, tab_m_c = st.tabs(["📅 Bilan Journalier", "📅 Bilan Mensuel"])
@@ -697,7 +708,6 @@ def show(supabase):
         if not df_merged.empty and "classe_beton" in df_merged.columns:
             classes_dispo += sorted(list(df_merged["classe_beton"].dropna().unique()))
 
-        # --- Bilan Journalier Contrôle ---
         with tab_j_c:
             st.markdown("### Filtrage journalier par classe de béton")
             col1, col2 = st.columns(2)
@@ -731,7 +741,6 @@ def show(supabase):
                     )
                     st.dataframe(df_display_cj, use_container_width=True)
 
-        # --- Bilan Mensuel Contrôle ---
         with tab_m_c:
             st.markdown("### Bilan mensuel par classe de béton")
             col_m1, col_m2 = st.columns(2)
