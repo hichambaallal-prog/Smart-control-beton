@@ -70,15 +70,16 @@ def extraire_num_bl(*sources):
 
 
 # =========================================================
-# 1. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT EXACT LPEE)
+# 1. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT A4 PAYSAGE - LPEE)
 # =========================================================
 def generer_pv_excel(export_data, infos_header):
-    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE."""
+    """Génère un Procès-Verbal (PV) d'écrasement de béton en format A4 PAYSAGE."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "PV Écrasement LPEE"
 
-    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    # CONFIGURATION DE LA PAGE EN FORMAT A4 PAYSAGE (LANDSCAPE)
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
@@ -88,11 +89,12 @@ def generer_pv_excel(export_data, infos_header):
         left=0.3, right=0.3, top=0.4, bottom=0.4, header=0.2, footer=0.2
     )
 
-    font_bold = Font(name="Calibri", size=9, bold=True)
-    font_bold_white = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
-    font_title_white = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    font_regular = Font(name="Calibri", size=8.5)
-    font_small = Font(name="Calibri", size=8)
+    # PALETTE DE STYLES ET COULEURS
+    font_bold = Font(name="Calibri", size=10, bold=True)
+    font_bold_white = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+    font_title_white = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
+    font_regular = Font(name="Calibri", size=9.5)
+    font_small = Font(name="Calibri", size=8.5)
 
     fill_header_dark = PatternFill(
         start_color="1F4E78", end_color="1F4E78", fill_type="solid"
@@ -122,7 +124,7 @@ def generer_pv_excel(export_data, infos_header):
             return fallback if fallback is not None else default_bl
         return valeur
 
-    # ENTÊTE
+    # ENTÊTE D'IDENTIFICATION
     ws.merge_cells("A1:D1")
     ws["A1"] = "LPEE / CTR CSB"
     ws["A1"].font = font_bold_white
@@ -159,7 +161,7 @@ def generer_pv_excel(export_data, infos_header):
         for c in range(1, 9):
             ws.cell(row=r, column=c).border = border_cell
 
-    # TITRE
+    # TITRE PRINCIPAL
     ws.merge_cells("A4:H4")
     ws["A4"] = "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
     ws["A4"].font = font_title_white
@@ -194,7 +196,7 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=6, column=c).border = border_cell
 
-    # FICHE TECHNIQUE
+    # CARACTÉRISTIQUES DU BÉTON & CHANTIER
     ws["A7"] = "Date de\nprélèvement"
     ws["A7"].font = font_bold
     ws["A7"].alignment = align_center
@@ -262,7 +264,7 @@ def generer_pv_excel(export_data, infos_header):
 
     ws["D10"] = "- Mode confection"
     ws["D10"].font = font_regular
-    ws["D10"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws["D10"].alignment = align_left
 
     ws.merge_cells("E10:H10")
     ws["E10"] = "Par vibration NF EN 12390-2 (2019)"
@@ -280,7 +282,7 @@ def generer_pv_excel(export_data, infos_header):
 
     ws["D11"] = "- Mode conservation"
     ws["D11"].font = font_regular
-    ws["D11"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws["D11"].alignment = align_left
 
     ws.merge_cells("E11:H11")
     ws["E11"] = "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C"
@@ -315,7 +317,7 @@ def generer_pv_excel(export_data, infos_header):
             if ws.cell(row=r, column=c).coordinate in labels_coords:
                 ws.cell(row=r, column=c).fill = fill_section_label
 
-    # TABLEAU DES RÉSULTATS
+    # EN-TÊTE DU TABLEAU DE RÉSULTATS
     ws.merge_cells("A13:A14")
     ws["A13"] = "Réf,"
     ws["A13"].font = font_bold
@@ -353,12 +355,10 @@ def generer_pv_excel(export_data, infos_header):
     ws["F14"].font = font_regular
     ws["F14"].alignment = align_center
 
-    ws.merge_cells("G14:G14")
     ws["G14"] = "Traction"
     ws["G14"].font = font_regular
     ws["G14"].alignment = align_center
 
-    ws.merge_cells("H14:H14")
     ws["H14"] = "Moyenne"
     ws["H14"].font = font_regular
     ws["H14"].alignment = align_center
@@ -368,6 +368,7 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=r, column=c).fill = fill_header_table
             ws.cell(row=r, column=c).border = border_cell
 
+    # INJECTION DES DONNÉES D'ÉCRASEMENT
     row_start = 15
     nb_total = len(export_data)
 
@@ -435,6 +436,7 @@ def generer_pv_excel(export_data, infos_header):
 
         groupes_lots[cle_lot]["lignes"].append(curr_row)
 
+    # CALCUL DES MOYENNES DE MOYENNE PAR LOT (ECHEANCE)
     for cle_lot, data_lot in groupes_lots.items():
         lignes = data_lot["lignes"]
         start_r = min(lignes)
@@ -467,6 +469,7 @@ def generer_pv_excel(export_data, infos_header):
 
     next_row = row_start + nb_total
 
+    # COMMENTAIRES ET CONFORMITÉ
     ws.cell(row=next_row, column=1, value="Commentaire :").font = font_bold
     ws.cell(row=next_row, column=1).alignment = align_left
     ws.cell(row=next_row, column=1).fill = fill_section_label
@@ -501,6 +504,7 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
         ws.cell(row=next_row, column=c).border = border_cell
 
+    # BLOCS DE SIGNATURE
     r_sig_titre = next_row + 2
     r_sig_debut = r_sig_titre + 1
     r_sig_fin = r_sig_debut + 3
@@ -521,31 +525,32 @@ def generer_pv_excel(export_data, infos_header):
     ws.cell(row=r_sig_debut, column=6, value="H.BAALLAL").font = font_bold
     ws.cell(row=r_sig_debut, column=6).alignment = align_top_center
 
+    # DIMENSIONNEMENT ADAPTÉ AU FORMAT LANDSCAPE (PAYSAGE)
     for r in range(1, r_sig_fin + 1):
         if r == 7:
-            ws.row_dimensions[r].height = 32
+            ws.row_dimensions[r].height = 28
         elif r == 8:
-            ws.row_dimensions[r].height = 48
+            ws.row_dimensions[r].height = 40
         elif r in [10, 11]:
-            ws.row_dimensions[r].height = 23
+            ws.row_dimensions[r].height = 22
         elif 15 <= r < (15 + nb_total):
-            ws.row_dimensions[r].height = 28
+            ws.row_dimensions[r].height = 24
         elif r in [9, 12, 13, 14]:
-            ws.row_dimensions[r].height = 15
+            ws.row_dimensions[r].height = 18
         elif r < 15:
-            ws.row_dimensions[r].height = 16
+            ws.row_dimensions[r].height = 18
         else:
-            ws.row_dimensions[r].height = 28
+            ws.row_dimensions[r].height = 24
 
     col_widths = {
-        "A": 16,
-        "B": 12,
-        "C": 12,
-        "D": 10,
-        "E": 18,
-        "F": 14,
-        "G": 12,
-        "H": 12,
+        "A": 22,
+        "B": 16,
+        "C": 16,
+        "D": 15,
+        "E": 24,
+        "F": 18,
+        "G": 16,
+        "H": 18,
     }
     for col_letter, width in col_widths.items():
         ws.column_dimensions[col_letter].width = width
@@ -1080,6 +1085,7 @@ def show(supabase):
             eprouvettes_date_sel = []
             st.warning(f"Note lors du chargement de la date {date_filtre_str} : {err_sel}")
 
+        # MISE EN PAGE ET STYLISATIONS COULEUR DE LA TABLE ÉPROUVETTES PROGRAMMÉES (PHASE 2)
         with st.expander(f"📆 Éprouvettes programmées spécifiquement pour le : {date_filtre_str} ({len(eprouvettes_date_sel)} éprouvette(s))", expanded=True):
             if eprouvettes_date_sel:
                 rows_sel = []
@@ -1116,7 +1122,17 @@ def show(supabase):
                     })
 
                 df_sel = pd.DataFrame(rows_sel)
-                st.dataframe(df_sel, use_container_width=True, hide_index=True)
+
+                # APPLICATION DES COULEURS DE HIGHLIGHTING PAR STATUT EN PHASE 2
+                def colorier_statuts(valeur):
+                    if "Écrasée" in str(valeur):
+                        return "background-color: #D4EDDA; color: #155724; font-weight: bold;"
+                    elif "En attente" in str(valeur):
+                        return "background-color: #FFF3CD; color: #856404; font-weight: bold;"
+                    return ""
+
+                df_styler = df_sel.style.map(colorier_statuts, subset=["Statut"])
+                st.dataframe(df_styler, use_container_width=True, hide_index=True)
 
                 # BOUTON TÉLÉCHARGEMENT EXCEL DU PLANNING
                 excel_planning_date = exporter_dataframe_excel(df_sel, date_filtre_str)
@@ -1364,7 +1380,7 @@ def show(supabase):
                     "force_kn": f_kn,
                     "fc_mpa": fc_mpa,
                     "date_essai": ep_h.get("date_ecrasement", "-"),
-                    "age": str(ep_h.get("echeance", "28"))
+                    "age": str(item.get("echeance", "28"))
                     .replace(" jours", "")
                     .replace("j", ""),
                     "statut": statut,
@@ -1425,7 +1441,7 @@ def show(supabase):
             }
 
             excel_file = generer_pv_excel(export_data, infos_header)
-            filename = f"PV_Ecrasement_LPEE_{num_bl_valeur if num_bl_valeur != '-' else 'BL'}.xlsx"
+            filename = f"PV_Ecrasement_LPEE_PAYSAGE_{num_bl_valeur if num_bl_valeur != '-' else 'BL'}.xlsx"
 
             st.markdown("---")
             col_b1, col_b2 = st.columns(2)
@@ -1440,7 +1456,7 @@ def show(supabase):
 
             with col_b2:
                 st.download_button(
-                    label="📄 Télécharger le PV (Excel Modèle LPEE)",
+                    label="📄 Télécharger le PV (Excel Modèle LPEE - Paysage)",
                     data=excel_file,
                     file_name=filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1641,10 +1657,10 @@ def show(supabase):
                     excel_pv_hist = generer_pv_excel(
                         export_data_h, infos_header_h
                     )
-                    file_name_h = f"PV_Ecrasement_RE-EXPORT_{num_bl_h if num_bl_h != '-' else 'BL'}.xlsx"
+                    file_name_h = f"PV_Ecrasement_RE-EXPORT_PAYSAGE_{num_bl_h if num_bl_h != '-' else 'BL'}.xlsx"
 
                     st.download_button(
-                        label="📄 Télécharger le PV (Excel Format LPEE)",
+                        label="📄 Télécharger le PV (Excel Format LPEE - Paysage)",
                         data=excel_pv_hist,
                         file_name=file_name_h,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
