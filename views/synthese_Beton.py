@@ -386,19 +386,25 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 # =========================================================
-# 2. CHARGEMENT & TRAITEMENT SUPABASE (MOYENNE PAR ECHEANCE)
+# 2. CHARGEMENT & TRAITEMENT SUPABASE (INCLUANT AFFAISSEMENT & TEMP. BETON)
 # =========================================================
 
 def load_and_process_controle_data(supabase):
     """
-    Charge les données de contrôle et calcule la MOYENNE des résistances (Fc) 
-    par référence de contrôle (ref_controle) pour chaque échéance (3J, 7J, 28J).
+    Charge les données de contrôle, effectue une jonction avec la table de suivi du bétonnage 
+    pour récupérer l'Affaissement et la Température du Béton par référence de contrôle, 
+    puis calcule la MOYENNE des résistances (Fc) par référence.
     """
+    # 1. Chargement des données d'écrasement
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_raw = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
     if df_raw.empty:
         return pd.DataFrame()
+
+    # 2. Récupération des données de bétonnage (Affaissement & Température du béton)
+    res_betonnage = supabase.table("suivi_betonnage").select("prelevement, affaissement, temperature").execute()
+    df_betonnage = pd.DataFrame(res_betonnage.data) if res_betonnage and res_betonnage.data else pd.DataFrame()
 
     # Nettoyage des chaînes d'échéance
     def clean_echeance(val):
@@ -435,6 +441,20 @@ def load_and_process_controle_data(supabase):
     else:
         df_raw["date_dt"] = pd.NaT
 
+    # Mapping affaissement et température depuis la table suivi_betonnage si non présents dans suivi_controle_beton
+    aff_map = {}
+    temp_map = {}
+    if not df_betonnage.empty and "prelevement" in df_betonnage.columns:
+        # On cast en string pour sécuriser la correspondance
+        df_betonnage["prelevement_str"] = df_betonnage["prelevement"].astype(str).str.strip()
+        for _, row in df_betonnage.iterrows():
+            ref = row["prelevement_str"]
+            if ref and ref != "nan":
+                if "affaissement" in row and pd.notna(row["affaissement"]):
+                    aff_map[ref] = row["affaissement"]
+                if "temperature" in row and pd.notna(row["temperature"]):
+                    temp_map[ref] = row["temperature"]
+
     pivot_rows = []
     grouped = df_raw.groupby(existing_group_cols, dropna=False)
 
@@ -442,6 +462,22 @@ def load_and_process_controle_data(supabase):
         first_row = group_df.iloc[0]
         row_dict = {col: first_row[col] for col in existing_group_cols}
         row_dict["date_dt"] = group_df["date_dt"].dropna().min() if not group_df["date_dt"].dropna().empty else pd.NaT
+
+        ref_str = str(first_row.get("ref_controle", "")).strip()
+
+        # Récupération de l'affaissement (depuis suivi_controle_beton si présent, sinon depuis la jointure)
+        if "affaissement" in group_df.columns and pd.notna(first_row["affaissement"]):
+            row_dict["affaissement"] = first_row["affaissement"]
+        else:
+            row_dict["affaissement"] = aff_map.get(ref_str, None)
+
+        # Récupération de la température du béton
+        if "temperature" in group_df.columns and pd.notna(first_row["temperature"]):
+            row_dict["temperature"] = first_row["temperature"]
+        elif "temperature_beton" in group_df.columns and pd.notna(first_row["temperature_beton"]):
+            row_dict["temperature"] = first_row["temperature_beton"]
+        else:
+            row_dict["temperature"] = temp_map.get(ref_str, None)
 
         # Calcul des moyennes par échéance
         for ech in ["3 jours", "7 jours", "28 jours"]:
@@ -455,12 +491,32 @@ def load_and_process_controle_data(supabase):
 
     df_pivoted = pd.DataFrame(pivot_rows)
 
-    # Intitulés de colonnes
+    # Réorganisation explicite des colonnes (Affaissement et Température placés juste après Ouvrage)
+    desired_order = [
+        "ref_controle", 
+        "date_coulee", 
+        "classe_beton", 
+        "ouvrage", 
+        "affaissement", 
+        "temperature", 
+        "fc_mpa_3 jours", 
+        "fc_mpa_7 jours", 
+        "fc_mpa_28 jours",
+        "date_dt"
+    ]
+    
+    # Conservation unique des colonnes existantes
+    existing_cols = [c for c in desired_order if c in df_pivoted.columns]
+    df_pivoted = df_pivoted[existing_cols]
+
+    # Renommage des entêtes pour l'affichage et l'exportation
     rename_map = {
         "ref_controle": "Réf. Contrôle",
         "date_coulee": "Date Coulée",
         "classe_beton": "Classe Béton",
         "ouvrage": "Ouvrage",
+        "affaissement": "Affaissement (mm)",
+        "temperature": "Temp. Béton (°C)",
         "fc_mpa_3 jours": "Moy. Fc (MPa) [3 Jours]",
         "fc_mpa_7 jours": "Moy. Fc (MPa) [7 Jours]",
         "fc_mpa_28 jours": "Moy. Fc (MPa) [28 Jours]"
@@ -471,7 +527,7 @@ def load_and_process_controle_data(supabase):
 
 
 def format_controle_dataframe(df_filtered):
-    """Prépare le dataframe d'affichage."""
+    """Prépare le dataframe d'affichage en retirant la colonne technique de date."""
     df_display = df_filtered.copy()
     if "date_dt" in df_display.columns:
         df_display = df_display.drop(columns=["date_dt"])
