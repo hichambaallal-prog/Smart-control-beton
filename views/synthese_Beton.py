@@ -392,14 +392,14 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 # =========================================================
 
 def load_and_process_controle_data(supabase):
-    """Charge les données de suivi_controle_beton sans les colonnes 'id' et 'force_kn'."""
+    """Charge les données de suivi_controle_beton en excluant 'id' et 'force_kn'."""
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_ecrasement = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
     if df_ecrasement.empty:
         return pd.DataFrame()
 
-    # Colonnes conservées (id et force_kn supprimées)
+    # Sélection des colonnes sans 'id' ni 'force_kn'
     expected_cols = [
         "ref_controle", "repere_eprouvette", "date_coulee", 
         "classe_beton", "ouvrage", "date_ecrasement", "echeance", 
@@ -409,7 +409,7 @@ def load_and_process_controle_data(supabase):
     existing_cols = [c for c in expected_cols if c in df_ecrasement.columns]
     df_ecrasement = df_ecrasement[existing_cols]
 
-    # Dérivation d'un champ DateTime pour les filtres de dates Streamlit
+    # Champ DateTime pour les filtres Streamlit
     if "date_coulee" in df_ecrasement.columns:
         df_ecrasement["date_dt"] = pd.to_datetime(df_ecrasement["date_coulee"], errors="coerce")
     elif "date_ecrasement" in df_ecrasement.columns:
@@ -421,7 +421,7 @@ def load_and_process_controle_data(supabase):
 
 
 def format_controle_dataframe(df_filtered):
-    """Prépare le dataframe d'affichage en supprimant la colonne temporaire de date."""
+    """Prépare le dataframe d'affichage."""
     df_display = df_filtered.copy()
     if "date_dt" in df_display.columns:
         df_display = df_display.drop(columns=["date_dt"])
