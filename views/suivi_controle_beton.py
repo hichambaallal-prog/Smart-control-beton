@@ -473,7 +473,7 @@ def generer_pv_excel(export_data, infos_header):
 
     ws.merge_cells(f"B{next_row}:H{next_row}")
 
-    obs_defaut = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+    obs_defaut = infos_header.get("observations") or "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
 
     seuil_min = 35.0
     if "C25/30" in classe_beton_val:
@@ -528,7 +528,7 @@ def generer_pv_excel(export_data, infos_header):
             ws.row_dimensions[r].height = 48
         elif r in [10, 11]:
             ws.row_dimensions[r].height = 23
-        elif 15 <= r <= (15 + nb_total):
+        elif 15 <= r < (15 + nb_total):
             ws.row_dimensions[r].height = 28
         elif r in [9, 12, 13, 14]:
             ws.row_dimensions[r].height = 15
@@ -623,7 +623,7 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
         st.session_state[session_key] = str(ref_parent).strip()
         return str(ref_parent).strip()
 
-    ref_ep = sample_ep.get("ref_controle")
+    ref_ep = sample_ep.get("ref_controle") if sample_ep else None
     if ref_ep and str(ref_ep).strip():
         st.session_state[session_key] = str(ref_ep).strip()
         return str(ref_ep).strip()
@@ -1047,7 +1047,7 @@ def show(supabase):
 
                 dt_ecras_obj = datetime.strptime(str(dt_ecras_str)[:10], "%Y-%m-%d").date() if dt_ecras_str else today_date
                 if dt_ecras_obj < today_date:
-                    statut_urgence = f"⚠️ En Retard ({ (today_date - dt_ecras_obj).days } jour(s))"
+                    statut_urgence = f"⚠️ En Retard ({(today_date - dt_ecras_obj).days} jour(s))"
                 else:
                     statut_urgence = "🔥 Prévu Aujourd'hui"
 
@@ -1168,7 +1168,7 @@ def show(supabase):
                 info_b_temp = obtenir_infos_betonnage_parent(supabase, b_id_ep)
                 ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
                 if not classe_ep or classe_ep == "-":
-                    classe_ep = info_b_temp.get("classe_beton") or info_b_temp.get("classe") or "-"
+                    classe_ep = (info_b_temp.get("classe_beton") or info_b_temp.get("classe") or "-") if info_b_temp else "-"
 
                 cle_groupe = (
                     f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ouv_ep}"
@@ -1197,12 +1197,12 @@ def show(supabase):
                 supabase, betonnage_id
             )
 
-            exact_bl_phase1 = extraire_num_bl(sample, info_betonnage, choix_lot)
+            exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
 
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
             col_l1.metric("Client", "TGCC")
             col_l2.metric("N° Bon Livraison", exact_bl_phase1)
-            col_l3.metric("Ouvrage", str(info_betonnage.get("ouvrage") or sample.get("ouvrage") or "-"))
+            col_l3.metric("Ouvrage", str((info_betonnage.get("ouvrage") if info_betonnage else None) or sample.get("ouvrage") or "-"))
             col_l4.metric("Échéance Visée", str(sample.get("echeance", "-")))
 
             st.markdown("---")
@@ -1211,7 +1211,7 @@ def show(supabase):
             with col_g1:
                 tech_global = st.text_input(
                     "Technicien / Opérateur",
-                    value=sample.get("technicien", info_betonnage.get("technicien_prelevement", "Technicien LPEE")),
+                    value=sample.get("technicien", (info_betonnage.get("technicien_prelevement") if info_betonnage else None) or "Technicien LPEE"),
                     key="tech_global",
                 )
             with col_g2:
@@ -1372,31 +1372,39 @@ def show(supabase):
 
             num_bl_valeur = exact_bl_phase1
             affaissement_saisi = (
-                info_betonnage.get("affaissement")
-                or info_betonnage.get("slump")
+                (info_betonnage.get("affaissement") or info_betonnage.get("slump"))
+                if info_betonnage
+                else None
             )
             temp_saisie = (
-                info_betonnage.get("temperature")
-                or info_betonnage.get("temp_beton")
+                (info_betonnage.get("temperature") or info_betonnage.get("temp_beton"))
+                if info_betonnage
+                else None
             )
             ouvrage_saisi = (
-                info_betonnage.get("ouvrage")
+                (info_betonnage.get("ouvrage") if info_betonnage else None)
                 or sample.get("ouvrage")
             )
             date_coulee_saisie = (
-                info_betonnage.get("date_coulee")
+                (info_betonnage.get("date_coulee") if info_betonnage else None)
                 or sample.get("date_coulee")
             )
             centrale_saisie = (
-                info_betonnage.get("centrale")
-                or info_betonnage.get("centrale_beton")
-                or sample.get("centrale")
+                (
+                    info_betonnage.get("centrale")
+                    or info_betonnage.get("centrale_beton")
+                )
+                if info_betonnage
+                else sample.get("centrale")
             )
             tech_prelev = (
-                info_betonnage.get("technicien_prelevement")
-                or info_betonnage.get("preleve_par")
-                or info_betonnage.get("technicien")
-                or tech_global
+                (
+                    info_betonnage.get("technicien_prelevement")
+                    or info_betonnage.get("preleve_par")
+                    or info_betonnage.get("technicien")
+                )
+                if info_betonnage
+                else tech_global
             )
 
             infos_header = {
@@ -1512,7 +1520,7 @@ def show(supabase):
                         info_b_temp = obtenir_infos_betonnage_parent(supabase, b_id_ep)
                         ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, row.to_dict())
                         if not classe_ep or classe_ep == "-":
-                            classe_ep = info_b_temp.get("classe_beton") or info_b_temp.get("classe") or "-"
+                            classe_ep = (info_b_temp.get("classe_beton") or info_b_temp.get("classe") or "-") if info_b_temp else "-"
 
                         cle_pv = (
                             f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ouv_ep}"
@@ -1573,33 +1581,41 @@ def show(supabase):
                             "statut": statut,
                         })
 
-                    num_bl_h = extraire_num_bl(sample_h, info_beton_h, choix_pv_hist)
+                    num_bl_h = extraire_num_bl(sample_h, info_beton_h or {}, choix_pv_hist)
                     aff_h = (
-                        info_beton_h.get("affaissement")
-                        or info_beton_h.get("slump")
+                        (info_beton_h.get("affaissement") or info_beton_h.get("slump"))
+                        if info_beton_h
+                        else None
                     )
                     temp_h = (
-                        info_beton_h.get("temperature")
-                        or info_beton_h.get("temp_beton")
+                        (info_beton_h.get("temperature") or info_beton_h.get("temp_beton"))
+                        if info_beton_h
+                        else None
                     )
                     ouv_h = (
-                        info_beton_h.get("ouvrage")
+                        (info_beton_h.get("ouvrage") if info_beton_h else None)
                         or sample_h.get("ouvrage")
                     )
                     date_coulee_h = (
-                        info_beton_h.get("date_coulee")
+                        (info_beton_h.get("date_coulee") if info_beton_h else None)
                         or sample_h.get("date_coulee")
                     )
                     centrale_h = (
-                        info_beton_h.get("centrale")
-                        or info_beton_h.get("centrale_beton")
-                        or sample_h.get("centrale")
+                        (
+                            info_beton_h.get("centrale")
+                            or info_beton_h.get("centrale_beton")
+                        )
+                        if info_beton_h
+                        else sample_h.get("centrale")
                     )
                     tech_prelev_h = (
-                        info_beton_h.get("technicien_prelevement")
-                        or info_beton_h.get("preleve_par")
-                        or info_beton_h.get("technicien")
-                        or sample_h.get("technicien")
+                        (
+                            info_beton_h.get("technicien_prelevement")
+                            or info_beton_h.get("preleve_par")
+                            or info_beton_h.get("technicien")
+                        )
+                        if info_beton_h
+                        else sample_h.get("technicien")
                     )
 
                     infos_header_h = {
@@ -1648,8 +1664,12 @@ def show(supabase):
                     b_id_row = row_data.get("betonnage_id")
                     if b_id_row:
                         parent_info = obtenir_infos_betonnage_parent(supabase, b_id_row)
-                        df_all.at[idx_row, "affaissement"] = parent_info.get("affaissement") or parent_info.get("slump") or "-"
-                        df_all.at[idx_row, "temperature"] = parent_info.get("temperature") or parent_info.get("temp_beton") or "-"
+                        if parent_info:
+                            df_all.at[idx_row, "affaissement"] = parent_info.get("affaissement") or parent_info.get("slump") or "-"
+                            df_all.at[idx_row, "temperature"] = parent_info.get("temperature") or parent_info.get("temp_beton") or "-"
+                        else:
+                            df_all.at[idx_row, "affaissement"] = "-"
+                            df_all.at[idx_row, "temperature"] = "-"
 
                 renommage_colonnes = {
                     "affaissement": "affaissement_mm",
