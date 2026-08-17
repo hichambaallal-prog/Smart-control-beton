@@ -15,29 +15,32 @@ st.set_page_config(
 # ==========================================
 # 2. GESTION DES SESSIONS & AUTHENTIFICATION
 # ==========================================
+# Stockage de la base utilisateurs en session pour permettre la modification dynamique
+if "users_db" not in st.session_state:
+    st.session_state["users_db"] = {
+        # Administrateur
+        "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
+        
+        # Techniciens Laboratoire & Responsable de dossier
+        "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": False},
+        "HANINE": {"password": "hanine2026", "role": "laboratoire", "can_edit": False},
+        "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False},
+        "ELHAMDANI": {"password": "elhamdani2026", "role": "laboratoire", "can_edit": False},
+        
+        # Opérateurs Bétonnage
+        "ADAM": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
+        "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
+        "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False}
+    }
+
+USERS_DB = st.session_state["users_db"]
+
 if "user" not in st.session_state:
     st.session_state["user"] = None
 if "role" not in st.session_state:
     st.session_state["role"] = None
 if "can_edit" not in st.session_state:
     st.session_state["can_edit"] = False
-
-# Dictionnaire des utilisateurs, mots de passe individuels et rôles
-USERS_DB = {
-    # Administrateur (Accès total + Droit exclusif de modification/suppression)
-    "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
-    
-    # Techniciens Laboratoire & Responsable de dossier (Même niveau d'accès/sécurité)
-    "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": False},
-    "HANINE": {"password": "hanine2026", "role": "laboratoire", "can_edit": False},
-    "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False},
-    "ELHAMDANI": {"password": "elhamdani2026", "role": "laboratoire", "can_edit": False},
-    
-    # Opérateurs Bétonnage (Accès restreint au module Suivi Bétonnage)
-    "ADAM": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
-    "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
-    "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False}
-}
 
 # --- ÉCRAN DE CONNEXION ---
 if st.session_state["user"] is None:
@@ -108,7 +111,7 @@ with st.sidebar:
 
     st.markdown(f"👤 **{current_username}**")
     
-    # Affichage du rôle spécifique
+    # Affichage du rôle
     if current_role == "laboratoire" or current_role == "technicien":
         if current_username == "HANINE":
             st.info("Rôle : **RESPONSABLE DE DOSSIER**")
@@ -134,6 +137,7 @@ with st.sidebar:
         st.markdown("---")
         available_pages = [
             "Accueil", 
+            "Gestion Utilisateurs",
             "Essai à la Plaque", 
             "Synthèse Plaque", 
             "Suivi de Bétonnage", 
@@ -154,6 +158,29 @@ with st.sidebar:
     
     page = st.radio("Menu Principal", available_pages)
     
+    st.markdown("---")
+    
+    # --- MODULE DE MODIFICATION DE MOT DE PASSE (Pour tous les utilisateurs) ---
+    with st.expander("🔑 Changer mon mot de passe"):
+        with st.form("change_pwd_form", clear_on_submit=True):
+            old_pwd = st.text_input("Ancien mot de passe", type="password")
+            new_pwd = st.text_input("Nouveau mot de passe", type="password")
+            confirm_pwd = st.text_input("Confirmer le mot de passe", type="password")
+            submit_pwd = st.form_submit_button("Mettre à jour", use_container_width=True)
+            
+            if submit_pwd:
+                user_record = st.session_state["users_db"].get(current_username)
+                
+                if user_record and old_pwd != user_record["password"]:
+                    st.error("❌ L'ancien mot de passe est incorrect.")
+                elif new_pwd == "":
+                    st.warning("⚠️ Le nouveau mot de passe ne peut pas être vide.")
+                elif new_pwd != confirm_pwd:
+                    st.error("❌ Les nouveaux mots de passe ne correspondent pas.")
+                else:
+                    st.session_state["users_db"][current_username]["password"] = new_pwd
+                    st.success("✅ Mot de passe modifié avec succès !")
+
     st.markdown("---")
     if st.button("🚪 Déconnexion", use_container_width=True):
         st.session_state["user"] = None
@@ -188,6 +215,22 @@ if page == "Accueil":
     * **🧪 Suivi Contrôle Béton :** Saisie des écrasements d'éprouvettes de béton (3j, 7j, 28j, 90j) associées aux prélèvements.
     * **🚜 Essai à la Plaque :** Saisie des essais de portance (Norme NF P 94-117-1) avec calculs automatiques des modules $EV_1$, $EV_2$ et du coefficient $K$.
     """)
+
+elif page == "Gestion Utilisateurs" and current_role == "admin":
+    st.title("👥 Gestion des Utilisateurs & Mots de Passe")
+    st.caption("Consultez ci-dessous la liste de tous les utilisateurs et leurs mots de passe actuels.")
+    
+    # Transformation de USERS_DB en tableau lisible
+    data_users = []
+    for user, details in st.session_state["users_db"].items():
+        data_users.append({
+            "Utilisateur": user,
+            "Mot de Passe": details["password"],
+            "Rôle": details["role"],
+            "Droit de modification (can_edit)": details["can_edit"]
+        })
+    
+    st.dataframe(data_users, use_container_width=True)
 
 elif page == "Essai à la Plaque":
     essai_Plaque.show(supabase)
