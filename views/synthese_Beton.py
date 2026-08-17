@@ -398,7 +398,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
             ws.cell(row=r, column=c).border = thin_border
 
     for col_idx in range(1, nb_cols + 1):
-        ws.column_dimensions[get_column_letter(col_idx)].width = 18
+        ws.column_dimensions[get_column_letter(col_idx)].width = 22
 
     wb.save(output)
     output.seek(0)
@@ -412,8 +412,8 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 def load_and_process_controle_data(supabase):
     """
     Charge les données de contrôle et calcule la MOYENNE des résistances (Fc) par référence.
+    Exclut explicitement les colonnes affaissement et température du contrôle.
     """
-    # 1. Chargement de la table contrôle
     res_ecrasement = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
     df_raw = pd.DataFrame(res_ecrasement.data) if res_ecrasement and res_ecrasement.data else pd.DataFrame()
 
@@ -440,7 +440,7 @@ def load_and_process_controle_data(supabase):
     if "fc_mpa" in df_raw.columns:
         df_raw["fc_mpa"] = pd.to_numeric(df_raw["fc_mpa"], errors="coerce")
 
-    # Groupement par prélèvement / contrôle
+    # Colonnes de regroupement (Exclusion stricte d'affaissement et température)
     group_cols = ["ref_controle", "date_coulee", "classe_beton", "ouvrage"]
     existing_group_cols = [c for c in group_cols if c in df_raw.columns]
 
@@ -477,7 +477,7 @@ def load_and_process_controle_data(supabase):
 
     df_pivoted = pd.DataFrame(pivot_rows)
 
-    # Ordre désiré des colonnes (sans affaissement ni temperature)
+    # Ordre strict des colonnes à conserver
     desired_order = [
         "ref_controle", 
         "date_coulee", 
@@ -507,10 +507,15 @@ def load_and_process_controle_data(supabase):
 
 
 def format_controle_dataframe(df_filtered):
-    """Prépare le dataframe d'affichage en retirant la colonne technique de date."""
+    """Prépare le dataframe d'affichage en filtrant les colonnes indésirables."""
     df_display = df_filtered.copy()
-    if "date_dt" in df_display.columns:
-        df_display = df_display.drop(columns=["date_dt"])
+    
+    # Suppression explicite si présentes
+    cols_to_remove = ["date_dt", "affaissement", "temperature", "Affaissement (mm)", "Temp. Béton (°C)"]
+    for c in cols_to_remove:
+        if c in df_display.columns:
+            df_display = df_display.drop(columns=[c])
+            
     return df_display
 
 
