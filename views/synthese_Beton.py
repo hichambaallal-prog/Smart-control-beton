@@ -159,11 +159,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
 
     # CONSTRUCTION DES EN-TÊTES EXCEL
     if is_multi:
-        # Ligne 1 des en-têtes
         col_i = 1
-        curr_parent = None
-        start_p_col = 1
-        
         for top_cat, sub_cat in df_data.columns:
             cell_top = ws.cell(row=row_idx, column=col_i)
             cell_top.value = top_cat
@@ -889,9 +885,9 @@ def show(supabase):
                             ta_min, ta_max = get_min_max(group["temperature_ambiante"])
 
                             grouped_rows.append({
+                                ("Période", ""): date_str,
                                 ("Classe", ""): classe,
                                 ("Ouvrage", ""): ovr,
-                                ("Période", ""): date_str,
                                 ("Quantité (m³)", ""): round(vol_sum, 1),
                                 ("Affaissement", "Min"): aff_min,
                                 ("Affaissement", "Max"): aff_max,
