@@ -5,6 +5,17 @@ from datetime import date, datetime
 def show(supabase):
     st.title("🚜 Essai à la Plaque (NF P 94-117-1)")
 
+    # ---------------------------------------------------------
+    # RÉCUPÉRATION DU NOM DE L'UTILISATEUR ET DU RÔLE DE SESSION
+    # ---------------------------------------------------------
+    # Détection automatique de l'utilisateur connecté (ex: ELHAMDANI)
+    current_user = (
+        st.session_state.get("username") or 
+        st.session_state.get("user") or 
+        st.session_state.get("user_name") or 
+        "Agent LPEE"
+    ).upper()
+
     # Vérification du rôle d'administrateur
     is_admin = st.session_state.get("is_admin", False) or st.session_state.get("role") == "admin"
 
@@ -26,7 +37,7 @@ def show(supabase):
         default_mat = editing_item.get("nature_materiau", "")
         default_z1 = float(editing_item.get("z1", 0.53))
         default_z2 = float(editing_item.get("z2", 0.52))
-        default_tech = editing_item.get("technicien", "")
+        default_tech = editing_item.get("technicien", current_user)
         default_obs = editing_item.get("observations", "")
     else:
         # Valeurs par défaut pour une nouvelle saisie
@@ -39,7 +50,7 @@ def show(supabase):
         default_mat = "GNT 0/31.5 Classée B2"
         default_z1 = 0.53
         default_z2 = 0.52
-        default_tech = "Agent LPEE"
+        default_tech = current_user  # Remplissage automatique avec l'utilisateur de la session (ex: ELHAMDANI)
         default_obs = "Portance conforme aux exigences du CPT."
 
     # ---------------------------------------------------------
@@ -111,7 +122,6 @@ def show(supabase):
             }
 
             try:
-                # Filtrage des colonnes valides
                 sample_query = supabase.table("essais_plaque").select("*").limit(1).execute()
                 if sample_query.data and len(sample_query.data) > 0:
                     valid_columns = set(sample_query.data[0].keys())
@@ -148,12 +158,9 @@ def show(supabase):
         res = supabase.table("essais_plaque").select("*").order("id", desc=True).execute()
         if res.data and len(res.data) > 0:
             
-            # Reconstruction d'une liste de dictionnaires propre ligne par ligne
             clean_rows = []
             for row in res.data:
-                # Récupération de la valeur K (gestion k_ratio ou k)
                 k_val = row.get("k_ratio") if row.get("k_ratio") is not None else row.get("k")
-                # Récupération de la valeur PK/Profil (gestion pk_profil ou pkl)
                 pk_val = row.get("pk_profil") if row.get("pk_profil") is not None else row.get("pkl")
 
                 clean_rows.append({
@@ -173,12 +180,9 @@ def show(supabase):
                     "Technicien": row.get("technicien")
                 })
 
-            # Création directe du DataFrame avec l'ordre exact demandé
             df_display = pd.DataFrame(clean_rows)
-
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-            # --- ACTIONS RESERVÉES À L'ADMINISTRATEUR ---
             if is_admin:
                 st.markdown("### ⚙️ Actions Administrateur (Modifier / Supprimer)")
                 
