@@ -35,7 +35,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     ws = wb.active
     ws.title = "Synthèse Bétonnage"
 
-    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE if is_mensuel else ws.ORIENTATION_PORTRAIT
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
@@ -70,9 +70,8 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
     total_border = Border(top=Side(style='thin', color='000000'), bottom=Side(style='double', color='000000'))
 
-    # Si c'est un DataFrame à MultiIndex (Mensuel)
     is_multi = isinstance(df_data.columns, pd.MultiIndex)
-    nb_cols = len(df_data.columns)
+    nb_cols = max(len(df_data.columns), 10)
     last_col_letter = get_column_letter(nb_cols)
     mid_col_idx = max(nb_cols // 2, 1)
     mid_col_letter = get_column_letter(mid_col_idx)
@@ -124,7 +123,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     ws.row_dimensions[row_idx].height = 28
 
     row_idx += 1
-    # Calcul Volume
     if is_multi:
         vol_col = [c for c in df_data.columns if c[0] == "Quantité (m³)"]
         vol_tot = df_data[vol_col[0]].sum() if vol_col else 0
@@ -157,7 +155,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     ws.row_dimensions[row_idx].height = 28
     row_idx += 1
 
-    # CONSTRUCTION DES EN-TÊTES EXCEL
     if is_multi:
         col_i = 1
         for top_cat, sub_cat in df_data.columns:
@@ -176,16 +173,15 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
             cell_sub.border = thin_border
             col_i += 1
 
-        # Fusion horizontale pour les catégories parentes avec plusieurs sous-colonnes
         col_i = 1
-        while col_i <= nb_cols:
+        real_len = len(df_data.columns)
+        while col_i <= real_len:
             top_val = df_data.columns[col_i-1][0]
             span = sum(1 for c in df_data.columns if c[0] == top_val and top_val != "")
             if span > 1:
                 ws.merge_cells(start_row=row_idx, start_column=col_i, end_row=row_idx, end_column=col_i+span-1)
                 col_i += span
             else:
-                # Fusion verticale si pas de sous-catégorie
                 if df_data.columns[col_i-1][1] == "":
                     ws.merge_cells(start_row=row_idx, start_column=col_i, end_row=row_idx+1, end_column=col_i)
                 col_i += 1
@@ -212,10 +208,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
             cell.value = val if pd.notna(val) else ""
             cell.font = font_normal
             cell.border = thin_border
-            if isinstance(val, (int, float)):
-                cell.alignment = Alignment(horizontal="right", vertical="center")
-            else:
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         
         ws.row_dimensions[row_idx].height = 26
         row_idx += 1
@@ -226,6 +219,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     total_cell.value = "TOTAL"
     total_cell.font = font_bold
     total_cell.border = total_border
+    total_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     headers_flat = [c[0] if is_multi else c for c in df_data.columns]
     for col_num in range(1, len(headers_flat) + 1):
@@ -237,44 +231,12 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
         if col_name == "Quantité (m³)":
             c.value = f"=SUM({col_ltr}{start_data_row}:{col_ltr}{end_data_row})"
             c.number_format = '0.0 "m³"'
-            c.alignment = Alignment(horizontal="right", vertical="center")
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    row_idx += 3
-
-    ws.merge_cells(f"A{row_idx}:{mid_col_letter}{row_idx}")
-    ws[f"A{row_idx}"] = "Responsables d'essai"
-    ws[f"A{row_idx}"].font = font_bold
-    ws[f"A{row_idx}"].alignment = Alignment(horizontal="center", vertical="center")
-
-    ws.merge_cells(f"{next_mid_letter}{row_idx}:{last_col_letter}{row_idx}")
-    ws[f"{next_mid_letter}{row_idx}"] = "Chef du Laboratoire"
-    ws[f"{next_mid_letter}{row_idx}"].font = font_bold
-    ws[f"{next_mid_letter}{row_idx}"].alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[row_idx].height = 25
-
-    row_idx += 1
-    ws.merge_cells(f"A{row_idx}:{mid_col_letter}{row_idx+3}")
-    ws[f"A{row_idx}"] = "Visa & Signature :"
-    ws[f"A{row_idx}"].font = font_normal
-    ws[f"A{row_idx}"].alignment = Alignment(horizontal="left", vertical="top")
-
-    ws.merge_cells(f"{next_mid_letter}{row_idx}:{last_col_letter}{row_idx+3}")
-    ws[f"{next_mid_letter}{row_idx}"] = "Visa & Signature :"
-    ws[f"{next_mid_letter}{row_idx}"].font = font_normal
-    ws[f"{next_mid_letter}{row_idx}"].alignment = Alignment(horizontal="left", vertical="top")
-
-    for r in range(row_idx, row_idx + 4):
-        ws.row_dimensions[r].height = 20
-
-    for r in range(row_idx - 1, row_idx + 4):
-        for c in range(1, mid_col_idx + 1):
-            ws.cell(row=r, column=c).border = thin_border
-        for c in range(mid_col_idx + 1, nb_cols + 1):
-            ws.cell(row=r, column=c).border = thin_border
-
-    for col_idx in range(1, nb_cols + 1):
-        col_letter = get_column_letter(col_idx)
-        ws.column_dimensions[col_letter].width = 14
+    cols_10 = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    for col_l in cols_10:
+        ws.column_dimensions[col_l].width = 10
+    ws.column_dimensions['C'].width = 40
 
     wb.save(output)
     output.seek(0)
@@ -320,7 +282,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     thin_border_side = Side(style='thin', color='B0C4DE')
     thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
 
-    nb_cols = max(len(df_data.columns), 9)
+    nb_cols = max(len(df_data.columns), 10)
     last_col_letter = get_column_letter(nb_cols)
     mid_col_idx = nb_cols // 2
     mid_col_letter = get_column_letter(mid_col_idx)
@@ -410,10 +372,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
             cell.value = val if pd.notna(val) else ""
             cell.font = font_normal
             cell.border = thin_border
-            if isinstance(val, (int, float)):
-                cell.alignment = Alignment(horizontal="right", vertical="center")
-            else:
-                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         ws.row_dimensions[row_idx].height = 28
         row_idx += 1
     end_data_row = row_idx - 1
@@ -487,8 +446,9 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ]
 
     for label, v_aff, v_temp, v_fc7, v_fc28 in stat_rows:
-        ws.cell(row=row_idx, column=1, value=label).font = font_bold
-        ws.cell(row=row_idx, column=1).alignment = Alignment(horizontal="left", vertical="center")
+        c_lbl = ws.cell(row=row_idx, column=1, value=label)
+        c_lbl.font = font_bold
+        c_lbl.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
         vals = [v_aff, v_temp, v_fc7, v_fc28]
         for idx, val in enumerate(vals):
@@ -498,7 +458,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
             c = ws.cell(row=row_idx, column=c_start)
             c.value = val
             c.font = font_normal
-            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             if isinstance(val, str) and val.startswith("="):
                 c.number_format = '0.00' if label in ["σ", "CV %"] else '0.0'
 
@@ -508,12 +468,10 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         ws.row_dimensions[row_idx].height = 22
         row_idx += 1
 
-    specific_widths = {
-        'A': 8, 'B': 11, 'C': 10, 'D': 28, 'E': 10,
-        'F': 10, 'G': 14, 'H': 14, 'I': 14
-    }
-    for col_letter, width in specific_widths.items():
-        ws.column_dimensions[col_letter].width = width
+    cols_10 = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    for col_l in cols_10:
+        ws.column_dimensions[col_l].width = 10
+    ws.column_dimensions['C'].width = 40
 
     wb.save(output)
     output.seek(0)
@@ -907,7 +865,7 @@ def show(supabase):
 
                         excel_file_m = generate_excel_synthesis_betonnage(df_m_display, f"Mois de {mois_selected} {annee}", is_mensuel=True)
                         st.download_button(
-                            label="📥 Télécharger la Synthèse Mensuelle Excel Bétonnage (A4 Paysage)",
+                            label="📥 Télécharger la Synthèse Mensuelle Excel Bétonnage (A4 Portrait)",
                             data=excel_file_m,
                             file_name=f"Synthese_Mensuelle_Betonnage_{mois_selected}_{annee}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
