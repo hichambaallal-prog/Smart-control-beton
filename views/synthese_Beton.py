@@ -761,9 +761,6 @@ def show(supabase):
                     if df.empty:
                         st.info("Aucun coulage enregistré pour les critères sélectionnés.")
                     else:
-                        # -------------------------------------------------------------
-                        # RÉCUPÉRATION DIRECTE ET SÉCURISÉE DE LA DURÉE DE TRANSPORT
-                        # -------------------------------------------------------------
                         def parse_time_flex(val):
                             if pd.isna(val) or not val:
                                 return None
@@ -776,20 +773,16 @@ def show(supabase):
                             return None
 
                         def resolve_duree(row):
-                            # 1. Inspecter toutes les clés possibles renvoyées par Supabase
-                            possible_keys = [
-                                "duree_transport", "duree_transport_min", 
-                                "Durée de transport", "duree", "duree_trans"
-                            ]
-                            for key in possible_keys:
-                                if key in row and pd.notna(row[key]):
-                                    val_str = str(row[key]).strip()
-                                    if val_str not in ["", "-", "None", "nan"]:
-                                        if "min" in val_str.lower():
-                                            return val_str
-                                        return f"{val_str} min"
+                            # Inspection dynamique globale des champs de la ligne Supabase
+                            for key, val in row.items():
+                                key_str = str(key).lower()
+                                if "duree" in key_str or "transport" in key_str:
+                                    if pd.notna(val):
+                                        val_str = str(val).strip()
+                                        if val_str not in ["", "-", "None", "nan"]:
+                                            return val_str if "min" in val_str.lower() else f"{val_str} min"
 
-                            # 2. Calcul dynamique en fallback si la durée n'est pas saisie dans la BDD
+                            # Déduction automatique par calcul si heure départ/arrivée présentes
                             col_depart = None
                             for c in ["heure_depart", "heure_centrale", "heure_arrivee"]:
                                 if c in row and pd.notna(row[c]):
@@ -806,27 +799,20 @@ def show(supabase):
                                     return f"{diff} min" if diff >= 0 else "-"
                             return "-"
 
-                        # Extraction de la durée de transport avant suppression des colonnes inutiles
+                        # 1. Calcul et assignation prioritaire
                         df["Durée de transport"] = df.apply(resolve_duree, axis=1)
 
+                        # 2. Suppression ciblée des champs techniques
                         cols_drop = [
                             c for c in [
                                 "id", "created_at", "created", "heure_fin_coulage", 
                                 "client", "centrale_beton", "technicien", "observations", 
                                 "nb_eprouvettes", "duree_transport", "duree_transport_min"
-                            ] if c in df.columns
+                            ] if c in df.columns and c != "Durée de transport"
                         ]
                         df = df.drop(columns=cols_drop)
 
-                        cols = list(df.columns)
-                        if "date_livraison" in cols and "heure_arrivee" in cols:
-                            cols.remove("heure_arrivee")
-                            cols.insert(cols.index("date_livraison") + 1, "heure_arrivee")
-                        if "meteo" in cols:
-                            cols.remove("meteo")
-                            cols.append("meteo")
-                        df = df[cols]
-
+                        # 3. Réorganisation exacte des colonnes d'affichage
                         renames = {
                             "date_livraison": "Date Livraison", "heure_arrivee": "Heure d'arrivée",
                             "bl_num": "N° BL", "ouvrage": "Ouvrage", "quantite_m3": "Quantité (m³)",
@@ -835,6 +821,17 @@ def show(supabase):
                             "prelevement": "Prélèvement", "meteo": "Météo"
                         }
                         df_display = df.rename(columns=renames)
+
+                        desired_col_order = [
+                            "Date Livraison", "Heure d'arrivée", "N° BL", "Ouvrage",
+                            "Quantité (m³)", "Classe", "Temp. Béton (°C)", "Temp. Ambiante (°C)",
+                            "Affaissement (mm)", "Prélèvement", "Durée de transport", "Météo"
+                        ]
+
+                        final_cols = [c for c in desired_col_order if c in df_display.columns]
+                        # Ajouter d'éventuelles colonnes non listées
+                        remaining = [c for c in df_display.columns if c not in final_cols]
+                        df_display = df_display[final_cols + remaining]
 
                         st.markdown("---")
                         k1, k2 = st.columns(2)
