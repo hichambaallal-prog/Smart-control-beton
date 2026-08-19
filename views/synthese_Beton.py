@@ -51,6 +51,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     color_sub_header = "E2EFDA"
     color_card_bg = "F7F9FA"
     color_kpi_bg = "EDF2F8"
+    color_stat_bg = "F2F2F2"
 
     font_title = Font(name="Calibri", size=15, bold=True, color="FFFFFF")
     font_section = Font(name="Calibri", size=13, bold=True, color=color_primary)
@@ -65,9 +66,12 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     fill_sub_th = PatternFill(start_color=color_sub_header, end_color=color_sub_header, fill_type="solid")
     fill_card = PatternFill(start_color=color_card_bg, end_color=color_card_bg, fill_type="solid")
     fill_kpi = PatternFill(start_color=color_kpi_bg, end_color=color_kpi_bg, fill_type="solid")
+    fill_stat = PatternFill(start_color=color_stat_bg, end_color=color_stat_bg, fill_type="solid")
 
     thin_border_side = Side(style='thin', color='B0C4DE')
     thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+    dark_thin_side = Side(style='thin', color='000000')
+    dark_border = Border(left=dark_thin_side, right=dark_thin_side, top=dark_thin_side, bottom=dark_thin_side)
     total_border = Border(top=Side(style='thin', color='000000'), bottom=Side(style='double', color='000000'))
 
     is_multi = isinstance(df_data.columns, pd.MultiIndex)
@@ -214,6 +218,39 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
         row_idx += 1
 
     end_data_row = row_idx - 1
+
+    # Ajout des Lignes Statistiques MIN et MAX (particulièrement pour le bilan mensuel)
+    num_text_cols = 4 if is_multi else 3
+    
+    for stat_label, stat_func in [("MIN", "MIN"), ("MAX", "MAX")]:
+        ws.row_dimensions[row_idx].height = 28
+        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=num_text_cols)
+        lbl_cell = ws.cell(row=row_idx, column=1)
+        lbl_cell.value = stat_label
+        lbl_cell.font = font_bold
+        lbl_cell.fill = fill_stat
+        lbl_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        for c_i in range(1, num_text_cols + 1):
+            ws.cell(row=row_idx, column=c_i).border = dark_border
+            ws.cell(row=row_idx, column=c_i).fill = fill_stat
+
+        for col_num in range(num_text_cols + 1, len(df_data.columns) + 1):
+            c = ws.cell(row=row_idx, column=col_num)
+            c.border = dark_border
+            c.font = font_bold
+            c.fill = fill_stat
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            col_ltr = get_column_letter(col_num)
+            
+            if start_data_row <= end_data_row:
+                c.value = f"={stat_func}({col_ltr}{start_data_row}:{col_ltr}{end_data_row})"
+                c.number_format = '0.0'
+            else:
+                c.value = "-"
+
+        row_idx += 1
+
     ws.row_dimensions[row_idx].height = 30
     total_cell = ws.cell(row=row_idx, column=1)
     total_cell.value = "TOTAL"
@@ -236,8 +273,8 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     cols_10 = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
     for col_l in cols_10:
         if col_l in ws.column_dimensions:
-            ws.column_dimensions[col_l].width = 10
-    ws.column_dimensions['C'].width = 40
+            ws.column_dimensions[col_l].width = 12
+    ws.column_dimensions['C'].width = 35
 
     wb.save(output)
     output.seek(0)
