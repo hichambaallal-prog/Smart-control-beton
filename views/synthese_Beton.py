@@ -270,7 +270,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
             c.number_format = '0.0 "m³"'
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # Largeur de la colonne A fixée à 14
     ws.column_dimensions['A'].width = 14
     cols_12 = ['B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
     for col_l in cols_12:
@@ -763,7 +762,7 @@ def show(supabase):
                         st.info("Aucun coulage enregistré pour les critères sélectionnés.")
                     else:
                         # -------------------------------------------------------------
-                        # CALCUL DE LA DURÉE DE TRANSPORT (CORRIGÉ & SÉCURISÉ)
+                        # RÉCUPÉRATION / CALCUL SÉCURISÉ DE LA DURÉE DE TRANSPORT
                         # -------------------------------------------------------------
                         def parse_time_flex(val):
                             if pd.isna(val) or not val:
@@ -776,7 +775,13 @@ def show(supabase):
                                     pass
                             return None
 
-                        def calc_duree(row):
+                        def resolve_duree(row):
+                            # 1. Vérifier si la valeur existe déjà dans la BDD (ex: duree_transport)
+                            for d_col in ["duree_transport", "Durée de transport"]:
+                                if d_col in row and pd.notna(row[d_col]) and str(row[d_col]).strip() not in ["", "-"]:
+                                    return str(row[d_col]).strip()
+
+                            # 2. Sinon, recalcul dynamique en secours
                             col_depart = None
                             for c in ["heure_depart", "heure_centrale", "heure_arrivee"]:
                                 if c in row and pd.notna(row[c]):
@@ -793,10 +798,9 @@ def show(supabase):
                                     return f"{diff} min" if diff >= 0 else "-"
                             return "-"
 
-                        # Calcul exécuté avant le nettoyage/suppression des colonnes
-                        df["Durée de transport"] = df.apply(calc_duree, axis=1)
+                        df["Durée de transport"] = df.apply(resolve_duree, axis=1)
 
-                        cols_drop = [c for c in ["id", "created_at", "created", "heure_fin_coulage", "client", "centrale_beton", "technicien", "observations", "nb_eprouvettes"] if c in df.columns]
+                        cols_drop = [c for c in ["id", "created_at", "created", "heure_fin_coulage", "client", "centrale_beton", "technicien", "observations", "nb_eprouvettes", "duree_transport"] if c in df.columns]
                         df = df.drop(columns=cols_drop)
 
                         cols = list(df.columns)
