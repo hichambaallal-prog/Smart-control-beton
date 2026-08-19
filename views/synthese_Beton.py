@@ -219,7 +219,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
 
     end_data_row = row_idx - 1
 
-    # Ajout des Lignes Statistiques MIN et MAX (particulièrement pour le bilan mensuel)
+    # Lignes Statistiques MIN et MAX
     num_text_cols = 4 if is_multi else 3
     
     for stat_label, stat_func in [("MIN", "MIN"), ("MAX", "MAX")]:
@@ -270,10 +270,11 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
             c.number_format = '0.0 "m³"'
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    cols_12 = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    # Largeur de la colonne A fixée à 14
+    ws.column_dimensions['A'].width = 14
+    cols_12 = ['B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
     for col_l in cols_12:
-        if col_l in ws.column_dimensions:
-            ws.column_dimensions[col_l].width = 12
+        ws.column_dimensions[col_l].width = 12
     ws.column_dimensions['C'].width = 35
 
     wb.save(output)
@@ -506,10 +507,10 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         ws.row_dimensions[row_idx].height = 22
         row_idx += 1
 
-    cols_10 = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
-    for col_l in cols_10:
-        if col_l in ws.column_dimensions:
-            ws.column_dimensions[col_l].width = 10
+    ws.column_dimensions['A'].width = 14
+    cols_12 = ['B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    for col_l in cols_12:
+        ws.column_dimensions[col_l].width = 12
     ws.column_dimensions['C'].width = 40
 
     wb.save(output)
@@ -518,7 +519,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 # =========================================================
-# 2. CHARGEMENT & TRAITEMENT SUPABASE AVEC RECHERCHE CROISÉE
+# 2. CHARGEMENT & TRAITEMENT SUPABASE
 # =========================================================
 
 def load_and_process_controle_data(supabase):
