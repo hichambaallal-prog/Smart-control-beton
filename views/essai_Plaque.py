@@ -12,6 +12,36 @@ def show(supabase):
 
 
 
+    # ---------------------------------------------------------
+
+    # RÉCUPÉRATION DYNAMIQUE DU TECHNICIEN CONNECTÉ
+
+    # ---------------------------------------------------------
+
+    user_raw = (
+
+        st.session_state.get("username") or 
+
+        st.session_state.get("user") or 
+
+        st.session_state.get("user_name") or 
+
+        "Agent LPEE"
+
+    )
+
+
+
+    if isinstance(user_raw, dict):
+
+        user_raw = user_raw.get("email") or user_raw.get("name") or "Agent LPEE"
+
+
+
+    current_user = str(user_raw).upper()
+
+
+
     # Vérification du rôle d'administrateur
 
     is_admin = st.session_state.get("is_admin", False) or st.session_state.get("role") == "admin"
@@ -54,7 +84,7 @@ def show(supabase):
 
         default_z2 = float(editing_item.get("z2", 0.52))
 
-        default_tech = editing_item.get("technicien", "")
+        default_tech = editing_item.get("technicien", current_user)
 
         default_obs = editing_item.get("observations", "")
 
@@ -80,7 +110,7 @@ def show(supabase):
 
         default_z2 = 0.52
 
-        default_tech = "Agent LPEE"
+        default_tech = current_user  # Remplissage automatique avec l'utilisateur actif de la session
 
         default_obs = "Portance conforme aux exigences du CPT."
 
