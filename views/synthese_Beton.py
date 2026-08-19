@@ -762,7 +762,7 @@ def show(supabase):
                         st.info("Aucun coulage enregistré pour les critères sélectionnés.")
                     else:
                         # -------------------------------------------------------------
-                        # RÉCUPÉRATION / CALCUL SÉCURISÉ DE LA DURÉE DE TRANSPORT
+                        # RÉCUPÉRATION DIRECTE ET SÉCURISÉE DE LA DURÉE DE TRANSPORT
                         # -------------------------------------------------------------
                         def parse_time_flex(val):
                             if pd.isna(val) or not val:
@@ -776,12 +776,20 @@ def show(supabase):
                             return None
 
                         def resolve_duree(row):
-                            # 1. Vérifier si la valeur existe déjà dans la BDD (ex: duree_transport)
-                            for d_col in ["duree_transport", "Durée de transport"]:
-                                if d_col in row and pd.notna(row[d_col]) and str(row[d_col]).strip() not in ["", "-"]:
-                                    return str(row[d_col]).strip()
+                            # 1. Inspecter toutes les clés possibles renvoyées par Supabase
+                            possible_keys = [
+                                "duree_transport", "duree_transport_min", 
+                                "Durée de transport", "duree", "duree_trans"
+                            ]
+                            for key in possible_keys:
+                                if key in row and pd.notna(row[key]):
+                                    val_str = str(row[key]).strip()
+                                    if val_str not in ["", "-", "None", "nan"]:
+                                        if "min" in val_str.lower():
+                                            return val_str
+                                        return f"{val_str} min"
 
-                            # 2. Sinon, recalcul dynamique en secours
+                            # 2. Calcul dynamique en fallback si la durée n'est pas saisie dans la BDD
                             col_depart = None
                             for c in ["heure_depart", "heure_centrale", "heure_arrivee"]:
                                 if c in row and pd.notna(row[c]):
@@ -798,9 +806,16 @@ def show(supabase):
                                     return f"{diff} min" if diff >= 0 else "-"
                             return "-"
 
+                        # Extraction de la durée de transport avant suppression des colonnes inutiles
                         df["Durée de transport"] = df.apply(resolve_duree, axis=1)
 
-                        cols_drop = [c for c in ["id", "created_at", "created", "heure_fin_coulage", "client", "centrale_beton", "technicien", "observations", "nb_eprouvettes", "duree_transport"] if c in df.columns]
+                        cols_drop = [
+                            c for c in [
+                                "id", "created_at", "created", "heure_fin_coulage", 
+                                "client", "centrale_beton", "technicien", "observations", 
+                                "nb_eprouvettes", "duree_transport", "duree_transport_min"
+                            ] if c in df.columns
+                        ]
                         df = df.drop(columns=cols_drop)
 
                         cols = list(df.columns)
