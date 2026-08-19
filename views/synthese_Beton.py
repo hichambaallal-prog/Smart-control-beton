@@ -710,16 +710,24 @@ def show(supabase):
             col1, col2 = st.columns(2)
             with col1:
                 selected_date = st.date_input("Sélectionnez une date :", value=date.today(), key="b_date_j")
-            with col2:
-                selected_class = st.selectbox(
-                    "Filtrer par classe de béton :", 
-                    ["Toutes", "C25/30", "C30/37", "C35/45", "C40/50", "C45/55"],
-                    key="b_class_j"
-                )
-
+            
             try:
                 res = supabase.table("suivi_betonnage").select("*").eq("date_livraison", str(selected_date)).execute()
                 data = res.data if res else []
+
+                # Récupération dynamique des classes disponibles dans les données du jour
+                classes_j = ["Toutes"]
+                if data:
+                    df_temp = pd.DataFrame(data)
+                    if "classe_beton" in df_temp.columns:
+                        classes_j += sorted(list(df_temp["classe_beton"].dropna().unique()))
+
+                with col2:
+                    selected_class = st.selectbox(
+                        "Filtrer par classe de béton :", 
+                        classes_j,
+                        key="b_class_j"
+                    )
 
                 if data:
                     df = pd.DataFrame(data)
@@ -734,7 +742,8 @@ def show(supabase):
                                 try:
                                     h_fin = datetime.strptime(str(row["heure_fin_coulage"]), "%H:%M")
                                     h_arr = datetime.strptime(str(row["heure_arrivee"]), "%H:%M")
-                                    return f"{int((h_arr - h_fin).total_seconds() / 60)} min"
+                                    diff = int((h_fin - h_arr).total_seconds() / 60)
+                                    return f"{diff} min" if diff >= 0 else "-"
                                 except:
                                     return "-"
                             df["Durée de transport"] = df.apply(calc_duree, axis=1)
@@ -788,12 +797,6 @@ def show(supabase):
                 mois_liste = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
                 mois_selected = st.selectbox("Sélectionnez le mois :", mois_liste, index=date.today().month - 1, key="b_mois_m")
                 mois_num = mois_liste.index(mois_selected) + 1
-            with col_m2:
-                selected_class_m = st.selectbox(
-                    "Filtrer par classe de béton (Mensuel) :", 
-                    ["Toutes", "C25/30", "C30/37", "C35/45", "C40/50", "C45/55"],
-                    key="b_class_m"
-                )
 
             try:
                 date_debut = f"{annee}-{mois_num:02d}-01"
@@ -802,6 +805,19 @@ def show(supabase):
 
                 res_m = supabase.table("suivi_betonnage").select("*").gte("date_livraison", date_debut).lte("date_livraison", date_fin).execute()
                 data_m = res_m.data if res_m else []
+
+                classes_m = ["Toutes"]
+                if data_m:
+                    df_m_temp = pd.DataFrame(data_m)
+                    if "classe_beton" in df_m_temp.columns:
+                        classes_m += sorted(list(df_m_temp["classe_beton"].dropna().unique()))
+
+                with col_m2:
+                    selected_class_m = st.selectbox(
+                        "Filtrer par classe de béton (Mensuel) :", 
+                        classes_m,
+                        key="b_class_m"
+                    )
 
                 if data_m:
                     df_m = pd.DataFrame(data_m)
@@ -816,7 +832,8 @@ def show(supabase):
                                 try:
                                     h_fin = datetime.strptime(str(row["heure_fin_coulage"]), "%H:%M")
                                     h_arr = datetime.strptime(str(row["heure_arrivee"]), "%H:%M")
-                                    return f"{int((h_arr - h_fin).total_seconds() / 60)} min"
+                                    diff = int((h_fin - h_arr).total_seconds() / 60)
+                                    return f"{diff} min" if diff >= 0 else "-"
                                 except:
                                     return "-"
                             df_m["Durée de transport"] = df_m.apply(calc_duree, axis=1)
