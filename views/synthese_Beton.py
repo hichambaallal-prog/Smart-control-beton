@@ -271,7 +271,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     # ---------------------------------------------------------
-    # AJUSTEMENT EXPLICITE DES LARGEURS DE COLONNES DEMANDÉES
+    # LARGEURS DE COLONNES SPÉCIFIÉES
     # ---------------------------------------------------------
     ws.column_dimensions['A'].width = 14
     ws.column_dimensions['B'].width = 12
@@ -771,9 +771,7 @@ def show(supabase):
                     if df.empty:
                         st.info("Aucun coulage enregistré pour les critères sélectionnés.")
                     else:
-                        # -------------------------------------------------------------
-                        # SUPPRESSION EXPLICITE ET TOTALE DE LA DUREE DE TRANSPORT
-                        # -------------------------------------------------------------
+                        # Supprimer définitivement les colonnes non désirées
                         cols_drop = [
                             c for c in [
                                 "id", "created_at", "created", "heure_fin_coulage", 
