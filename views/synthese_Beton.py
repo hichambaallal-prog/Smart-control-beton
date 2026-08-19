@@ -762,16 +762,39 @@ def show(supabase):
                     if df.empty:
                         st.info("Aucun coulage enregistré pour les critères sélectionnés.")
                     else:
-                        if "heure_fin_coulage" in df.columns and "heure_arrivee" in df.columns:
-                            def calc_duree(row):
+                        # -------------------------------------------------------------
+                        # CALCUL DE LA DURÉE DE TRANSPORT (CORRIGÉ & SÉCURISÉ)
+                        # -------------------------------------------------------------
+                        def parse_time_flex(val):
+                            if pd.isna(val) or not val:
+                                return None
+                            val_str = str(val).strip()
+                            for fmt in ("%H:%M:%S", "%H:%M"):
                                 try:
-                                    h_fin = datetime.strptime(str(row["heure_fin_coulage"]), "%H:%M")
-                                    h_arr = datetime.strptime(str(row["heure_arrivee"]), "%H:%M")
+                                    return datetime.strptime(val_str, fmt)
+                                except ValueError:
+                                    pass
+                            return None
+
+                        def calc_duree(row):
+                            col_depart = None
+                            for c in ["heure_depart", "heure_centrale", "heure_arrivee"]:
+                                if c in row and pd.notna(row[c]):
+                                    col_depart = c
+                                    break
+                            
+                            col_fin = "heure_fin_coulage" if "heure_fin_coulage" in row else None
+
+                            if col_depart and col_fin:
+                                h_arr = parse_time_flex(row[col_depart])
+                                h_fin = parse_time_flex(row[col_fin])
+                                if h_fin and h_arr:
                                     diff = int((h_fin - h_arr).total_seconds() / 60)
                                     return f"{diff} min" if diff >= 0 else "-"
-                                except:
-                                    return "-"
-                            df["Durée de transport"] = df.apply(calc_duree, axis=1)
+                            return "-"
+
+                        # Calcul exécuté avant le nettoyage/suppression des colonnes
+                        df["Durée de transport"] = df.apply(calc_duree, axis=1)
 
                         cols_drop = [c for c in ["id", "created_at", "created", "heure_fin_coulage", "client", "centrale_beton", "technicien", "observations", "nb_eprouvettes"] if c in df.columns]
                         df = df.drop(columns=cols_drop)
