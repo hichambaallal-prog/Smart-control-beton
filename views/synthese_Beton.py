@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 
 
 # =========================================================
-# UTILITAIRE D'EXTRACTION NUMÉRIQUE & REGROUPEMENT
+# UTILITAIRE D'EXTRACTION NUMÉRIQUE
 # =========================================================
 
 def extract_numeric(val):
@@ -23,105 +23,6 @@ def extract_numeric(val):
         num = float(match.group())
         return int(num) if num.is_integer() else num
     return None
-
-
-def group_betonnage_by_ouvrage_classe(df):
-    """
-    Regroupe les lignes de bétonnage ayant la même Date, la même Classe et le même Ouvrage.
-    Calcule le Min et Max pour la Température et l'Affaissement.
-    """
-    if df.empty:
-        return df
-
-    # Extraction des valeurs numériques pour le calcul exact des Min et Max
-    if "Temp. Béton" in df.columns:
-        df["_temp_num"] = df["Temp. Béton"].apply(extract_numeric)
-    if "Affaissement" in df.columns:
-        df["_aff_num"] = df["Affaissement"].apply(extract_numeric)
-
-    grouped_rows = []
-    
-    # Clefs de regroupement principales
-    group_cols = ["Date Livraison", "Classe", "Ouvrage"]
-    # Vérification que toutes les colonnes requises sont présentés
-    for c in group_cols:
-        if c not in df.columns:
-            return df
-
-    grouped = df.groupby(group_cols, sort=False, dropna=False)
-
-    for (dt, cls, ovr), grp in grouped:
-        row = {}
-        row["Date Livraison"] = dt
-        
-        # Plage d'heures d'arrivée (Heure min - Heure max)
-        if "Heure d'arrivée" in grp.columns:
-            heures = grp["Heure d'arrivée"].dropna().astype(str).tolist()
-            if len(heures) > 1:
-                row["Heure d'arrivée"] = f"{min(heures)} - {max(heures)}"
-            elif len(heures) == 1:
-                row["Heure d'arrivée"] = heures[0]
-            else:
-                row["Heure d'arrivée"] = "-"
-
-        # Regroupement des numéros de BL
-        if "N° BL" in grp.columns:
-            bls = grp["N° BL"].dropna().astype(str).unique()
-            row["N° BL"] = " / ".join(bls) if len(bls) > 0 else "-"
-
-        row["Ouvrage"] = ovr
-
-        # Somme de la quantité globale
-        if "Quantité (m³)" in grp.columns:
-            row["Quantité (m³)"] = grp["Quantité (m³)"].sum()
-
-        row["Classe"] = cls
-
-        # Formatage Température Béton (Min - Max)
-        if "_temp_num" in grp.columns:
-            t_vals = grp["_temp_num"].dropna()
-            if not t_vals.empty:
-                t_min, t_max = t_vals.min(), t_vals.max()
-                row["Temp. Béton"] = f"{t_min:.1f} - {t_max:.1f} °C" if t_min != t_max else f"{t_min:.1f} °C"
-            else:
-                row["Temp. Béton"] = "-"
-
-        # Formatage Température Ambiante
-        if "Temp. Ambiante" in grp.columns:
-            ta_vals = grp["Temp. Ambiante"].dropna().astype(str).unique()
-            row["Temp. Ambiante"] = " / ".join(ta_vals) if len(ta_vals) > 0 else "-"
-
-        # Formatage Affaissement (Min - Max)
-        if "_aff_num" in grp.columns:
-            a_vals = grp["_aff_num"].dropna()
-            if not a_vals.empty:
-                a_min, a_max = int(a_vals.min()), int(a_vals.max())
-                row["Affaissement"] = f"{a_min} - {a_max} mm" if a_min != a_max else f"{a_min} mm"
-            else:
-                row["Affaissement"] = "-"
-
-        # Regroupement des Prélèvements
-        if "Prélèvement" in grp.columns:
-            p_vals = grp["Prélèvement"].dropna().astype(str).unique()
-            row["Prélèvement"] = " / ".join(p_vals) if len(p_vals) > 0 else "-"
-
-        # Regroupement Météo
-        if "Météo" in grp.columns:
-            m_vals = grp["Météo"].dropna().astype(str).unique()
-            row["Météo"] = " / ".join(m_vals) if len(m_vals) > 0 else "-"
-
-        # Durée de transport
-        if "Durée de transport" in grp.columns:
-            dt_vals = grp["Durée de transport"].dropna().astype(str).unique()
-            row["Durée de transport"] = " / ".join(dt_vals) if len(dt_vals) > 0 else "-"
-
-        grouped_rows.append(row)
-
-    df_result = pd.DataFrame(grouped_rows)
-    
-    # Conserver l'ordre d'origine des colonnes
-    orig_cols = [c for c in df.columns if not c.startswith("_") and c in df_result.columns]
-    return df_result[orig_cols]
 
 
 # =========================================================
@@ -323,14 +224,14 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
             ws.cell(row=r, column=c).border = thin_border
 
     col_width_map = {
-        "Date Livraison": 16, "Heure d'arrivée": 18, "N° BL": 22, "Ouvrage": 28,
-        "Quantité (m³)": 16, "Classe": 14, "Durée de transport": 18, "Temp. Béton": 18,
-        "Temp. Ambiante": 16, "Affaissement": 18, "Prélèvement": 22, "Météo": 15
+        "Date Livraison": 16, "Heure d'arrivée": 15, "N° BL": 16, "Ouvrage": 22,
+        "Quantité (m³)": 16, "Classe": 14, "Durée de transport": 18, "Temp. Béton": 15,
+        "Temp. Ambiante": 16, "Affaissement": 15, "Prélèvement": 18, "Météo": 15
     }
 
     for col_idx, col_name in enumerate(headers, 1):
         col_letter = get_column_letter(col_idx)
-        ws.column_dimensions[col_letter].width = col_width_map.get(col_name, 18)
+        ws.column_dimensions[col_letter].width = col_width_map.get(col_name, 16)
 
     wb.save(output)
     output.seek(0)
@@ -343,6 +244,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws = wb.active
     ws.title = "Synthèse Contrôle Béton"
 
+    # Configuration A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -382,6 +284,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     mid_col_letter = get_column_letter(mid_col_idx)
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
+    # Entête - Titre
     ws.merge_cells(f"A1:{last_col_letter}2")
     ws["A1"].value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU CONTRÔLE BÉTON"
     ws["A1"].font = font_title
@@ -420,6 +323,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
+    # Résumé
     row_idx = 7
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📊 RÉSUMÉ GLOBAL"
@@ -442,6 +346,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
+    # Tableau Données
     row_idx += 3
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📋 MOYENNE DES ÉCRASEMENTS PAR ÉCHÉANCE"
@@ -474,6 +379,9 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         row_idx += 1
     end_data_row = row_idx - 1
 
+    # =========================================================
+    # TABLEAU DE SYNTHÈSE STATISTIQUE DANS EXCEL
+    # =========================================================
     row_idx += 2
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📈 SYNTHÈSE STATISTIQUE DES PARAMÈTRES"
@@ -511,6 +419,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         "fc28": "I"
     }
 
+    # Calcul dynamique des lignes dans la table statistique
     row_moy = row_idx + 1
     row_std = row_idx + 3
 
@@ -531,6 +440,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         f_moy_fc28 = f"=AVERAGE({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
         f_max_fc28 = f"=MAX({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
 
+        # Formule ECARTYPE.STANDARD et liaison directe CV% sur les cellules MOY et σ
         f_std_fc28 = f"=ECARTYPE.STANDARD({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
         f_cv_fc28 = f"=SIERREUR(({col_map_excel['fc28']}{row_std}/{col_map_excel['fc28']}{row_moy})*100, 0)"
     else:
@@ -569,6 +479,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         ws.row_dimensions[row_idx].height = 22
         row_idx += 1
 
+    # Largeurs de colonnes
     specific_widths = {
         'A': 8, 'B': 11, 'C': 10, 'D': 28, 'E': 10,
         'F': 10, 'G': 14, 'H': 14, 'I': 14
@@ -848,13 +759,12 @@ def show(supabase):
                             "prelevement": "Prélèvement", "meteo": "Météo"
                         }
                         df_display = df.rename(columns=renames)
-                        
-                        # REGROUPEMENT BÉTONNAGE (MÊME DATE, CLASSE & OUVRAGE)
-                        df_display = group_betonnage_by_ouvrage_classe(df_display)
 
                         st.markdown("---")
                         k1, k2 = st.columns(2)
                         k1.metric("Volume Total", f"{df_display['Quantité (m³)'].sum():.1f} m³")
+                        if "Affaissement" in df_display.columns:
+                            k2.metric("Affaissement Moyen", f"{pd.to_numeric(df_display['Affaissement'], errors='coerce').mean():.0f} mm")
                         st.markdown("---")
 
                         excel_file = generate_excel_synthesis_betonnage(df_display, f"Journée du {selected_date.strftime('%d/%m/%Y')}")
@@ -931,9 +841,6 @@ def show(supabase):
                             "prelevement": "Prélèvement", "meteo": "Météo"
                         }
                         df_m_display = df_m.rename(columns=renames)
-
-                        # REGROUPEMENT BÉTONNAGE MENSUEL (MÊME DATE, CLASSE & OUVRAGE)
-                        df_m_display = group_betonnage_by_ouvrage_classe(df_m_display)
 
                         st.markdown("---")
                         st.metric("Volume Cumulé du Mois", f"{df_m_display['Quantité (m³)'].sum():.1f} m³")
