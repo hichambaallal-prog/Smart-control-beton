@@ -75,7 +75,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     total_border = Border(top=Side(style='thin', color='000000'), bottom=Side(style='double', color='000000'))
 
     is_multi = isinstance(df_data.columns, pd.MultiIndex)
-    nb_cols = max(len(df_data.columns), 10)
+    nb_cols = min(max(len(df_data.columns), 10), 10)  # Limité à 10 colonnes (A à J)
     last_col_letter = get_column_letter(nb_cols)
     mid_col_idx = max(nb_cols // 2, 1)
     mid_col_letter = get_column_letter(mid_col_idx)
@@ -161,7 +161,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
 
     if is_multi:
         col_i = 1
-        for top_cat, sub_cat in df_data.columns:
+        for top_cat, sub_cat in df_data.columns[:nb_cols]:
             cell_top = ws.cell(row=row_idx, column=col_i)
             cell_top.value = top_cat
             cell_top.font = font_th
@@ -178,10 +178,10 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
             col_i += 1
 
         col_i = 1
-        real_len = len(df_data.columns)
+        real_len = min(len(df_data.columns), nb_cols)
         while col_i <= real_len:
             top_val = df_data.columns[col_i-1][0]
-            span = sum(1 for c in df_data.columns if c[0] == top_val and top_val != "")
+            span = sum(1 for c in df_data.columns[:nb_cols] if c[0] == top_val and top_val != "")
             if span > 1:
                 ws.merge_cells(start_row=row_idx, start_column=col_i, end_row=row_idx, end_column=col_i+span-1)
                 col_i += span
@@ -194,7 +194,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
         ws.row_dimensions[row_idx+1].height = 22
         row_idx += 2
     else:
-        for col_num, h_name in enumerate(df_data.columns, 1):
+        for col_num, h_name in enumerate(df_data.columns[:nb_cols], 1):
             cell = ws.cell(row=row_idx, column=col_num)
             cell.value = str(h_name)
             cell.font = font_th
@@ -207,7 +207,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
 
     start_data_row = row_idx
     for row_data in df_data.itertuples(index=False):
-        for col_num, val in enumerate(row_data, 1):
+        for col_num, val in enumerate(row_data[:nb_cols], 1):
             cell = ws.cell(row=row_idx, column=col_num)
             cell.value = val if pd.notna(val) else ""
             cell.font = font_normal
@@ -219,38 +219,51 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
 
     end_data_row = row_idx - 1
 
-    # Lignes Statistiques MIN et MAX
-    num_text_cols = 4 if is_multi else 3
-    
+    # ---------------------------------------------------------
+    # STATISTIQUES MIN / MAX : Uniquement Températures & Affaissement
+    # ---------------------------------------------------------
+    headers_flat = [c[0] if is_multi else str(c) for c in df_data.columns[:nb_cols]]
+
+    target_keywords = ["temp. béton", "temp. ambiante", "affaissement", "temperature", "aff"]
+
+    def is_target_col(col_name):
+        c_lower = col_name.lower()
+        return any(kw in c_lower for kw in target_keywords)
+
+    target_col_indices = [
+        idx + 1 for idx, h in enumerate(headers_flat) if is_target_col(h)
+    ]
+
     for stat_label, stat_func in [("MIN", "MIN"), ("MAX", "MAX")]:
-        ws.row_dimensions[row_idx].height = 28
-        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=num_text_cols)
+        ws.row_dimensions[row_idx].height = 26
+        
         lbl_cell = ws.cell(row=row_idx, column=1)
         lbl_cell.value = stat_label
         lbl_cell.font = font_bold
         lbl_cell.fill = fill_stat
         lbl_cell.alignment = Alignment(horizontal="center", vertical="center")
+        lbl_cell.border = dark_border
 
-        for c_i in range(1, num_text_cols + 1):
-            ws.cell(row=row_idx, column=c_i).border = dark_border
-            ws.cell(row=row_idx, column=c_i).fill = fill_stat
-
-        for col_num in range(num_text_cols + 1, len(df_data.columns) + 1):
+        for col_num in range(2, len(headers_flat) + 1):
             c = ws.cell(row=row_idx, column=col_num)
             c.border = dark_border
             c.font = font_bold
             c.fill = fill_stat
             c.alignment = Alignment(horizontal="center", vertical="center")
-            col_ltr = get_column_letter(col_num)
             
-            if start_data_row <= end_data_row:
-                c.value = f"={stat_func}({col_ltr}{start_data_row}:{col_ltr}{end_data_row})"
-                c.number_format = '0.0'
+            if col_num in target_col_indices:
+                col_ltr = get_column_letter(col_num)
+                if start_data_row <= end_data_row:
+                    c.value = f"={stat_func}({col_ltr}{start_data_row}:{col_ltr}{end_data_row})"
+                    c.number_format = '0.0'
+                else:
+                    c.value = "-"
             else:
-                c.value = "-"
+                c.value = ""
 
         row_idx += 1
 
+    # Ligne TOTAL (Somme du volume)
     ws.row_dimensions[row_idx].height = 30
     total_cell = ws.cell(row=row_idx, column=1)
     total_cell.value = "TOTAL"
@@ -258,20 +271,19 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     total_cell.border = total_border
     total_cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    headers_flat = [c[0] if is_multi else c for c in df_data.columns]
     for col_num in range(1, len(headers_flat) + 1):
         c = ws.cell(row=row_idx, column=col_num)
         c.border = total_border
         c.font = font_bold
         col_name = headers_flat[col_num - 1]
         col_ltr = get_column_letter(col_num)
-        if col_name == "Quantité (m³)":
+        if "quantité" in col_name.lower() or "volume" in col_name.lower():
             c.value = f"=SUM({col_ltr}{start_data_row}:{col_ltr}{end_data_row})"
             c.number_format = '0.0 "m³"'
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     # ---------------------------------------------------------
-    # LARGEURS DE COLONNES SPÉCIFIÉES
+    # LARGEURS DE COLONNES (A À J)
     # ---------------------------------------------------------
     ws.column_dimensions['A'].width = 14
     ws.column_dimensions['B'].width = 12
@@ -281,10 +293,8 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
     ws.column_dimensions['F'].width = 11.22
     ws.column_dimensions['G'].width = 11.22
     ws.column_dimensions['H'].width = 11.22
-    
-    cols_restant = ['I', 'J', 'K', 'L']
-    for col_l in cols_restant:
-        ws.column_dimensions[col_l].width = 12
+    ws.column_dimensions['I'].width = 12
+    ws.column_dimensions['J'].width = 12
 
     wb.save(output)
     output.seek(0)
@@ -330,7 +340,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     thin_border_side = Side(style='thin', color='B0C4DE')
     thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
 
-    nb_cols = max(len(df_data.columns), 9)
+    nb_cols = min(max(len(df_data.columns), 9), 10)
     last_col_letter = get_column_letter(nb_cols)
     mid_col_idx = max(nb_cols // 2, 1)
     mid_col_letter = get_column_letter(mid_col_idx)
@@ -402,7 +412,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws[f"A{row_idx}"].font = font_section
     row_idx += 1
 
-    headers = list(df_data.columns)
+    headers = list(df_data.columns[:nb_cols])
     for col_num, h_name in enumerate(headers, 1):
         cell = ws.cell(row=row_idx, column=col_num)
         cell.value = str(h_name)
@@ -415,7 +425,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
     start_data_row = row_idx
     for row_data in df_data.itertuples(index=False):
-        for col_num, val in enumerate(row_data, 1):
+        for col_num, val in enumerate(row_data[:nb_cols], 1):
             cell = ws.cell(row=row_idx, column=col_num)
             cell.value = val if pd.notna(val) else ""
             cell.font = font_normal
@@ -437,17 +447,18 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         col_start = 1 if idx == 0 else 2 + (idx - 1) * 2
         col_end = 1 if idx == 0 else col_start + 1
         
-        if col_start == col_end:
-            c = ws.cell(row=row_idx, column=col_start)
-            c.value = h
-        else:
-            ws.merge_cells(start_row=row_idx, start_column=col_start, end_row=row_idx, end_column=col_end)
-            c = ws.cell(row=row_idx, column=col_start)
-            c.value = h
-            
-        c.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-        c.fill = fill_stat_hdr
-        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        if col_start <= nb_cols:
+            if col_start == col_end or col_end > nb_cols:
+                c = ws.cell(row=row_idx, column=col_start)
+                c.value = h
+            else:
+                ws.merge_cells(start_row=row_idx, start_column=col_start, end_row=row_idx, end_column=col_end)
+                c = ws.cell(row=row_idx, column=col_start)
+                c.value = h
+                
+            c.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+            c.fill = fill_stat_hdr
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     for c_i in range(1, nb_cols + 1):
         ws.cell(row=row_idx, column=c_i).border = thin_border
@@ -502,13 +513,15 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for idx, val in enumerate(vals):
             c_start = 2 + idx * 2
             c_end = c_start + 1
-            ws.merge_cells(start_row=row_idx, start_column=c_start, end_row=row_idx, end_column=c_end)
-            c = ws.cell(row=row_idx, column=c_start)
-            c.value = val
-            c.font = font_normal
-            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            if isinstance(val, str) and val.startswith("="):
-                c.number_format = '0.00' if label in ["σ", "CV %"] else '0.0'
+            if c_start <= nb_cols:
+                if c_end <= nb_cols:
+                    ws.merge_cells(start_row=row_idx, start_column=c_start, end_row=row_idx, end_column=c_end)
+                c = ws.cell(row=row_idx, column=c_start)
+                c.value = val
+                c.font = font_normal
+                c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                if isinstance(val, str) and val.startswith("="):
+                    c.number_format = '0.00' if label in ["σ", "CV %"] else '0.0'
 
         for c_i in range(1, nb_cols + 1):
             ws.cell(row=row_idx, column=c_i).border = thin_border
@@ -771,7 +784,6 @@ def show(supabase):
                     if df.empty:
                         st.info("Aucun coulage enregistré pour les critères sélectionnés.")
                     else:
-                        # Supprimer définitivement les colonnes non désirées
                         cols_drop = [
                             c for c in [
                                 "id", "created_at", "created", "heure_fin_coulage", 
