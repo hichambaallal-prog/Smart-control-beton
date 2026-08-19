@@ -12,36 +12,6 @@ def show(supabase):
 
 
 
-    # ---------------------------------------------------------
-
-    # RÉCUPÉRATION SÉCURISÉE DU TECHNICIEN ET DU RÔLE DE SESSION
-
-    # ---------------------------------------------------------
-
-    user_raw = (
-
-        st.session_state.get("username") or 
-
-        st.session_state.get("user") or 
-
-        st.session_state.get("user_name") or 
-
-        "Agent LPEE"
-
-    )
-
-
-
-    if isinstance(user_raw, dict):
-
-        user_raw = user_raw.get("email") or user_raw.get("name") or "Agent LPEE"
-
-
-
-    current_user = str(user_raw).upper()
-
-
-
     # Vérification du rôle d'administrateur
 
     is_admin = st.session_state.get("is_admin", False) or st.session_state.get("role") == "admin"
@@ -84,7 +54,7 @@ def show(supabase):
 
         default_z2 = float(editing_item.get("z2", 0.52))
 
-        default_tech = editing_item.get("technicien", current_user)
+        default_tech = editing_item.get("technicien", "")
 
         default_obs = editing_item.get("observations", "")
 
@@ -110,7 +80,7 @@ def show(supabase):
 
         default_z2 = 0.52
 
-        default_tech = current_user
+        default_tech = "Agent LPEE"
 
         default_obs = "Portance conforme aux exigences du CPT."
 
@@ -454,4 +424,5 @@ def show(supabase):
 
     except Exception as e:
 
-        st.warning(f"Impossible de charger l'historique : {e}")
+        st.warning(f"Impossible de charger l'historique : {e}") 
+
