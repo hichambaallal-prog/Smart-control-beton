@@ -29,13 +29,13 @@ def extract_numeric(val):
 # 1. GENERATION EXCEL (CONFORME LPEE - LGV CASA SUD)
 # =========================================================
 
-def generate_excel_synthesis_betonnage(df_data, titre_periode):
+def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False):
     output = io.BytesIO()
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Synthèse Bétonnage"
 
-    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE if is_mensuel else ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
@@ -48,18 +48,21 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
 
     color_primary = "1F4E79"
     color_header = "2D572C"
+    color_sub_header = "E2EFDA"
     color_card_bg = "F7F9FA"
     color_kpi_bg = "EDF2F8"
 
     font_title = Font(name="Calibri", size=15, bold=True, color="FFFFFF")
     font_section = Font(name="Calibri", size=13, bold=True, color=color_primary)
-    font_bold = Font(name="Calibri", size=12, bold=True)
-    font_normal = Font(name="Calibri", size=12)
-    font_th = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
+    font_bold = Font(name="Calibri", size=11, bold=True)
+    font_normal = Font(name="Calibri", size=11)
+    font_th = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    font_sub_th = Font(name="Calibri", size=10, bold=True, color="000000")
     font_kpi_val = Font(name="Calibri", size=14, bold=True, color=color_primary)
 
     fill_title = PatternFill(start_color=color_primary, end_color=color_primary, fill_type="solid")
     fill_th = PatternFill(start_color=color_header, end_color=color_header, fill_type="solid")
+    fill_sub_th = PatternFill(start_color=color_sub_header, end_color=color_sub_header, fill_type="solid")
     fill_card = PatternFill(start_color=color_card_bg, end_color=color_card_bg, fill_type="solid")
     fill_kpi = PatternFill(start_color=color_kpi_bg, end_color=color_kpi_bg, fill_type="solid")
 
@@ -67,20 +70,23 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
     thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
     total_border = Border(top=Side(style='thin', color='000000'), bottom=Side(style='double', color='000000'))
 
-    nb_cols = max(len(df_data.columns), 6)
+    # Si c'est un DataFrame à MultiIndex (Mensuel)
+    is_multi = isinstance(df_data.columns, pd.MultiIndex)
+    nb_cols = len(df_data.columns)
     last_col_letter = get_column_letter(nb_cols)
-    mid_col_idx = nb_cols // 2
+    mid_col_idx = max(nb_cols // 2, 1)
     mid_col_letter = get_column_letter(mid_col_idx)
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
+    # Entête document
     ws.merge_cells(f"A1:{last_col_letter}2")
     cell_title = ws["A1"]
     cell_title.value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU BÉTONNAGE"
     cell_title.font = font_title
     cell_title.fill = fill_title
     cell_title.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    ws.row_dimensions[1].height = 28
-    ws.row_dimensions[2].height = 28
+    ws.row_dimensions[1].height = 25
+    ws.row_dimensions[2].height = 25
 
     ws.merge_cells(f"A4:{mid_col_letter}4")
     ws["A4"].value = "   CLIENT :   TGCC"
@@ -107,7 +113,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
     ws[f"{next_mid_letter}5"].alignment = Alignment(horizontal="left", vertical="center")
 
     for r in range(4, 6):
-        ws.row_dimensions[r].height = 32
+        ws.row_dimensions[r].height = 28
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
@@ -115,10 +121,15 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📊 RÉSUMÉ GLOBAL"
     ws[f"A{row_idx}"].font = font_section
-    ws.row_dimensions[row_idx].height = 30
+    ws.row_dimensions[row_idx].height = 28
 
     row_idx += 1
-    vol_tot = df_data["Quantité (m³)"].sum() if "Quantité (m³)" in df_data.columns else 0
+    # Calcul Volume
+    if is_multi:
+        vol_col = [c for c in df_data.columns if c[0] == "Quantité (m³)"]
+        vol_tot = df_data[vol_col[0]].sum() if vol_col else 0
+    else:
+        vol_tot = df_data["Quantité (m³)"].sum() if "Quantité (m³)" in df_data.columns else 0
 
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"].value = "Volume Total Béton"
@@ -136,26 +147,67 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    ws.row_dimensions[row_idx].height = 28
-    ws.row_dimensions[row_idx+1].height = 36
+    ws.row_dimensions[row_idx].height = 24
+    ws.row_dimensions[row_idx+1].height = 32
     row_idx += 3
 
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📋 DÉTAIL DES CONTRÔLES"
     ws[f"A{row_idx}"].font = font_section
-    ws.row_dimensions[row_idx].height = 30
+    ws.row_dimensions[row_idx].height = 28
     row_idx += 1
 
-    headers = list(df_data.columns)
-    for col_num, h_name in enumerate(headers, 1):
-        cell = ws.cell(row=row_idx, column=col_num)
-        cell.value = str(h_name)
-        cell.font = font_th
-        cell.fill = fill_th
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    # CONSTRUCTION DES EN-TÊTES EXCEL
+    if is_multi:
+        # Ligne 1 des en-têtes
+        col_i = 1
+        curr_parent = None
+        start_p_col = 1
+        
+        for top_cat, sub_cat in df_data.columns:
+            cell_top = ws.cell(row=row_idx, column=col_i)
+            cell_top.value = top_cat
+            cell_top.font = font_th
+            cell_top.fill = fill_th
+            cell_top.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell_top.border = thin_border
 
-    ws.row_dimensions[row_idx].height = 42
-    row_idx += 1
+            cell_sub = ws.cell(row=row_idx+1, column=col_i)
+            cell_sub.value = sub_cat
+            cell_sub.font = font_sub_th
+            cell_sub.fill = fill_sub_th
+            cell_sub.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell_sub.border = thin_border
+            col_i += 1
+
+        # Fusion horizontale pour les catégories parentes avec plusieurs sous-colonnes
+        col_i = 1
+        while col_i <= nb_cols:
+            top_val = df_data.columns[col_i-1][0]
+            span = sum(1 for c in df_data.columns if c[0] == top_val and top_val != "")
+            if span > 1:
+                ws.merge_cells(start_row=row_idx, start_column=col_i, end_row=row_idx, end_column=col_i+span-1)
+                col_i += span
+            else:
+                # Fusion verticale si pas de sous-catégorie
+                if df_data.columns[col_i-1][1] == "":
+                    ws.merge_cells(start_row=row_idx, start_column=col_i, end_row=row_idx+1, end_column=col_i)
+                col_i += 1
+
+        ws.row_dimensions[row_idx].height = 25
+        ws.row_dimensions[row_idx+1].height = 22
+        row_idx += 2
+    else:
+        for col_num, h_name in enumerate(df_data.columns, 1):
+            cell = ws.cell(row=row_idx, column=col_num)
+            cell.value = str(h_name)
+            cell.font = font_th
+            cell.fill = fill_th
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = thin_border
+
+        ws.row_dimensions[row_idx].height = 35
+        row_idx += 1
 
     start_data_row = row_idx
     for row_data in df_data.itertuples(index=False):
@@ -169,21 +221,22 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
             else:
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         
-        ws.row_dimensions[row_idx].height = 36
+        ws.row_dimensions[row_idx].height = 26
         row_idx += 1
 
     end_data_row = row_idx - 1
-    ws.row_dimensions[row_idx].height = 38
+    ws.row_dimensions[row_idx].height = 30
     total_cell = ws.cell(row=row_idx, column=1)
     total_cell.value = "TOTAL"
     total_cell.font = font_bold
     total_cell.border = total_border
 
-    for col_num in range(1, len(headers) + 1):
+    headers_flat = [c[0] if is_multi else c for c in df_data.columns]
+    for col_num in range(1, len(headers_flat) + 1):
         c = ws.cell(row=row_idx, column=col_num)
         c.border = total_border
         c.font = font_bold
-        col_name = headers[col_num - 1]
+        col_name = headers_flat[col_num - 1]
         col_ltr = get_column_letter(col_num)
         if col_name == "Quantité (m³)":
             c.value = f"=SUM({col_ltr}{start_data_row}:{col_ltr}{end_data_row})"
@@ -201,7 +254,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
     ws[f"{next_mid_letter}{row_idx}"] = "Chef du Laboratoire"
     ws[f"{next_mid_letter}{row_idx}"].font = font_bold
     ws[f"{next_mid_letter}{row_idx}"].alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[row_idx].height = 30
+    ws.row_dimensions[row_idx].height = 25
 
     row_idx += 1
     ws.merge_cells(f"A{row_idx}:{mid_col_letter}{row_idx+3}")
@@ -215,7 +268,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
     ws[f"{next_mid_letter}{row_idx}"].alignment = Alignment(horizontal="left", vertical="top")
 
     for r in range(row_idx, row_idx + 4):
-        ws.row_dimensions[r].height = 22
+        ws.row_dimensions[r].height = 20
 
     for r in range(row_idx - 1, row_idx + 4):
         for c in range(1, mid_col_idx + 1):
@@ -223,15 +276,9 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
         for c in range(mid_col_idx + 1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    col_width_map = {
-        "Date Livraison": 16, "Période": 20, "Heure d'arrivée": 15, "N° BL": 16, "Ouvrage": 24,
-        "Quantité (m³)": 16, "Classe": 16, "Durée de transport": 18, "Temp. Béton (°C)": 18,
-        "Temp. Ambiante (°C)": 20, "Affaissement (mm)": 18, "Prélèvement": 18, "Météo": 15
-    }
-
-    for col_idx, col_name in enumerate(headers, 1):
+    for col_idx in range(1, nb_cols + 1):
         col_letter = get_column_letter(col_idx)
-        ws.column_dimensions[col_letter].width = col_width_map.get(col_name, 18)
+        ws.column_dimensions[col_letter].width = 14
 
     wb.save(output)
     output.seek(0)
@@ -760,7 +807,7 @@ def show(supabase):
                             k2.metric("Affaissement Moyen", f"{pd.to_numeric(df_display['Affaissement (mm)'], errors='coerce').mean():.0f} mm")
                         st.markdown("---")
 
-                        excel_file = generate_excel_synthesis_betonnage(df_display, f"Journée du {selected_date.strftime('%d/%m/%Y')}")
+                        excel_file = generate_excel_synthesis_betonnage(df_display, f"Journée du {selected_date.strftime('%d/%m/%Y')}", is_mensuel=False)
                         st.download_button(
                             label="📥 Télécharger la Synthèse Excel Bétonnage (A4 Portrait)",
                             data=excel_file,
@@ -774,7 +821,7 @@ def show(supabase):
                 st.error(f"Erreur de chargement : {e}")
 
         with tab_m_b:
-            st.markdown("### Bilan mensuel agrégé (Groupe par Classe & Ouvrage)")
+            st.markdown("### Bilan mensuel agrégé avec colonnes Min / Max séparées")
             col_m1, col_m2 = st.columns(2)
             with col_m1:
                 annee = date.today().year
@@ -811,14 +858,12 @@ def show(supabase):
                     if df_m.empty:
                         st.info("Aucun coulage enregistré pour ce mois.")
                     else:
-                        # Conversion numérique
                         df_m["quantite_m3"] = pd.to_numeric(df_m["quantite_m3"], errors="coerce")
                         df_m["temperature"] = pd.to_numeric(df_m["temperature"], errors="coerce")
                         df_m["temperature_ambiante"] = pd.to_numeric(df_m["temperature_ambiante"], errors="coerce")
                         df_m["affaissement"] = pd.to_numeric(df_m["affaissement"], errors="coerce")
                         df_m["date_dt"] = pd.to_datetime(df_m["date_livraison"], errors="coerce")
 
-                        # Regroupement par classe_beton et ouvrage
                         grouped_rows = []
                         for (classe, ovr), group in df_m.groupby(["classe_beton", "ouvrage"], dropna=False):
                             d_min = group["date_dt"].min()
@@ -833,41 +878,40 @@ def show(supabase):
 
                             vol_sum = group["quantite_m3"].sum()
 
-                            def format_range(series):
+                            def get_min_max(series):
                                 s_valid = series.dropna()
                                 if s_valid.empty:
-                                    return "-"
-                                v_min = int(round(s_valid.min()))
-                                v_max = int(round(s_valid.max()))
-                                return f"{v_min}" if v_min == v_max else f"[{v_min} - {v_max}]"
+                                    return "-", "-"
+                                return int(round(s_valid.min())), int(round(s_valid.max()))
 
-                            t_bet = format_range(group["temperature"])
-                            t_amb = format_range(group["temperature_ambiante"])
-                            aff_val = format_range(group["affaissement"])
+                            aff_min, aff_max = get_min_max(group["affaissement"])
+                            tb_min, tb_max = get_min_max(group["temperature"])
+                            ta_min, ta_max = get_min_max(group["temperature_ambiante"])
 
                             grouped_rows.append({
-                                "Classe": classe,
-                                "Ouvrage": ovr,
-                                "Période": date_str,
-                                "Quantité (m³)": round(vol_sum, 1),
-                                "Temp. Béton (°C)": t_bet,
-                                "Temp. Ambiante (°C)": t_amb,
-                                "Affaissement (mm)": aff_val
+                                ("Classe", ""): classe,
+                                ("Ouvrage", ""): ovr,
+                                ("Période", ""): date_str,
+                                ("Quantité (m³)", ""): round(vol_sum, 1),
+                                ("Affaissement", "Min"): aff_min,
+                                ("Affaissement", "Max"): aff_max,
+                                ("Temp. Béton (°C)", "Min"): tb_min,
+                                ("Temp. Béton (°C)", "Max"): tb_max,
+                                ("Temp. Ambiante (°C)", "Min"): ta_min,
+                                ("Temp. Ambiante (°C)", "Max"): ta_max
                             })
 
                         df_m_display = pd.DataFrame(grouped_rows)
-                        
-                        # Réorganisation ordonnée des colonnes
-                        cols_order = ["Classe", "Ouvrage", "Période", "Quantité (m³)", "Temp. Béton (°C)", "Temp. Ambiante (°C)", "Affaissement (mm)"]
-                        df_m_display = df_m_display[cols_order]
+                        df_m_display.columns = pd.MultiIndex.from_tuples(df_m_display.columns)
 
                         st.markdown("---")
-                        st.metric("Volume Cumulé du Mois", f"{df_m_display['Quantité (m³)'].sum():.1f} m³")
+                        vol_total_m = df_m_display[("Quantité (m³)", "")].sum()
+                        st.metric("Volume Cumulé du Mois", f"{vol_total_m:.1f} m³")
                         st.markdown("---")
 
-                        excel_file_m = generate_excel_synthesis_betonnage(df_m_display, f"Mois de {mois_selected} {annee}")
+                        excel_file_m = generate_excel_synthesis_betonnage(df_m_display, f"Mois de {mois_selected} {annee}", is_mensuel=True)
                         st.download_button(
-                            label="📥 Télécharger la Synthèse Mensuelle Excel Bétonnage (A4 Portrait)",
+                            label="📥 Télécharger la Synthèse Mensuelle Excel Bétonnage (A4 Paysage)",
                             data=excel_file_m,
                             file_name=f"Synthese_Mensuelle_Betonnage_{mois_selected}_{annee}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
