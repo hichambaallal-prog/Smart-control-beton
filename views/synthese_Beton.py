@@ -270,11 +270,21 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
             c.number_format = '0.0 "m³"'
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
+    # ---------------------------------------------------------
+    # AJUSTEMENT EXPLICITE DES LARGEURS DE COLONNES DEMANDÉES
+    # ---------------------------------------------------------
     ws.column_dimensions['A'].width = 14
-    cols_12 = ['B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
-    for col_l in cols_12:
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['C'].width = 11.22
+    ws.column_dimensions['D'].width = 40.0
+    ws.column_dimensions['E'].width = 11.22
+    ws.column_dimensions['F'].width = 11.22
+    ws.column_dimensions['G'].width = 11.22
+    ws.column_dimensions['H'].width = 11.22
+    
+    cols_restant = ['I', 'J', 'K', 'L']
+    for col_l in cols_restant:
         ws.column_dimensions[col_l].width = 12
-    ws.column_dimensions['C'].width = 35
 
     wb.save(output)
     output.seek(0)
@@ -507,10 +517,10 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         row_idx += 1
 
     ws.column_dimensions['A'].width = 14
+    ws.column_dimensions['C'].width = 40.0
     cols_12 = ['B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
     for col_l in cols_12:
         ws.column_dimensions[col_l].width = 12
-    ws.column_dimensions['C'].width = 40
 
     wb.save(output)
     output.seek(0)
@@ -761,58 +771,18 @@ def show(supabase):
                     if df.empty:
                         st.info("Aucun coulage enregistré pour les critères sélectionnés.")
                     else:
-                        def parse_time_flex(val):
-                            if pd.isna(val) or not val:
-                                return None
-                            val_str = str(val).strip()
-                            for fmt in ("%H:%M:%S", "%H:%M"):
-                                try:
-                                    return datetime.strptime(val_str, fmt)
-                                except ValueError:
-                                    pass
-                            return None
-
-                        def resolve_duree(row):
-                            # Inspection dynamique globale des champs de la ligne Supabase
-                            for key, val in row.items():
-                                key_str = str(key).lower()
-                                if "duree" in key_str or "transport" in key_str:
-                                    if pd.notna(val):
-                                        val_str = str(val).strip()
-                                        if val_str not in ["", "-", "None", "nan"]:
-                                            return val_str if "min" in val_str.lower() else f"{val_str} min"
-
-                            # Déduction automatique par calcul si heure départ/arrivée présentes
-                            col_depart = None
-                            for c in ["heure_depart", "heure_centrale", "heure_arrivee"]:
-                                if c in row and pd.notna(row[c]):
-                                    col_depart = c
-                                    break
-                            
-                            col_fin = "heure_fin_coulage" if "heure_fin_coulage" in row else None
-
-                            if col_depart and col_fin:
-                                h_arr = parse_time_flex(row[col_depart])
-                                h_fin = parse_time_flex(row[col_fin])
-                                if h_fin and h_arr:
-                                    diff = int((h_fin - h_arr).total_seconds() / 60)
-                                    return f"{diff} min" if diff >= 0 else "-"
-                            return "-"
-
-                        # 1. Calcul et assignation prioritaire
-                        df["Durée de transport"] = df.apply(resolve_duree, axis=1)
-
-                        # 2. Suppression ciblée des champs techniques
+                        # -------------------------------------------------------------
+                        # SUPPRESSION EXPLICITE ET TOTALE DE LA DUREE DE TRANSPORT
+                        # -------------------------------------------------------------
                         cols_drop = [
                             c for c in [
                                 "id", "created_at", "created", "heure_fin_coulage", 
                                 "client", "centrale_beton", "technicien", "observations", 
-                                "nb_eprouvettes", "duree_transport", "duree_transport_min"
-                            ] if c in df.columns and c != "Durée de transport"
+                                "nb_eprouvettes", "duree_transport", "duree_transport_min", "Durée de transport"
+                            ] if c in df.columns
                         ]
                         df = df.drop(columns=cols_drop)
 
-                        # 3. Réorganisation exacte des colonnes d'affichage
                         renames = {
                             "date_livraison": "Date Livraison", "heure_arrivee": "Heure d'arrivée",
                             "bl_num": "N° BL", "ouvrage": "Ouvrage", "quantite_m3": "Quantité (m³)",
@@ -825,11 +795,10 @@ def show(supabase):
                         desired_col_order = [
                             "Date Livraison", "Heure d'arrivée", "N° BL", "Ouvrage",
                             "Quantité (m³)", "Classe", "Temp. Béton (°C)", "Temp. Ambiante (°C)",
-                            "Affaissement (mm)", "Prélèvement", "Durée de transport", "Météo"
+                            "Affaissement (mm)", "Prélèvement", "Météo"
                         ]
 
                         final_cols = [c for c in desired_col_order if c in df_display.columns]
-                        # Ajouter d'éventuelles colonnes non listées
                         remaining = [c for c in df_display.columns if c not in final_cols]
                         df_display = df_display[final_cols + remaining]
 
