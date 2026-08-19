@@ -235,7 +235,8 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
 
     cols_10 = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
     for col_l in cols_10:
-        ws.column_dimensions[col_l].width = 10
+        if col_l in ws.column_dimensions:
+            ws.column_dimensions[col_l].width = 10
     ws.column_dimensions['C'].width = 40
 
     wb.save(output)
@@ -282,9 +283,9 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     thin_border_side = Side(style='thin', color='B0C4DE')
     thin_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
 
-    nb_cols = max(len(df_data.columns), 10)
+    nb_cols = max(len(df_data.columns), 9)
     last_col_letter = get_column_letter(nb_cols)
-    mid_col_idx = nb_cols // 2
+    mid_col_idx = max(nb_cols // 2, 1)
     mid_col_letter = get_column_letter(mid_col_idx)
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
@@ -470,7 +471,8 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
     cols_10 = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
     for col_l in cols_10:
-        ws.column_dimensions[col_l].width = 10
+        if col_l in ws.column_dimensions:
+            ws.column_dimensions[col_l].width = 10
     ws.column_dimensions['C'].width = 40
 
     wb.save(output)
