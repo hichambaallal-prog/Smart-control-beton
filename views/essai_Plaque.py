@@ -74,7 +74,7 @@ def show(supabase):
 
         default_couche = "Assise"
 
-        default_mat = "GNT 0/31.5 Classée B2"
+        default_mat = "GNT 0/31.5"
 
         default_z1 = 0.53
 
