@@ -74,7 +74,7 @@ def show(supabase):
 
         default_couche = "Assise"
 
-        default_mat = "GNT 0/31.5"
+        default_mat = "GNT 0/31.5 Classée B2"
 
         default_z1 = 0.53
 
@@ -116,7 +116,7 @@ def show(supabase):
 
         pk_profil = st.text_input("PK / Profil", value=default_pk, key="plaque_pk")
 
-        couche_options = ["Assise", "Remblai", "PST", "Couche de forme", "Autre"]
+        couche_options = ["Arase", "Assise", "Remblai", "PST", "Couche de forme", "Autre"]
 
         couche_idx = couche_options.index(default_couche) if default_couche in couche_options else 0
 
@@ -424,5 +424,4 @@ def show(supabase):
 
     except Exception as e:
 
-        st.warning(f"Impossible de charger l'historique : {e}") 
-
+        st.warning(f"Impossible de charger l'historique : {e}")
