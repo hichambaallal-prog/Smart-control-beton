@@ -270,8 +270,8 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
             c.number_format = '0.0 "m³"'
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    cols_10 = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
-    for col_l in cols_10:
+    cols_12 = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    for col_l in cols_12:
         if col_l in ws.column_dimensions:
             ws.column_dimensions[col_l].width = 12
     ws.column_dimensions['C'].width = 35
