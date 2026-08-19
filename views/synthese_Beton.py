@@ -224,14 +224,14 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode):
             ws.cell(row=r, column=c).border = thin_border
 
     col_width_map = {
-        "Date Livraison": 16, "Heure d'arrivée": 15, "N° BL": 16, "Ouvrage": 22,
-        "Quantité (m³)": 16, "Classe": 14, "Durée de transport": 18, "Temp. Béton": 15,
-        "Temp. Ambiante": 16, "Affaissement": 15, "Prélèvement": 18, "Météo": 15
+        "Date Livraison": 16, "Période": 20, "Heure d'arrivée": 15, "N° BL": 16, "Ouvrage": 24,
+        "Quantité (m³)": 16, "Classe": 16, "Durée de transport": 18, "Temp. Béton (°C)": 18,
+        "Temp. Ambiante (°C)": 20, "Affaissement (mm)": 18, "Prélèvement": 18, "Météo": 15
     }
 
     for col_idx, col_name in enumerate(headers, 1):
         col_letter = get_column_letter(col_idx)
-        ws.column_dimensions[col_letter].width = col_width_map.get(col_name, 16)
+        ws.column_dimensions[col_letter].width = col_width_map.get(col_name, 18)
 
     wb.save(output)
     output.seek(0)
@@ -244,7 +244,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws = wb.active
     ws.title = "Synthèse Contrôle Béton"
 
-    # Configuration A4
     ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -284,7 +283,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     mid_col_letter = get_column_letter(mid_col_idx)
     next_mid_letter = get_column_letter(mid_col_idx + 1)
 
-    # Entête - Titre
     ws.merge_cells(f"A1:{last_col_letter}2")
     ws["A1"].value = "LABORATOIRE PUBLIC D'ESSAIS ET D'ÉTUDES (LPEE) - CTR-CSB\nRAPPORT DE SYNTHÈSE DU CONTRÔLE BÉTON"
     ws["A1"].font = font_title
@@ -323,7 +321,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    # Résumé
     row_idx = 7
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📊 RÉSUMÉ GLOBAL"
@@ -346,7 +343,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         for c in range(1, nb_cols + 1):
             ws.cell(row=r, column=c).border = thin_border
 
-    # Tableau Données
     row_idx += 3
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📋 MOYENNE DES ÉCRASEMENTS PAR ÉCHÉANCE"
@@ -379,9 +375,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         row_idx += 1
     end_data_row = row_idx - 1
 
-    # =========================================================
-    # TABLEAU DE SYNTHÈSE STATISTIQUE DANS EXCEL
-    # =========================================================
     row_idx += 2
     ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
     ws[f"A{row_idx}"] = "📈 SYNTHÈSE STATISTIQUE DES PARAMÈTRES"
@@ -412,14 +405,8 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws.row_dimensions[row_idx].height = 25
     row_idx += 1
 
-    col_map_excel = {
-        "aff": "E",
-        "temp": "F",
-        "fc7": "H",
-        "fc28": "I"
-    }
+    col_map_excel = {"aff": "E", "temp": "F", "fc7": "H", "fc28": "I"}
 
-    # Calcul dynamique des lignes dans la table statistique
     row_moy = row_idx + 1
     row_std = row_idx + 3
 
@@ -440,7 +427,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         f_moy_fc28 = f"=AVERAGE({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
         f_max_fc28 = f"=MAX({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
 
-        # Formule ECARTYPE.STANDARD et liaison directe CV% sur les cellules MOY et σ
         f_std_fc28 = f"=ECARTYPE.STANDARD({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
         f_cv_fc28 = f"=SIERREUR(({col_map_excel['fc28']}{row_std}/{col_map_excel['fc28']}{row_moy})*100, 0)"
     else:
@@ -479,7 +465,6 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         ws.row_dimensions[row_idx].height = 22
         row_idx += 1
 
-    # Largeurs de colonnes
     specific_widths = {
         'A': 8, 'B': 11, 'C': 10, 'D': 28, 'E': 10,
         'F': 10, 'G': 14, 'H': 14, 'I': 14
@@ -715,7 +700,6 @@ def show(supabase):
                 res = supabase.table("suivi_betonnage").select("*").eq("date_livraison", str(selected_date)).execute()
                 data = res.data if res else []
 
-                # Récupération dynamique des classes disponibles dans les données du jour
                 classes_j = ["Toutes"]
                 if data:
                     df_temp = pd.DataFrame(data)
@@ -763,8 +747,8 @@ def show(supabase):
                         renames = {
                             "date_livraison": "Date Livraison", "heure_arrivee": "Heure d'arrivée",
                             "bl_num": "N° BL", "ouvrage": "Ouvrage", "quantite_m3": "Quantité (m³)",
-                            "classe_beton": "Classe", "temperature": "Temp. Béton",
-                            "temperature_ambiante": "Temp. Ambiante", "affaissement": "Affaissement",
+                            "classe_beton": "Classe", "temperature": "Temp. Béton (°C)",
+                            "temperature_ambiante": "Temp. Ambiante (°C)", "affaissement": "Affaissement (mm)",
                             "prelevement": "Prélèvement", "meteo": "Météo"
                         }
                         df_display = df.rename(columns=renames)
@@ -772,8 +756,8 @@ def show(supabase):
                         st.markdown("---")
                         k1, k2 = st.columns(2)
                         k1.metric("Volume Total", f"{df_display['Quantité (m³)'].sum():.1f} m³")
-                        if "Affaissement" in df_display.columns:
-                            k2.metric("Affaissement Moyen", f"{pd.to_numeric(df_display['Affaissement'], errors='coerce').mean():.0f} mm")
+                        if "Affaissement (mm)" in df_display.columns:
+                            k2.metric("Affaissement Moyen", f"{pd.to_numeric(df_display['Affaissement (mm)'], errors='coerce').mean():.0f} mm")
                         st.markdown("---")
 
                         excel_file = generate_excel_synthesis_betonnage(df_display, f"Journée du {selected_date.strftime('%d/%m/%Y')}")
@@ -790,7 +774,7 @@ def show(supabase):
                 st.error(f"Erreur de chargement : {e}")
 
         with tab_m_b:
-            st.markdown("### Bilan mensuel global")
+            st.markdown("### Bilan mensuel agrégé (Groupe par Classe & Ouvrage)")
             col_m1, col_m2 = st.columns(2)
             with col_m1:
                 annee = date.today().year
@@ -827,37 +811,55 @@ def show(supabase):
                     if df_m.empty:
                         st.info("Aucun coulage enregistré pour ce mois.")
                     else:
-                        if "heure_fin_coulage" in df_m.columns and "heure_arrivee" in df_m.columns:
-                            def calc_duree(row):
-                                try:
-                                    h_fin = datetime.strptime(str(row["heure_fin_coulage"]), "%H:%M")
-                                    h_arr = datetime.strptime(str(row["heure_arrivee"]), "%H:%M")
-                                    diff = int((h_fin - h_arr).total_seconds() / 60)
-                                    return f"{diff} min" if diff >= 0 else "-"
-                                except:
+                        # Conversion numérique
+                        df_m["quantite_m3"] = pd.to_numeric(df_m["quantite_m3"], errors="coerce")
+                        df_m["temperature"] = pd.to_numeric(df_m["temperature"], errors="coerce")
+                        df_m["temperature_ambiante"] = pd.to_numeric(df_m["temperature_ambiante"], errors="coerce")
+                        df_m["affaissement"] = pd.to_numeric(df_m["affaissement"], errors="coerce")
+                        df_m["date_dt"] = pd.to_datetime(df_m["date_livraison"], errors="coerce")
+
+                        # Regroupement par classe_beton et ouvrage
+                        grouped_rows = []
+                        for (classe, ovr), group in df_m.groupby(["classe_beton", "ouvrage"], dropna=False):
+                            d_min = group["date_dt"].min()
+                            d_max = group["date_dt"].max()
+
+                            if pd.isna(d_min):
+                                date_str = "-"
+                            elif d_min == d_max:
+                                date_str = d_min.strftime("%d/%m/%Y")
+                            else:
+                                date_str = f"{d_min.strftime('%d/%m/%Y')} - {d_max.strftime('%d/%m/%Y')}"
+
+                            vol_sum = group["quantite_m3"].sum()
+
+                            def format_range(series):
+                                s_valid = series.dropna()
+                                if s_valid.empty:
                                     return "-"
-                            df_m["Durée de transport"] = df_m.apply(calc_duree, axis=1)
+                                v_min = int(round(s_valid.min()))
+                                v_max = int(round(s_valid.max()))
+                                return f"{v_min}" if v_min == v_max else f"[{v_min} - {v_max}]"
 
-                        cols_drop = [c for c in ["id", "created_at", "created", "heure_fin_coulage", "client", "centrale_beton", "technicien", "observations", "nb_eprouvettes"] if c in df_m.columns]
-                        df_m = df_m.drop(columns=cols_drop)
+                            t_bet = format_range(group["temperature"])
+                            t_amb = format_range(group["temperature_ambiante"])
+                            aff_val = format_range(group["affaissement"])
 
-                        cols_m = list(df_m.columns)
-                        if "date_livraison" in cols_m and "heure_arrivee" in cols_m:
-                            cols_m.remove("heure_arrivee")
-                            cols_m.insert(cols_m.index("date_livraison") + 1, "heure_arrivee")
-                        if "meteo" in cols_m:
-                            cols_m.remove("meteo")
-                            cols_m.append("meteo")
-                        df_m = df_m[cols_m]
+                            grouped_rows.append({
+                                "Classe": classe,
+                                "Ouvrage": ovr,
+                                "Période": date_str,
+                                "Quantité (m³)": round(vol_sum, 1),
+                                "Temp. Béton (°C)": t_bet,
+                                "Temp. Ambiante (°C)": t_amb,
+                                "Affaissement (mm)": aff_val
+                            })
 
-                        renames = {
-                            "date_livraison": "Date Livraison", "heure_arrivee": "Heure d'arrivée",
-                            "bl_num": "N° BL", "ouvrage": "Ouvrage", "quantite_m3": "Quantité (m³)",
-                            "classe_beton": "Classe", "temperature": "Temp. Béton",
-                            "temperature_ambiante": "Temp. Ambiante", "affaissement": "Affaissement",
-                            "prelevement": "Prélèvement", "meteo": "Météo"
-                        }
-                        df_m_display = df_m.rename(columns=renames)
+                        df_m_display = pd.DataFrame(grouped_rows)
+                        
+                        # Réorganisation ordonnée des colonnes
+                        cols_order = ["Classe", "Ouvrage", "Période", "Quantité (m³)", "Temp. Béton (°C)", "Temp. Ambiante (°C)", "Affaissement (mm)"]
+                        df_m_display = df_m_display[cols_order]
 
                         st.markdown("---")
                         st.metric("Volume Cumulé du Mois", f"{df_m_display['Quantité (m³)'].sum():.1f} m³")
