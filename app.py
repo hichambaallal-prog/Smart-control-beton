@@ -243,11 +243,11 @@ if page == "Accueil":
 
 elif page == "Gestion Utilisateurs" and current_role == "admin":
     st.title("👥 Gestion des Utilisateurs & Mots de Passe")
-    st.caption("Consultez et gérez la liste de tous les utilisateurs de la plateforme.")
+    st.caption("Consultez, ajoutez, modifiez et supprimez des utilisateurs de la plateforme.")
 
     ROLES_LIST = ["laboratoire", "restricted_betonnage", "admin", "user"]
 
-    col_add, col_edit = st.columns(2)
+    col_add, col_edit, col_del = st.columns(3)
 
     with col_add:
         with st.expander("➕ Ajouter un utilisateur", expanded=False):
@@ -277,7 +277,7 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
     with col_edit:
         with st.expander("✏️ Modifier un utilisateur", expanded=False):
             user_list = list(st.session_state["users_db"].keys())
-            selected_user = st.selectbox("Sélectionner un utilisateur à modifier", user_list)
+            selected_user = st.selectbox("Sélectionner un utilisateur", user_list, key="select_user_edit")
 
             if selected_user:
                 current_data = st.session_state["users_db"][selected_user]
@@ -288,7 +288,7 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                     mod_role = st.selectbox("Rôle", ROLES_LIST, index=role_index)
                     mod_can_edit = st.checkbox("Droit de modification (can_edit)", value=current_data["can_edit"])
                     
-                    submit_edit = st.form_submit_button("Enregistrer les modifications", use_container_width=True)
+                    submit_edit = st.form_submit_button("Enregistrer", use_container_width=True)
 
                     if submit_edit:
                         updated_password = mod_password if mod_password != "" else current_data["password"]
@@ -298,6 +298,20 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                             "can_edit": mod_can_edit
                         }
                         st.success(f"✅ Utilisateur **{selected_user}** mis à jour !")
+                        st.rerun()
+
+    with col_del:
+        with st.expander("🗑️ Supprimer un utilisateur", expanded=False):
+            user_list = list(st.session_state["users_db"].keys())
+            user_to_delete = st.selectbox("Sélectionner l'utilisateur à supprimer", user_list, key="select_user_del")
+
+            if user_to_delete:
+                if user_to_delete == current_username:
+                    st.warning("⚠️ Vous ne pouvez pas supprimer votre propre compte connecté.")
+                else:
+                    if st.button("Supprimer définitivement", type="primary", use_container_width=True):
+                        del st.session_state["users_db"][user_to_delete]
+                        st.success(f"🗑️ Utilisateur **{user_to_delete}** supprimé avec succès.")
                         st.rerun()
 
     st.markdown("---")
