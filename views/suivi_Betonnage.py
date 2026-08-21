@@ -137,7 +137,7 @@ def show(supabase):
                 
                 df["Durée de transport"] = df.apply(calculer_duree, axis=1)
 
-            # 2. Suppression stricte des colonnes secondaires (EXCLUSION de 'id')
+            # 2. Masquer les colonnes secondaires (EXCLUSION de 'id')
             cols_to_drop = [
                 col for col in ["created_at", "created", "heure_fin_coulage", "heure_fin", "client", "centrale_beton"] 
                 if col in df.columns
@@ -145,7 +145,7 @@ def show(supabase):
             if cols_to_drop:
                 df = df.drop(columns=cols_to_drop)
 
-            # 3. Renommage explicite des colonnes avant réordonnancement
+            # 3. Renommage des colonnes
             df = df.rename(columns={
                 "id": "ID",
                 "date_livraison": "Date Livraison",
@@ -164,14 +164,14 @@ def show(supabase):
                 "meteo": "Météo"
             })
 
-            # 4. Forcer la colonne 'ID' en toute première position
+            # 4. Placer la colonne ID en première position
             all_cols = list(df.columns)
             if "ID" in all_cols:
                 all_cols.remove("ID")
                 final_cols = ["ID"] + all_cols
                 df = df[final_cols]
 
-            # 5. Affichage du DataFrame en masquant l'index Pandas résiduel pour placer ID en 1re position
+            # 5. Affichage du tableau en masquant l'index natif Pandas
             st.dataframe(df, use_container_width=True, hide_index=True)
 
             # --- BLOC MODIFICATION (AUTORISÉ POUR AMINA ET ADMIN) ---
@@ -182,6 +182,7 @@ def show(supabase):
                 record_options = {f"ID {r['id']} - BL: {r.get('bl_num', 'N/A')} - Ouvrage: {r.get('ouvrage', '')}": r for r in res.data}
                 selected_key = st.selectbox("Sélectionner l'enregistrement à gérer", list(record_options.keys()), key="admin_select_record")
                 selected_item = record_options[selected_key]
+                rec_id = selected_item["id"]  # Identifiant unique pour forcer le rafraîchissement des champs
                 
                 # Disposition des colonnes selon le rôle
                 if is_admin:
@@ -191,8 +192,8 @@ def show(supabase):
 
                 # --- BLOC DE MODIFICATION ---
                 with col_ed:
-                    with st.expander("📝 Modifier ce contrôle (Tous les champs)"):
-                        with st.form("edit_form_beton_complet"):
+                    with st.expander("📝 Modifier ce contrôle (Tous les champs)", expanded=True):
+                        with st.form(f"edit_form_beton_{rec_id}"):
                             try:
                                 def_date = datetime.strptime(str(selected_item.get("date_livraison", date.today())), "%Y-%m-%d").date()
                             except:
@@ -209,38 +210,39 @@ def show(supabase):
                             def_h_fin = parse_heure_safe(selected_item.get("heure_fin_coulage"), "08:00")
                             def_h_arr = parse_heure_safe(selected_item.get("heure_arrivee"), "08:35")
 
-                            new_date_livraison = st.date_input("Date de livraison", value=def_date, key="edit_date")
-                            new_technicien = st.text_input("Nom du Technicien LPEE", value=selected_item.get("technicien", "Agent LPEE"), key="edit_tech")
-                            new_bl = st.text_input("N° BL", value=selected_item.get("bl_num", ""), key="edit_bl")
-                            new_ouvrage = st.text_input("Ouvrage", value=selected_item.get("ouvrage", ""), key="edit_ouvrage")
-                            new_quantite = st.number_input("Quantité (m³)", value=float(selected_item.get("quantite_m3", 0.0)), key="edit_qte")
+                            # Utilisation de clés dynamiques incluant l'ID (rec_id)
+                            new_date_livraison = st.date_input("Date de livraison", value=def_date, key=f"edit_date_{rec_id}")
+                            new_technicien = st.text_input("Nom du Technicien LPEE", value=selected_item.get("technicien", "Agent LPEE"), key=f"edit_tech_{rec_id}")
+                            new_bl = st.text_input("N° BL", value=selected_item.get("bl_num", ""), key=f"edit_bl_{rec_id}")
+                            new_ouvrage = st.text_input("Ouvrage", value=selected_item.get("ouvrage", ""), key=f"edit_ouvrage_{rec_id}")
+                            new_quantite = st.number_input("Quantité (m³)", value=float(selected_item.get("quantite_m3", 0.0)), key=f"edit_qte_{rec_id}")
                             
-                            new_heure_fin = st.time_input("Heure de fin de production", value=def_h_fin, key="edit_h_fin")
-                            new_heure_arrivee = st.time_input("Heure d'arrivée au chantier", value=def_h_arr, key="edit_h_arr")
+                            new_heure_fin = st.time_input("Heure de fin de production", value=def_h_fin, key=f"edit_h_fin_{rec_id}")
+                            new_heure_arrivee = st.time_input("Heure d'arrivée au chantier", value=def_h_arr, key=f"edit_h_arr_{rec_id}")
                             
                             classes_list = ["C25/30", "C30/37", "C35/45", "C40/50", "C45/55"]
                             current_classe = selected_item.get("classe_beton", "C25/30")
                             idx_classe = classes_list.index(current_classe) if current_classe in classes_list else 0
-                            new_classe = st.selectbox("Classe", classes_list, index=idx_classe, key="edit_classe")
+                            new_classe = st.selectbox("Classe", classes_list, index=idx_classe, key=f"edit_classe_{rec_id}")
                             
-                            new_centrale = st.text_input("Centrale à Béton", value=selected_item.get("centrale_beton", "TG PREFA"), key="edit_centrale")
+                            new_centrale = st.text_input("Centrale à Béton", value=selected_item.get("centrale_beton", "TG PREFA"), key=f"edit_centrale_{rec_id}")
                             
                             meteo_list = ["Ensoleillé ☀️", "Nuageux ☁️", "Pluie 🌧️"]
                             current_meteo = selected_item.get("meteo", "Ensoleillé ☀️")
                             idx_meteo = meteo_list.index(current_meteo) if current_meteo in meteo_list else 0
-                            new_meteo = st.selectbox("Météo", meteo_list, index=idx_meteo, key="edit_meteo")
+                            new_meteo = st.selectbox("Météo", meteo_list, index=idx_meteo, key=f"edit_meteo_{rec_id}")
                             
-                            new_temp_beton = st.number_input("Température du Béton (°C)", value=float(selected_item.get("temperature", 20.0)), step=0.1, format="%.1f", key="edit_t_beton")
-                            new_temp_amb = st.number_input("Température Ambiante (°C)", value=float(selected_item.get("temperature_ambiante", 25.0)), step=0.1, format="%.1f", key="edit_t_amb")
-                            new_affaissement = st.number_input("Affaissement (mm)", value=int(selected_item.get("affaissement", 150)), step=10, key="edit_aff")
+                            new_temp_beton = st.number_input("Température du Béton (°C)", value=float(selected_item.get("temperature", 20.0)), step=0.1, format="%.1f", key=f"edit_t_beton_{rec_id}")
+                            new_temp_amb = st.number_input("Température Ambiante (°C)", value=float(selected_item.get("temperature_ambiante", 25.0)), step=0.1, format="%.1f", key=f"edit_t_amb_{rec_id}")
+                            new_affaissement = st.number_input("Affaissement (mm)", value=int(selected_item.get("affaissement", 150)), step=10, key=f"edit_aff_{rec_id}")
                             
                             prelevement_list = ["OUI - Conforme (NF EN 12350-2)", "NON"]
                             current_prel = selected_item.get("prelevement", "NON")
                             idx_prel = prelevement_list.index(current_prel) if current_prel in prelevement_list else 1
-                            new_prelevement = st.selectbox("Prélèvement", prelevement_list, index=idx_prel, key="edit_prel")
+                            new_prelevement = st.selectbox("Prélèvement", prelevement_list, index=idx_prel, key=f"edit_prel_{rec_id}")
                             
-                            new_nb_eprouvettes = st.number_input("Nb d'éprouvettes", value=int(selected_item.get("nb_eprouvettes", 0)), min_value=0, key="edit_eprov")
-                            new_observations = st.text_area("Observations", value=selected_item.get("observations", ""), key="edit_obs")
+                            new_nb_eprouvettes = st.number_input("Nb d'éprouvettes", value=int(selected_item.get("nb_eprouvettes", 0)), min_value=0, key=f"edit_eprov_{rec_id}")
+                            new_observations = st.text_area("Observations", value=selected_item.get("observations", ""), key=f"edit_obs_{rec_id}")
                             
                             if st.form_submit_button("💾 Enregistrer toutes les modifications"):
                                 try:
@@ -261,7 +263,7 @@ def show(supabase):
                                         "prelevement": new_prelevement,
                                         "nb_eprouvettes": int(new_nb_eprouvettes),
                                         "observations": new_observations
-                                    }).eq("id", selected_item["id"]).execute()
+                                    }).eq("id", rec_id).execute()
                                     
                                     st.success("Modifications enregistrées avec succès !")
                                     st.rerun()
@@ -272,9 +274,9 @@ def show(supabase):
                 if is_admin:
                     with col_del:
                         st.markdown("##### ⚠️ Suppression")
-                        if st.button("🗑️ Supprimer définitivement ce contrôle", type="primary", key="btn_supprimer_admin"):
+                        if st.button("🗑️ Supprimer définitivement ce contrôle", type="primary", key=f"btn_supprimer_admin_{rec_id}"):
                             try:
-                                supabase.table("suivi_betonnage").delete().eq("id", selected_item["id"]).execute()
+                                supabase.table("suivi_betonnage").delete().eq("id", rec_id).execute()
                                 st.success("Enregistrement supprimé avec succès.")
                                 st.rerun()
                             except Exception as e:
