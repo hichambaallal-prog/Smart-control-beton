@@ -613,10 +613,21 @@ def obtenir_infos_betonnage_parent(supabase, betonnage_id):
 
 
 def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
-    """Détermine la référence de contrôle avec priorité."""
+    """Détermine la référence de contrôle avec priorité donnée au N° de Réception."""
     session_key = f"ref_controle_beton_{betonnage_id}"
     if session_key in st.session_state and st.session_state[session_key]:
         return st.session_state[session_key]
+
+    # --- MODIFICATION : Priorité au Numéro de Réception (Phase 0) ---
+    num_reception = None
+    if info_betonnage:
+        num_reception = info_betonnage.get("num_reception") or info_betonnage.get("n_reception")
+    
+    if num_reception and str(num_reception).strip() not in ["", "-", "None", "NaN", "N/A"]:
+        val_defaut = str(num_reception).strip()
+        st.session_state[session_key] = val_defaut
+        return val_defaut
+    # ----------------------------------------------------------------
 
     ref_parent = info_betonnage.get("ref_controle") if info_betonnage else None
     if ref_parent and str(ref_parent).strip():
@@ -913,7 +924,7 @@ def show(supabase):
                 f"📌 **N° Réception : {num_reception_p}** | Total prévu : **{total_eprouvettes_prevues}** | Déjà programmée(s) : **{eprouvettes_deja_prog}** | Reste disponible : **{solde_disponible}**"
             )
 
-            # Champ Référence de Contrôle auto-rempli
+            # Champ Référence de Contrôle auto-rempli avec le N° Réception
             ref_controle_p = st.text_input(
                 "🏷️ Référence de Contrôle (Préfixe du repère)",
                 value=ref_controle_init,
