@@ -218,8 +218,67 @@ if page == "Accueil":
 
 elif page == "Gestion Utilisateurs" and current_role == "admin":
     st.title("👥 Gestion des Utilisateurs & Mots de Passe")
-    st.caption("Consultez ci-dessous la liste de tous les utilisateurs et leurs mots de passe actuels.")
-    
+    st.caption("Consultez et gérez la liste de tous les utilisateurs de la plateforme.")
+
+    # Liste des rôles disponibles pour les formulaires
+    ROLES_LIST = ["laboratoire", "restricted_betonnage", "admin", "user"]
+
+    # --- FORMULAIRES D'AJOUT ET DE MODIFICATION ---
+    col_add, col_edit = st.columns(2)
+
+    with col_add:
+        with st.expander("➕ Ajouter un utilisateur", expanded=False):
+            with st.form("add_user_form", clear_on_submit=True):
+                new_username = st.text_input("Nom d'utilisateur").strip().upper()
+                new_password = st.text_input("Mot de passe", type="password")
+                new_role = st.selectbox("Rôle", ROLES_LIST)
+                new_can_edit = st.checkbox("Droit de modification (can_edit)")
+                submit_add = st.form_submit_button("Ajouter l'utilisateur", use_container_width=True, type="primary")
+
+                if submit_add:
+                    if not new_username:
+                        st.error("❌ Le nom d'utilisateur ne peut pas être vide.")
+                    elif not new_password:
+                        st.error("❌ Le mot de passe ne peut pas être vide.")
+                    elif new_username in st.session_state["users_db"]:
+                        st.warning(f"⚠️ L'utilisateur **{new_username}** existe déjà.")
+                    else:
+                        st.session_state["users_db"][new_username] = {
+                            "password": new_password,
+                            "role": new_role,
+                            "can_edit": new_can_edit
+                        }
+                        st.success(f"✅ Utilisateur **{new_username}** ajouté avec succès !")
+                        st.rerun()
+
+    with col_edit:
+        with st.expander("✏️ Modifier un utilisateur", expanded=False):
+            user_list = list(st.session_state["users_db"].keys())
+            selected_user = st.selectbox("Sélectionner un utilisateur à modifier", user_list)
+
+            if selected_user:
+                current_data = st.session_state["users_db"][selected_user]
+                with st.form("edit_user_form"):
+                    mod_password = st.text_input("Nouveau mot de passe (laisser vide si inchangé)", type="password")
+                    
+                    role_index = ROLES_LIST.index(current_data["role"]) if current_data["role"] in ROLES_LIST else 0
+                    mod_role = st.selectbox("Rôle", ROLES_LIST, index=role_index)
+                    mod_can_edit = st.checkbox("Droit de modification (can_edit)", value=current_data["can_edit"])
+                    
+                    submit_edit = st.form_submit_button("Enregistrer les modifications", use_container_width=True)
+
+                    if submit_edit:
+                        updated_password = mod_password if mod_password != "" else current_data["password"]
+                        st.session_state["users_db"][selected_user] = {
+                            "password": updated_password,
+                            "role": mod_role,
+                            "can_edit": mod_can_edit
+                        }
+                        st.success(f"✅ Utilisateur **{selected_user}** mis à jour !")
+                        st.rerun()
+
+    st.markdown("---")
+
     # Transformation de USERS_DB en tableau lisible
     data_users = []
     for user, details in st.session_state["users_db"].items():
