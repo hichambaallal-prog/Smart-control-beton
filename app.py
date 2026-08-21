@@ -25,7 +25,7 @@ if "users_db" not in st.session_state:
         "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": False},
         "HANINE": {"password": "hanine2026", "role": "laboratoire", "can_edit": False},
         "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False},
-        "HAMDANI": {"password": "hamdani2026", "role": "laboratoire", "can_edit": False},
+        "ELHAMDANI": {"password": "elhamdani2026", "role": "laboratoire", "can_edit": False},
         
         # Opérateurs Bétonnage
         "ADAM": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
