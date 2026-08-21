@@ -23,6 +23,7 @@ def extraire_num_bl(*sources):
         "n_bon",
         "bon_de_livraison",
         "code_bl",
+        "bl_numero",
     ]
 
     for source in sources:
@@ -636,10 +637,10 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
 # =========================================================
 # 2. APPLICATION PRINCIPALE STREAMLIT
 # =========================================================
-def show(supabase):
+def show(supabase, can_edit=True):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # RECURERATION DES INFORMATIONS DE SESSION ET GESTION DES ROLES
+    # RÉCUPÉRATION DES INFORMATIONS DE SESSION ET GESTION DES RÔLES
     user_info = st.session_state.get("user", {})
     role_utilisateur = str(
         st.session_state.get("user_role")
@@ -647,12 +648,20 @@ def show(supabase):
         or user_info.get("role", "")
     ).lower()
 
-    # Droit d'édition étendu (ex: AMINA ou droit d'édition explicite)
-    can_edit = st.session_state.get("can_edit", False) or user_info.get("can_edit", False)
+    # Droit d'édition étendu
+    can_edit_effective = (
+        can_edit
+        or st.session_state.get("can_edit", False)
+        or user_info.get("can_edit", False)
+    )
 
     roles_autorises = ["laboratoire", "labo", "admin", "responsable_labo", "qualite"]
 
-    if role_utilisateur not in roles_autorises and not st.session_state.get("is_admin", False) and not can_edit:
+    if (
+        role_utilisateur not in roles_autorises
+        and not st.session_state.get("is_admin", False)
+        and not can_edit_effective
+    ):
         st.error("⛔ **Accès Restreint**")
         st.warning(
             "Ce module est réservé exclusivement au personnel du **Laboratoire de Contrôle**."
@@ -664,8 +673,8 @@ def show(supabase):
         or st.session_state.get("is_admin") is True
     )
 
-    # L'accès au mode édition est autorisé pour l'administrateur OU les utilisateurs autorisés à éditer (ex: AMINA)
-    est_autorise_edition = est_compte_admin or can_edit
+    # L'accès au mode édition est autorisé pour l'administrateur OU les utilisateurs autorisés à éditer
+    est_autorise_edition = est_compte_admin or can_edit_effective
 
     mode_admin = False
 
@@ -676,12 +685,95 @@ def show(supabase):
         if mode_admin:
             st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
-    tab_prog, tab_saisie, tab_hist = st.tabs([
+    # Configuration des onglets avec la Phase 0 intégrée
+    tab0, tab1, tab2, tab3 = st.tabs([
+        "📥 Phase 0 : Réception",
         "📅 Phase 1 : Programmation",
         "💥 Phase 2 : Planning Daily & Saisie (Par Lot)",
         "📋 Historique Complet & PVs",
     ])
 
+    # ------------------------------------------------------------------
+    # PHASE 0 : RÉCEPTION & ATTRIBUTION DE LA RÉFÉRENCE DE CONTRÔLE
+    # ------------------------------------------------------------------
+    with tab0:
+        st.subheader("📥 Phase 0 : Réception des Fiches de Bétonnage")
+        st.caption("Consultez et validez les fiches saisies lors du bétonnage avant programmation.")
+
+        # Récupération des enregistrements de bétonnage depuis Supabase
+        try:
+            response = (
+                supabase.table("suivi_betonnage")
+                .select("*")
+                .order("created_at", desc=True)
+                .execute()
+            )
+            data_betonnage = response.data if response.data else []
+        except Exception as e:
+            st.error(f"❌ Erreur lors de la récupération des bétonnages : {e}")
+            data_betonnage = []
+
+        if not data_betonnage:
+            st.info("Aucune fiche de bétonnage enregistrée pour le moment.")
+        else:
+            # Préparation de la liste déroulante avec nommage de la référence
+            options_betonnage = {}
+            for item in data_betonnage:
+                id_beton = item.get("id")
+                ouvrage = item.get("ouvrage", "Non précisé")
+                classe = item.get("classe_beton", item.get("classe", "N/A"))
+                date_b = item.get("date_betonnage", item.get("date_coulee", "N/A"))
+
+                # Génération du nom de référence
+                ref_label = f"REF-{id_beton} | {ouvrage} | Classe: {classe} | Date: {date_b}"
+                options_betonnage[ref_label] = item
+
+            selected_ref = st.selectbox(
+                "📌 Sélectionner la fiche de bétonnage reçue :",
+                list(options_betonnage.keys()),
+                key="select_phase0_beton",
+            )
+
+            if selected_ref:
+                rec_data = options_betonnage[selected_ref]
+
+                # Affichage des métriques clés exigées
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Ouvrage", rec_data.get("ouvrage", "N/A"))
+                with col2:
+                    st.metric("Classe de béton", rec_data.get("classe_beton", rec_data.get("classe", "N/A")))
+                with col3:
+                    affaisse = rec_data.get("affaissement", rec_data.get("slump"))
+                    st.metric("Affaissement (cm)", f"{affaisse} cm" if affaisse is not None else "N/A")
+                with col4:
+                    temp = rec_data.get("temperature_beton", rec_data.get("temperature"))
+                    st.metric("Température Béton", f"{temp} °C" if temp is not None else "N/A")
+
+                # Fiche détaillée des caractéristiques du béton
+                st.markdown("---")
+                st.markdown("#### 📄 Fiche Récapitulative du Béton Réceptionné")
+
+                details_df = pd.DataFrame([{
+                    "Référence Attribution": f"REF-{rec_data.get('id')}-{rec_data.get('ouvrage')}",
+                    "Date Bétonnage": rec_data.get("date_betonnage", rec_data.get("date_coulee")),
+                    "Bon de Livraison (BL)": extraire_num_bl(rec_data),
+                    "Ouvrage / Élément": rec_data.get("ouvrage"),
+                    "Classe de Béton": rec_data.get("classe_beton", rec_data.get("classe")),
+                    "Affaissement Slump": f"{rec_data.get('affaissement', rec_data.get('slump', 'N/A'))} cm",
+                    "Température Béton": f"{rec_data.get('temperature_beton', rec_data.get('temperature', 'N/A'))} °C",
+                    "Volume Bétonné": f"{rec_data.get('volume', 'N/A')} m³",
+                    "Saisi Par": rec_data.get("operateur", rec_data.get("technicien", "N/A")),
+                }])
+
+                st.table(details_df)
+
+                # Validation vers la Phase 1
+                if can_edit_effective:
+                    if st.button("✅ Valider & Transmettre à la Phase 1 (Programmation)", type="primary"):
+                        st.success(f"Fiche **REF-{rec_data.get('id')}** réceptionnée et prête pour la programmation des écrasements !")
+
+    # Chargement des bétonnages prélevés pour les phases suivantes
     betonnages_preleves = []
     try:
         res_beton = (
@@ -700,8 +792,10 @@ def show(supabase):
     except Exception as e:
         st.error(f"❌ Erreur lors du chargement des bétonnages : {e}")
 
+    # ------------------------------------------------------------------
     # PHASE 1 : PROGRAMMATION
-    with tab_prog:
+    # ------------------------------------------------------------------
+    with tab1:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
         prog_counts = {}
@@ -999,8 +1093,10 @@ def show(supabase):
                         )
                         st.rerun()
 
-    # PHASE 2 : PLANNING & SAISIE DES ÉCRASEMENTS
-    with tab_saisie:
+    # ------------------------------------------------------------------
+    # PHASE 2 : PLANNING DAILY & SAISIE (PAR LOT)
+    # ------------------------------------------------------------------
+    with tab2:
         st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
 
         today_date = date.today()
@@ -1034,7 +1130,7 @@ def show(supabase):
             st.error(
                 f"🚨 **ATTENTION : {nb_retards} éprouvette(s) non écrasée(s) ont atteint ou dépassé leur date d'échéance !**"
             )
-            
+
             rows_retard = []
             for ep in retards_list:
                 dt_coul_str = ep.get("date_coulee")
@@ -1496,8 +1592,10 @@ def show(supabase):
                             f"✅ Lot de {succes_lot} éprouvettes mis à jour / validé !"
                         )
 
-    # HISTORIQUE COMPLET & ÉDITION DE PV
-    with tab_hist:
+    # ------------------------------------------------------------------
+    # PHASE 3 : HISTORIQUE COMPLET & PVs
+    # ------------------------------------------------------------------
+    with tab3:
         st.subheader("📋 Historique Général & Consultation des PVs")
         try:
             res_all = (
