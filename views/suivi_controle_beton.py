@@ -618,7 +618,7 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
     if session_key in st.session_state and st.session_state[session_key]:
         return st.session_state[session_key]
 
-    # --- MODIFICATION : Priorité au Numéro de Réception (Phase 0) ---
+    # --- Priorité au Numéro de Réception (Phase 0) ---
     num_reception = None
     if info_betonnage:
         num_reception = info_betonnage.get("num_reception") or info_betonnage.get("n_reception")
@@ -919,15 +919,16 @@ def show(supabase):
 
             st.markdown("---")
             
-            # Affichage mis à jour : N° Réception auto-complété
             st.info(
                 f"📌 **N° Réception : {num_reception_p}** | Total prévu : **{total_eprouvettes_prevues}** | Déjà programmée(s) : **{eprouvettes_deja_prog}** | Reste disponible : **{solde_disponible}**"
             )
 
-            # Champ Référence de Contrôle auto-rempli avec le N° Réception
+            # Champ Référence de Contrôle : FERMÉ (lecture seule) et rempli avec le N° de réception s'il existe
+            ref_value = num_reception_p if num_reception_p and str(num_reception_p).strip() not in ["", "-", "None", "NaN", "N/A"] else ref_controle_init
             ref_controle_p = st.text_input(
                 "🏷️ Référence de Contrôle (Préfixe du repère)",
-                value=ref_controle_init,
+                value=ref_value,
+                disabled=True, # Le champ est désormais verrouillé
                 key=f"p_ref_ctrl_{b_id}",
             )
             st.session_state[f"ref_controle_beton_{b_id}"] = ref_controle_p
@@ -1014,9 +1015,9 @@ def show(supabase):
 
                     succes_cnt = 0
                     for rep in reperes_p:
+                        # CORRECTION : La ligne "num_reception": num_reception_p a été retirée pour éviter l'erreur Supabase PGRST204
                         payload_prog = {
                             "betonnage_id": b_id,
-                            "num_reception": num_reception_p,
                             "num_bl": num_bl_p,
                             "ouvrage": ouvrage_p,
                             "classe_beton": classe_beton_p,
