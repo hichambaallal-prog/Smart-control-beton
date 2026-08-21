@@ -82,6 +82,17 @@ if st.session_state["user"] is None:
 # ==========================================
 # 3. CODE PRINCIPAL (Utilisateur connecté)
 # ==========================================
+# Masquer les boutons de téléchargement pour le rôle "user" (Consultation seule)
+if st.session_state.get("role") == "user":
+    st.markdown(
+        """
+        <style>
+        .stDownloadButton { display: none !important; }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 try:
     from views import (
         suivi_Betonnage,
@@ -111,7 +122,7 @@ with st.sidebar:
 
     st.markdown(f"👤 **{current_username}**")
     
-    # Affichage du rôle
+    # Affichage du rôle et définition des menus accessibles
     if current_role == "laboratoire" or current_role == "technicien":
         if current_username == "HANINE":
             st.info("Rôle : **RESPONSABLE DE DOSSIER**")
@@ -144,23 +155,29 @@ with st.sidebar:
             "Suivi Contrôle Béton", 
             "Synthèse Béton"
         ]
+    elif current_role == "user":
+        st.info("Rôle : **CONSULTATION (LECTURE SEULE)**")
+        st.markdown("---")
+        # Restricton stricte pour "user" : Synthèses uniquement
+        available_pages = [
+            "Accueil", 
+            "Synthèse Béton", 
+            "Synthèse Plaque"
+        ]
     else:
         st.info(f"Rôle : **{current_role.upper()}**")
         st.markdown("---")
         available_pages = [
             "Accueil", 
-            "Essai à la Plaque", 
-            "Synthèse Plaque", 
-            "Suivi de Bétonnage", 
-            "Suivi Contrôle Béton", 
-            "Synthèse Béton"
+            "Synthèse Béton", 
+            "Synthèse Plaque"
         ]
     
     page = st.radio("Menu Principal", available_pages)
     
     st.markdown("---")
     
-    # --- MODULE DE MODIFICATION DE MOT DE PASSE (Pour tous les utilisateurs) ---
+    # --- MODULE DE MODIFICATION DE MOT DE PASSE ---
     with st.expander("🔑 Changer mon mot de passe"):
         with st.form("change_pwd_form", clear_on_submit=True):
             old_pwd = st.text_input("Ancien mot de passe", type="password")
@@ -210,20 +227,15 @@ if page == "Accueil":
     st.markdown("""
     Bienvenue sur l'application centralisée de gestion des contrôles qualité pour le projet **LGV CASA SUD**.
     
-    Utilisez le menu de navigation latéral pour accéder aux différents modules :
-    * **🏗️ Suivi Béton :** Gestion des livraisons, fiches de contrôle, températures, affaissements et prélèvements.
-    * **🧪 Suivi Contrôle Béton :** Saisie des écrasements d'éprouvettes de béton (3j, 7j, 28j, 90j) associées aux prélèvements.
-    * **🚜 Essai à la Plaque :** Saisie des essais de portance (Norme NF P 94-117-1) avec calculs automatiques des modules $EV_1$, $EV_2$ et du coefficient $K$.
+    Utilisez le menu de navigation latéral pour accéder aux différents modules de consultation et de suivi.
     """)
 
 elif page == "Gestion Utilisateurs" and current_role == "admin":
     st.title("👥 Gestion des Utilisateurs & Mots de Passe")
     st.caption("Consultez et gérez la liste de tous les utilisateurs de la plateforme.")
 
-    # Liste des rôles disponibles pour les formulaires
     ROLES_LIST = ["laboratoire", "restricted_betonnage", "admin", "user"]
 
-    # --- FORMULAIRES D'AJOUT ET DE MODIFICATION ---
     col_add, col_edit = st.columns(2)
 
     with col_add:
@@ -279,7 +291,6 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
 
     st.markdown("---")
 
-    # Transformation de USERS_DB en tableau lisible
     data_users = []
     for user, details in st.session_state["users_db"].items():
         data_users.append({
