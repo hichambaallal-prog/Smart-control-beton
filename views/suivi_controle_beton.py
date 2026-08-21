@@ -639,16 +639,20 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # RESTRICTION D'ACCÈS
+    # RECURERATION DES INFORMATIONS DE SESSION ET GESTION DES ROLES
+    user_info = st.session_state.get("user", {})
     role_utilisateur = str(
         st.session_state.get("user_role")
         or st.session_state.get("role")
-        or ""
+        or user_info.get("role", "")
     ).lower()
+
+    # Droit d'édition étendu (ex: AMINA ou droit d'édition explicite)
+    can_edit = st.session_state.get("can_edit", False) or user_info.get("can_edit", False)
 
     roles_autorises = ["laboratoire", "labo", "admin", "responsable_labo", "qualite"]
 
-    if role_utilisateur not in roles_autorises and not st.session_state.get("is_admin", False):
+    if role_utilisateur not in roles_autorises and not st.session_state.get("is_admin", False) and not can_edit:
         st.error("⛔ **Accès Restreint**")
         st.warning(
             "Ce module est réservé exclusivement au personnel du **Laboratoire de Contrôle**."
@@ -660,14 +664,17 @@ def show(supabase):
         or st.session_state.get("is_admin") is True
     )
 
+    # L'accès au mode édition est autorisé pour l'administrateur OU les utilisateurs autorisés à éditer (ex: AMINA)
+    est_autorise_edition = est_compte_admin or can_edit
+
     mode_admin = False
 
-    if est_compte_admin:
+    if est_autorise_edition:
         st.sidebar.markdown("---")
-        st.sidebar.subheader("🔒 Mode Administration")
-        mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Edition", value=False)
+        st.sidebar.subheader("🔒 Mode Administration / Édition")
+        mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
         if mode_admin:
-            st.sidebar.warning("⚠️ Mode Administrateur Actif.")
+            st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
     tab_prog, tab_saisie, tab_hist = st.tabs([
         "📅 Phase 1 : Programmation",
