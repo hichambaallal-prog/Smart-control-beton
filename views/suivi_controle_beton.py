@@ -710,7 +710,6 @@ def show(supabase):
         else:
             rows_reception = []
             for item in betonnages_preleves:
-                # Saisie manuelle : la case est initialement vide si l'utilisateur ne l'a pas encore validée
                 num_rec_exist = item.get("num_reception") or item.get("n_reception") or ""
 
                 classe_b = item.get("classe_beton") or item.get("classe") or "-"
@@ -783,7 +782,6 @@ def show(supabase):
                         st.rerun()
 
             with col_rec2:
-                # Seules les lignes ayant un numéro de réception saisi et non vide sont affichées / exportables dans le rapport Phase 0
                 df_visibles = df_edited[
                     df_edited["1-Numero de reception"].str.strip().ne("") & 
                     df_edited["1-Numero de reception"].str.strip().ne("-")
