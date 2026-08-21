@@ -773,12 +773,20 @@ def show(supabase):
 
                         if n_rec_val and n_rec_val != "-":
                             try:
+                                # Essaye d'abord la colonne num_reception
                                 supabase.table("suivi_betonnage").update(
                                     {"num_reception": n_rec_val}
                                 ).eq("id", beton_id_val).execute()
                                 succes_rec += 1
                             except Exception as err_u:
-                                st.error(f"Erreur d'enregistrement pour la fiche #{beton_id_val} : {err_u}")
+                                # Fallback vers n_reception si la colonne s'appelle différemment dans le schéma
+                                try:
+                                    supabase.table("suivi_betonnage").update(
+                                        {"n_reception": n_rec_val}
+                                    ).eq("id", beton_id_val).execute()
+                                    succes_rec += 1
+                                except Exception as err_u2:
+                                    st.error(f"Erreur d'enregistrement pour la fiche #{beton_id_val} : {err_u2}")
 
                     if succes_rec > 0:
                         st.success(f"✅ {succes_rec} N° de Réception enregistré(s) avec succès !")
@@ -852,7 +860,7 @@ def show(supabase):
         else:
             options_beton = {
                 (
-                    f"N° Réception: {b.get('num_reception')} | "
+                    f"N° Réception: {b.get('num_reception') or b.get('n_reception')} | "
                     f"Classe: {b.get('classe_beton', b.get('classe', 'N/A'))} | "
                     f"Date: {b.get('date_coulee', b.get('date_livraison', 'N/A'))} | "
                     f"Ouvrage: {b.get('ouvrage', 'N/A')} | "
@@ -869,7 +877,7 @@ def show(supabase):
             beton_p = options_beton[choix_label_p]
 
             b_id = beton_p.get("id")
-            num_reception_p = beton_p.get("num_reception")
+            num_reception_p = beton_p.get("num_reception") or beton_p.get("n_reception")
             num_bl_p = extraire_num_bl(beton_p, choix_label_p)
 
             ouvrage_p = str(beton_p.get("ouvrage") or "-")
@@ -1180,7 +1188,7 @@ def show(supabase):
 
                 rows_retard.append({
                     "Priorité": statut_urgence,
-                    "N° Réception": ep.get("num_reception", "-"),
+                    "N° Réception": ep.get("num_reception") or ep.get("n_reception") or "-",
                     "Date Écrasement Prévue": dt_ecras_str,
                     "Référence / Repère": rep_complet,
                     "N° BL": extraire_num_bl(ep),
@@ -1233,7 +1241,7 @@ def show(supabase):
 
                     rows_sel.append({
                         "ID": ep.get("id"),
-                        "N° Réception": ep.get("num_reception", "-"),
+                        "N° Réception": ep.get("num_reception") or ep.get("n_reception") or "-",
                         "Référence / Repère": rep_complet,
                         "N° BL": extraire_num_bl(ep),
                         "Ouvrage": ep.get("ouvrage", "-"),
@@ -1326,7 +1334,7 @@ def show(supabase):
             )
 
             exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
-            num_reception_affiche = sample.get("num_reception") or (info_betonnage.get("num_reception") if info_betonnage else "-")
+            num_reception_affiche = sample.get("num_reception") or sample.get("n_reception") or (info_betonnage.get("num_reception") or info_betonnage.get("n_reception") if info_betonnage else "-")
 
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
             col_l1.metric("N° Réception", str(num_reception_affiche))
@@ -1810,6 +1818,7 @@ def show(supabase):
                 colonnes_ordre = [
                     "id",
                     "num_reception",
+                    "n_reception",
                     "ref_controle",
                     "repere_eprouvette",
                     "date_coulee",
