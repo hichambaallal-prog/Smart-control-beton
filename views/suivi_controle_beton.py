@@ -591,13 +591,14 @@ def generer_pv_excel(export_data, infos_header):
 
 
 # =========================================================
-# FONCTION UTILITAIRE : EXPORT EXCEL DU PLANNING DE LA DATE
+# FONCTION UTILITAIRE : EXPORT EXCEL DU PLANNING DE LA DATE/SEMAINE
 # =========================================================
 def exporter_dataframe_excel(df, date_chaine):
     """Génère un fichier Excel à partir du DataFrame de la liste du planning."""
     buffer = io.BytesIO()
+    nom_feuille = f"Planning_{date_chaine}"[:31]  # Limitation max 31 caractères pour Excel
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=f"Planning_{date_chaine}")
+        df.to_excel(writer, index=False, sheet_name=nom_feuille)
 
     buffer.seek(0)
     return buffer
@@ -1172,6 +1173,12 @@ def show(supabase):
             date_filtre = st.date_input("📅 Choisir une date à consulter", value=today_date, key="filtre_date_planning")
             date_filtre_str = str(date_filtre)
 
+        # --- CALCUL DE LA SEMAINE EN COURS (Lundi à Dimanche) ---
+        debut_semaine = date_filtre - timedelta(days=date_filtre.weekday())
+        fin_semaine = debut_semaine + timedelta(days=6)
+        debut_semaine_str = str(debut_semaine)
+        fin_semaine_str = str(fin_semaine)
+
         try:
             res_retards = (
                 supabase.table("suivi_controle_beton")
@@ -1243,6 +1250,58 @@ def show(supabase):
             eprouvettes_date_sel = []
             st.warning(f"Note lors du chargement de la date {date_filtre_str} : {err_sel}")
 
+        # --- RÉCUPÉRATION DES ÉPROUVETTES DE LA SEMAINE ---
+        try:
+            res_semaine = (
+                supabase.table("suivi_controle_beton")
+                .select("*")
+                .gte("date_ecrasement", debut_semaine_str)
+                .lte("date_ecrasement", fin_semaine_str)
+                .order("date_ecrasement", desc=False)
+                .execute()
+            )
+            eprouvettes_semaine = res_semaine.data if res_semaine.data else []
+        except Exception as err_sem:
+            eprouvettes_semaine = []
+            st.warning(f"Note lors du chargement du planning de la semaine ({debut_semaine_str} au {fin_semaine_str}) : {err_sem}")
+
+        rows_semaine = []
+        for ep in eprouvettes_semaine:
+            dt_coul_str = ep.get("date_coulee")
+            dt_ecras_str = ep.get("date_ecrasement")
+            age_calc = "-"
+
+            if dt_coul_str and dt_ecras_str:
+                try:
+                    d_coul = datetime.strptime(str(dt_coul_str)[:10], "%Y-%m-%d").date()
+                    d_ecras = datetime.strptime(str(dt_ecras_str)[:10], "%Y-%m-%d").date()
+                    age_calc = f"{(d_ecras - d_coul).days} jours"
+                except Exception:
+                    age_calc = str(ep.get("echeance", "-"))
+
+            ref_p = str(ep.get("ref_controle") or "").strip()
+            rep_s = str(ep.get("repere_eprouvette", "")).strip()
+            rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
+
+            f_kn_val = float(ep.get("force_kn") or 0.0)
+            statut_val = "✅ Écrasée" if f_kn_val > 0 else "⏳ En attente"
+
+            rows_semaine.append({
+                "ID": ep.get("id"),
+                "N° Réception": ep.get("num_reception") or ep.get("n_reception") or "-",
+                "Référence / Repère": rep_complet,
+                "N° BL": extraire_num_bl(ep),
+                "Ouvrage": ep.get("ouvrage", "-"),
+                "Classe Béton": ep.get("classe_beton", "-"),
+                "Date Coulée": dt_coul_str,
+                "Date Écrasement Prévue": dt_ecras_str,
+                "Échéance Visée": ep.get("echeance", "-"),
+                "Âge Théorique": age_calc,
+                "Statut": statut_val
+            })
+
+        df_semaine = pd.DataFrame(rows_semaine)
+
         with st.expander(f"📆 Éprouvettes programmées spécifiquement pour le : {date_filtre_str} ({len(eprouvettes_date_sel)} éprouvette(s))", expanded=True):
             if eprouvettes_date_sel:
                 rows_sel = []
@@ -1281,18 +1340,38 @@ def show(supabase):
 
                 df_sel = pd.DataFrame(rows_sel)
                 st.dataframe(df_sel, use_container_width=True, hide_index=True)
-
-                excel_planning_date = exporter_dataframe_excel(df_sel, date_filtre_str)
-                st.download_button(
-                    label=f"📊 Télécharger cette liste en Excel ({date_filtre_str})",
-                    data=excel_planning_date,
-                    file_name=f"Planning_Ecrasement_{date_filtre_str}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="btn_download_planning_excel",
-                )
             else:
                 st.info(f"ℹ️ Aucune éprouvette programmée spécifiquement pour la date du {date_filtre_str}.")
+
+            st.markdown("---")
+            # --- BOUTONS D'EXPORTATION EXCEL (JOUR ET SEMAINE) ---
+            col_exp1, col_exp2 = st.columns(2)
+
+            with col_exp1:
+                if eprouvettes_date_sel:
+                    excel_planning_date = exporter_dataframe_excel(df_sel, date_filtre_str)
+                    st.download_button(
+                        label=f"📊 Télécharger la liste du jour ({date_filtre_str})",
+                        data=excel_planning_date,
+                        file_name=f"Planning_Ecrasement_{date_filtre_str}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="btn_download_planning_excel",
+                    )
+
+            with col_exp2:
+                if not df_semaine.empty:
+                    excel_planning_semaine = exporter_dataframe_excel(df_semaine, f"Sem_{debut_semaine_str}")
+                    st.download_button(
+                        label=f"📅 Télécharger la liste de la semaine ({debut_semaine_str} au {fin_semaine_str})",
+                        data=excel_planning_semaine,
+                        file_name=f"Planning_Semaine_{debut_semaine_str}_au_{fin_semaine_str}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="btn_download_planning_semaine_excel",
+                    )
+                else:
+                    st.info("ℹ️ Aucune éprouvette programmée pour cette semaine.")
 
         st.markdown("---")
 
