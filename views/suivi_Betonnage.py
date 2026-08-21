@@ -137,17 +137,21 @@ def show(supabase):
                 
                 df["Durée de transport"] = df.apply(calculer_duree, axis=1)
 
-            # 2. Masquer les colonnes non désirées
+            # 2. Masquer les colonnes non désirées (conservation de 'id')
             cols_to_drop = [
-                col for col in ["id", "created_at", "created", "heure_fin_coulage", "heure_fin", "client", "centrale_beton"] 
+                col for col in ["created_at", "created", "heure_fin_coulage", "heure_fin", "client", "centrale_beton"] 
                 if col in df.columns
             ]
             if cols_to_drop:
                 df = df.drop(columns=cols_to_drop)
 
-            # 3. Réorganisation des colonnes
+            # 3. Réorganisation des colonnes avec 'id' en premier
             cols = list(df.columns)
             
+            if "id" in cols:
+                cols.remove("id")
+                cols.insert(0, "id")
+
             if "date_livraison" in cols and "heure_arrivee" in cols:
                 cols.remove("heure_arrivee")
                 pos = cols.index("date_livraison") + 1
@@ -161,6 +165,7 @@ def show(supabase):
 
             # 4. Renommage propre des colonnes pour l'affichage
             df = df.rename(columns={
+                "id": "ID",
                 "date_livraison": "Date Livraison",
                 "heure_arrivee": "Heure d'arrivée",
                 "bl_num": "N° BL",
@@ -177,7 +182,7 @@ def show(supabase):
                 "meteo": "Météo"
             })
                 
-            # Numérotation à partir de 1
+            # Numérotation de l'index à partir de 1
             df.index = range(1, len(df) + 1)
                 
             st.dataframe(df, use_container_width=True)
