@@ -20,12 +20,15 @@ def show(supabase):
 
     current_user = str(user_raw).upper()
 
-    # Vérification des rôles et autorisations
-    is_admin = st.session_state.get("is_admin", False) or st.session_state.get("role") == "admin"
-    is_amina = "AMINA" in current_user
+    # Récupération du rôle stocké dans la session
+    user_role = str(st.session_state.get("role", "")).upper()
+    is_admin = st.session_state.get("is_admin", False) or user_role == "ADMIN"
+    
+    # Détection des techniciens (ex: "TECHNICIENNE LABORATOIRE" ou "TECHNICIEN")
+    is_technicien = "TECHNICIE" in user_role or "SAISIE" in user_role or "AMINA" in current_user
 
-    # Amina et l'Admin ont le droit de modifier
-    can_edit = is_admin or is_amina
+    # Admin ET Techniciens ont le droit de modifier
+    can_edit = is_admin or is_technicien
 
     # ---------------------------------------------------------
     # 1. GESTION DU MOTEUR D'ÉDITION / MODIFICATION
@@ -35,7 +38,6 @@ def show(supabase):
     if editing_item:
         st.info(f"✏️ **Mode Modification** - Essai ID #{editing_item['id']}")
         
-        # Valeurs pré-remplies pour l'édition
         default_date = datetime.strptime(editing_item["date_essai"], "%Y-%m-%d").date() if isinstance(editing_item.get("date_essai"), str) else date.today()
         default_client = editing_item.get("client", "TGCC")
         default_projet = editing_item.get("projet", "LGV CASA SUD")
@@ -48,7 +50,6 @@ def show(supabase):
         default_tech = editing_item.get("technicien", current_user)
         default_obs = editing_item.get("observations", "")
     else:
-        # Valeurs par défaut pour une nouvelle saisie
         default_date = date.today()
         default_client = "TGCC"
         default_projet = "LGV CASA SUD"
@@ -130,7 +131,6 @@ def show(supabase):
             }
 
             try:
-                # Filtrage des colonnes valides
                 sample_query = supabase.table("essais_plaque").select("*").limit(1).execute()
                 if sample_query.data and len(sample_query.data) > 0:
                     valid_columns = set(sample_query.data[0].keys())
@@ -158,7 +158,7 @@ def show(supabase):
                 st.rerun()
 
     # ---------------------------------------------------------
-    # 4. HISTORIQUE - COLONNES STRICTEMENT SÉLECTIONNÉES ET TRIÉES
+    # 4. HISTORIQUE DES ESSAIS
     # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📋 Historique des Essais Enregistrés")
@@ -192,9 +192,9 @@ def show(supabase):
             df_display = pd.DataFrame(clean_rows)
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-            # --- GESTION DES PERMISSIONS : MODIFICATION ET SUPPRESSION ---
+            # --- SECTION D'ACTION ADAPTÉE AUX RÔLES ---
             if can_edit:
-                st.markdown("### ⚙️ Actions de Gestion")
+                st.markdown("### ⚙️ Actions de Modification / Gestion")
                 
                 selected_id = st.selectbox(
                     "Sélectionnez un essai par son ID :", 
@@ -220,7 +220,7 @@ def show(supabase):
                             except Exception as e:
                                 st.error(f"Erreur lors de la suppression : {e}")
                 else:
-                    # Session Amina : Accès unique à la modification
+                    # Rôle Technicienne / Amina : Bouton de modification unique
                     if st.button("✏️ Modifier cet essai", type="secondary", use_container_width=True):
                         selected_item = next((item for item in res.data if item["id"] == selected_id), None)
                         if selected_item:
