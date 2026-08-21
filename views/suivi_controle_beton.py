@@ -711,7 +711,6 @@ def show(supabase):
             rows_reception = []
             for item in betonnages_preleves:
                 num_rec_exist = item.get("num_reception") or item.get("n_reception") or ""
-
                 date_liv = item.get("date_coulee") or item.get("date_livraison") or "-"
 
                 classe_b = item.get("classe_beton") or item.get("classe") or "-"
