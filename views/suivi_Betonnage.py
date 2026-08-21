@@ -5,6 +5,13 @@ from datetime import datetime, date
 def show(supabase):
     st.title("🏗️ Suivi et Contrôle Qualité Béton")
     
+    # Récupération des informations de session
+    user_info = st.session_state.get("user", {})
+    username = user_info.get("username", "")
+    role = st.session_state.get("role", "")
+    can_edit = st.session_state.get("can_edit", False) or (user_info.get("can_edit", False))
+    is_admin = (role == "admin")
+    
     # ---------------------------------------------------------
     # 1. FORMULAIRE DE SAISIE
     # ---------------------------------------------------------
@@ -98,7 +105,7 @@ def show(supabase):
             st.error(f"Erreur d'enregistrement : {e}")
 
     # ---------------------------------------------------------
-    # 2. AFFICHAGE DE L'HISTORIQUE ET ESPACE ADMIN
+    # 2. AFFICHAGE DE L'HISTORIQUE ET ESPACE DE MODIFICATION
     # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📊 Historique")
@@ -175,8 +182,8 @@ def show(supabase):
                 
             st.dataframe(df, use_container_width=True)
 
-            # --- BLOC D'ADMINISTRATION (MODIFIER / SUPPRIMER) ---
-            if st.session_state.get("role") == "admin":
+            # --- BLOC MODIFICATION (AUTORISÉ POUR AMINA ET ADMIN) ---
+            if is_admin or can_edit:
                 st.markdown("---")
                 st.subheader("🛠️ Espace Administration - Suivi Béton")
                 
@@ -184,12 +191,16 @@ def show(supabase):
                 selected_key = st.selectbox("Sélectionner l'enregistrement à gérer", list(record_options.keys()), key="admin_select_record")
                 selected_item = record_options[selected_key]
                 
-                col_ed, col_del = st.columns(2)
-                
+                # Disposition des colonnes selon le rôle
+                if is_admin:
+                    col_ed, col_del = st.columns([2, 1])
+                else:
+                    col_ed = st.container()
+
+                # --- BLOC DE MODIFICATION ---
                 with col_ed:
                     with st.expander("📝 Modifier ce contrôle (Tous les champs)"):
                         with st.form("edit_form_beton_complet"):
-                            # Helper pour parser les dates et heures en toute sécurité
                             try:
                                 def_date = datetime.strptime(str(selected_item.get("date_livraison", date.today())), "%Y-%m-%d").date()
                             except:
@@ -264,16 +275,18 @@ def show(supabase):
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erreur de mise à jour : {e}")
-                            
-                with col_del:
-                    st.markdown("##### ⚠️ Suppression")
-                    if st.button("🗑️ Supprimer définitivement ce contrôle", type="primary", key="btn_supprimer_admin"):
-                        try:
-                            supabase.table("suivi_betonnage").delete().eq("id", selected_item["id"]).execute()
-                            st.success("Enregistrement supprimé avec succès.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erreur de suppression : {e}")
+
+                # --- BLOC DE SUPPRESSION (RESERVÉ UNIQUEMENT À L'ADMINISTRATEUR) ---
+                if is_admin:
+                    with col_del:
+                        st.markdown("##### ⚠️ Suppression")
+                        if st.button("🗑️ Supprimer définitivement ce contrôle", type="primary", key="btn_supprimer_admin"):
+                            try:
+                                supabase.table("suivi_betonnage").delete().eq("id", selected_item["id"]).execute()
+                                st.success("Enregistrement supprimé avec succès.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erreur de suppression : {e}")
 
         else:
             st.info("Aucune donnée enregistrée pour le moment.")
