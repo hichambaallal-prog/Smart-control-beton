@@ -39,7 +39,7 @@ def show(supabase):
         dt_arr = datetime.combine(date.today(), heure_arrivee)
         duree_minutes = int((dt_arr - dt_fin).total_seconds() / 60)
         if duree_minutes < 0:
-            duree_minutes += 1440  # Gestion du passage de minuit si besoin
+            duree_minutes += 1440  # Passage de minuit si besoin
         
         st.text_input("Durée de transport / attente (min)", value=f"{duree_minutes} min", disabled=True, key="saisie_duree")
         
@@ -115,7 +115,7 @@ def show(supabase):
         if res.data:
             df = pd.DataFrame(res.data)
             
-            # 1. Calcul robuste de la colonne "Durée de transport"
+            # 1. Calcul de la colonne "Durée de transport"
             if "heure_fin_coulage" in df.columns and "heure_arrivee" in df.columns:
                 def calculer_duree(row):
                     try:
@@ -137,7 +137,7 @@ def show(supabase):
                 
                 df["Durée de transport"] = df.apply(calculer_duree, axis=1)
 
-            # 2. Masquer les colonnes non désirées (conservation de 'id')
+            # 2. Suppression stricte des colonnes secondaires (EXCLUSION de 'id')
             cols_to_drop = [
                 col for col in ["created_at", "created", "heure_fin_coulage", "heure_fin", "client", "centrale_beton"] 
                 if col in df.columns
@@ -145,25 +145,7 @@ def show(supabase):
             if cols_to_drop:
                 df = df.drop(columns=cols_to_drop)
 
-            # 3. Réorganisation des colonnes avec 'id' en premier
-            cols = list(df.columns)
-            
-            if "id" in cols:
-                cols.remove("id")
-                cols.insert(0, "id")
-
-            if "date_livraison" in cols and "heure_arrivee" in cols:
-                cols.remove("heure_arrivee")
-                pos = cols.index("date_livraison") + 1
-                cols.insert(pos, "heure_arrivee")
-            
-            if "meteo" in cols:
-                cols.remove("meteo")
-                cols.append("meteo")
-
-            df = df[cols]
-
-            # 4. Renommage propre des colonnes pour l'affichage
+            # 3. Renommage explicite des colonnes avant réordonnancement
             df = df.rename(columns={
                 "id": "ID",
                 "date_livraison": "Date Livraison",
@@ -181,11 +163,16 @@ def show(supabase):
                 "technicien": "Technicien",
                 "meteo": "Météo"
             })
-                
-            # Numérotation de l'index à partir de 1
-            df.index = range(1, len(df) + 1)
-                
-            st.dataframe(df, use_container_width=True)
+
+            # 4. Forcer la colonne 'ID' en toute première position
+            all_cols = list(df.columns)
+            if "ID" in all_cols:
+                all_cols.remove("ID")
+                final_cols = ["ID"] + all_cols
+                df = df[final_cols]
+
+            # 5. Affichage du DataFrame en masquant l'index Pandas résiduel pour placer ID en 1re position
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
             # --- BLOC MODIFICATION (AUTORISÉ POUR AMINA ET ADMIN) ---
             if is_admin or can_edit:
