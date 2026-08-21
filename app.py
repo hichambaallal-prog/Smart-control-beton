@@ -88,7 +88,8 @@ if current_username in st.session_state["users_db"]:
 # ==========================================
 # 3. CODE PRINCIPAL (Utilisateur connecté)
 # ==========================================
-if st.session_state.get("role") == "user":
+# Masquer les boutons d'exportation pour le rôle 'user' et spécifiquement pour IKKEN et HAMDANI
+if st.session_state.get("role") == "user" or current_username in ["IKKEN", "HAMDANI"]:
     st.markdown(
         """
         <style>
