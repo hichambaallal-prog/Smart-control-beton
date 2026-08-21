@@ -639,7 +639,6 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # RECURERATION DES INFORMATIONS DE SESSION ET GESTION DES ROLES
     user_info = st.session_state.get("user", {})
     role_utilisateur = str(
         st.session_state.get("user_role")
@@ -647,7 +646,6 @@ def show(supabase):
         or user_info.get("role", "")
     ).lower()
 
-    # Droit d'édition étendu (ex: AMINA ou droit d'édition explicite)
     can_edit = st.session_state.get("can_edit", False) or user_info.get("can_edit", False)
 
     roles_autorises = ["laboratoire", "labo", "admin", "responsable_labo", "qualite"]
@@ -664,7 +662,6 @@ def show(supabase):
         or st.session_state.get("is_admin") is True
     )
 
-    # L'accès au mode édition est autorisé pour l'administrateur OU les utilisateurs autorisés à éditer (ex: AMINA)
     est_autorise_edition = est_compte_admin or can_edit
 
     mode_admin = False
@@ -701,37 +698,30 @@ def show(supabase):
     except Exception as e:
         st.error(f"❌ Erreur lors du chargement des bétonnages : {e}")
 
-    # PHASE 0 : RÉCEPTION & VALIDATION DU BÉTON
+    # =========================================================
+    # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION
+    # =========================================================
     with tab_reception:
         st.subheader("📋 0. Réception & Validation des Bétons")
+        st.info("💡 **Condition requise** : Vous devez attribuer et enregistrer un **N° Réception** à chaque fiche pour débloquer sa programmation d'éprouvettes en Phase 1.")
 
         if not betonnages_preleves:
             st.info("ℹ️ Aucun bétonnage prélevé dans la base de données.")
         else:
             rows_reception = []
             for item in betonnages_preleves:
-                # 1. Numero de reception
-                num_reception = item.get("id")
+                # Récupération du N° de réception s'il existe dans la BDD
+                num_rec_exist = item.get("num_reception") or item.get("n_reception") or ""
 
-                # 2. Classe de béton
-                classe_b = (
-                    item.get("classe_beton")
-                    or item.get("classe")
-                    or "-"
-                )
-
-                # 3. Ouvrage
+                classe_b = item.get("classe_beton") or item.get("classe") or "-"
                 ouvrage_b = item.get("ouvrage") or "-"
 
-                # 4. Affaissement
                 aff_val = item.get("affaissement") or item.get("slump") or "-"
                 affaissement_b = f"{aff_val} mm" if str(aff_val) != "-" and "mm" not in str(aff_val) else str(aff_val)
 
-                # 5. Temperature de béton frais
                 temp_val = item.get("temperature") or item.get("temp_beton") or "-"
                 temp_b = f"{temp_val} °C" if str(temp_val) != "-" and "°C" not in str(temp_val) else str(temp_val)
 
-                # 6. Nb d'éprouvettes
                 raw_nb_ep = item.get("nb_eprouvettes") or item.get("nombre_eprouvettes")
                 try:
                     nb_ep_b = int(raw_nb_ep) if raw_nb_ep is not None else 12
@@ -739,7 +729,8 @@ def show(supabase):
                     nb_ep_b = 12
 
                 rows_reception.append({
-                    "1-Numero de reception": num_reception,
+                    "_id_beton": item.get("id"),
+                    "1-Numero de reception": str(num_rec_exist),
                     "2-Classe de béton": classe_b,
                     "3-Ouvrage": ouvrage_b,
                     "4-Affaissement": affaissement_b,
@@ -749,20 +740,62 @@ def show(supabase):
 
             df_reception = pd.DataFrame(rows_reception)
 
-            st.dataframe(df_reception, use_container_width=True, hide_index=True)
-
-            # Option de téléchargement Excel de la Phase 0
-            excel_reception = exporter_dataframe_excel(df_reception, "Phase_0")
-            st.download_button(
-                label="📊 Télécharger la liste des réceptions en Excel",
-                data=excel_reception,
-                file_name=f"Reception_Beton_Phase_0_{date.today()}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            # Tableau éditable permettant de saisir directement le N° de réception
+            df_edited = st.data_editor(
+                df_reception,
+                column_config={
+                    "_id_beton": None, # Masqué
+                    "1-Numero de reception": st.column_config.TextColumn(
+                        "1-Numero de reception",
+                        help="Saisissez ou modifiez le N° de Réception obligatoire",
+                        required=True,
+                    ),
+                    "2-Classe de béton": st.column_config.TextColumn("2-Classe de béton", disabled=True),
+                    "3-Ouvrage": st.column_config.TextColumn("3-Ouvrage", disabled=True),
+                    "4-Affaissement": st.column_config.TextColumn("4-Affaissement", disabled=True),
+                    "5-Temperature de béton frais": st.column_config.TextColumn("5-Temperature de béton frais", disabled=True),
+                    "6-Nb d'éprouvettes": st.column_config.NumberColumn("6-Nb d'éprouvettes", disabled=True),
+                },
                 use_container_width=True,
-                key="btn_download_reception_excel",
+                hide_index=True,
+                key="editor_reception_phase0",
             )
 
-    # PHASE 1 : PROGRAMMATION
+            col_rec1, col_rec2 = st.columns(2)
+            with col_rec1:
+                if st.button("💾 Enregistrer les N° de Réception", type="primary", use_container_width=True):
+                    succes_rec = 0
+                    for _, row_rec in df_edited.iterrows():
+                        beton_id_val = int(row_rec["_id_beton"])
+                        n_rec_val = str(row_rec["1-Numero de reception"]).strip()
+
+                        if n_rec_val and n_rec_val != "-":
+                            try:
+                                supabase.table("suivi_betonnage").update(
+                                    {"num_reception": n_rec_val}
+                                ).eq("id", beton_id_val).execute()
+                                succes_rec += 1
+                            except Exception as err_u:
+                                st.error(f"Erreur d'enregistrement pour la fiche #{beton_id_val} : {err_u}")
+
+                    if succes_rec > 0:
+                        st.success(f"✅ {succes_rec} N° de Réception enregistrés avec succès !")
+                        st.rerun()
+
+            with col_rec2:
+                excel_reception = exporter_dataframe_excel(df_edited.drop(columns=["_id_beton"]), "Phase_0")
+                st.download_button(
+                    label="📊 Télécharger la liste des réceptions en Excel",
+                    data=excel_reception,
+                    file_name=f"Reception_Beton_Phase_0_{date.today()}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="btn_download_reception_excel",
+                )
+
+    # =========================================================
+    # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
+    # =========================================================
     with tab_prog:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
@@ -781,8 +814,17 @@ def show(supabase):
         except Exception as e:
             st.warning(f"Note lors du contrôle des quotas : {e}")
 
+        # FILTRE STRICT : Ne conserver QUE les bétonnages avec un N° Réception valide
         betonnages_non_programmes = []
+        fiches_sans_num_reception = []
+
         for b in betonnages_preleves:
+            num_rec_val = str(b.get("num_reception") or b.get("n_reception") or "").strip()
+
+            if not num_rec_val or num_rec_val in ["-", "NONE", "NAN", "N/A"]:
+                fiches_sans_num_reception.append(b)
+                continue
+
             b_id = b.get("id")
             raw_nb_ep = b.get("nb_eprouvettes") or b.get("nombre_eprouvettes")
             try:
@@ -794,15 +836,21 @@ def show(supabase):
             if (total_prevu - deja_prog) > 0 or mode_admin:
                 betonnages_non_programmes.append(b)
 
+        if fiches_sans_num_reception:
+            st.warning(
+                f"⚠️ **{len(fiches_sans_num_reception)} fiche(s) de bétonnage** ne peuvent pas être programmées car leur **N° de Réception** n'est pas renseigné. Veuillez aller dans l'onglet **`📋 Phase 0 : Réception & Validation`** pour le saisir."
+            )
+
         if not betonnages_non_programmes:
-            st.info("ℹ️ Aucun bétonnage en attente de programmation.")
+            st.info("ℹ️ Aucun bétonnage en attente de programmation (ou tous les bétonnages prélevés manquent de N° Réception).")
         else:
             options_beton = {
                 (
+                    f"N° Réception: {b.get('num_reception')} | "
                     f"Classe: {b.get('classe_beton', b.get('classe', 'N/A'))} | "
                     f"Date: {b.get('date_coulee', b.get('date_livraison', 'N/A'))} | "
                     f"Ouvrage: {b.get('ouvrage', 'N/A')} | "
-                    f"BL: {extraire_num_bl(b)} | ID #{b['id']}"
+                    f"BL: {extraire_num_bl(b)}"
                 ): b
                 for b in betonnages_non_programmes
             }
@@ -815,6 +863,7 @@ def show(supabase):
             beton_p = options_beton[choix_label_p]
 
             b_id = beton_p.get("id")
+            num_reception_p = beton_p.get("num_reception")
             num_bl_p = extraire_num_bl(beton_p, choix_label_p)
 
             ouvrage_p = str(beton_p.get("ouvrage") or "-")
@@ -865,7 +914,7 @@ def show(supabase):
 
             st.markdown("---")
             st.info(
-                f"📊 **Quota Éprouvettes :** Total prévu :"
+                f"📌 **N° Réception : {num_reception_p}** | Total prévu :"
                 f" **{total_eprouvettes_prevues}** | Déjà programmée(s) :"
                 f" **{eprouvettes_deja_prog}** | Reste disponible :"
                 f" **{solde_disponible}**"
@@ -1029,6 +1078,7 @@ def show(supabase):
                     for rep in reperes_p:
                         payload_prog = {
                             "betonnage_id": b_id,
+                            "num_reception": num_reception_p,
                             "num_bl": num_bl_p,
                             "ouvrage": ouvrage_p,
                             "classe_beton": classe_beton_p,
@@ -1061,7 +1111,9 @@ def show(supabase):
                         )
                         st.rerun()
 
+    # =========================================================
     # PHASE 2 : PLANNING & SAISIE DES ÉCRASEMENTS
+    # =========================================================
     with tab_saisie:
         st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
 
@@ -1122,6 +1174,7 @@ def show(supabase):
 
                 rows_retard.append({
                     "Priorité": statut_urgence,
+                    "N° Réception": ep.get("num_reception", "-"),
                     "Date Écrasement Prévue": dt_ecras_str,
                     "Référence / Repère": rep_complet,
                     "N° BL": extraire_num_bl(ep),
@@ -1174,6 +1227,7 @@ def show(supabase):
 
                     rows_sel.append({
                         "ID": ep.get("id"),
+                        "N° Réception": ep.get("num_reception", "-"),
                         "Référence / Repère": rep_complet,
                         "N° BL": extraire_num_bl(ep),
                         "Ouvrage": ep.get("ouvrage", "-"),
@@ -1187,7 +1241,6 @@ def show(supabase):
                 df_sel = pd.DataFrame(rows_sel)
                 st.dataframe(df_sel, use_container_width=True, hide_index=True)
 
-                # BOUTON TÉLÉCHARGEMENT EXCEL DU PLANNING
                 excel_planning_date = exporter_dataframe_excel(df_sel, date_filtre_str)
                 st.download_button(
                     label=f"📊 Télécharger cette liste en Excel ({date_filtre_str})",
@@ -1267,9 +1320,10 @@ def show(supabase):
             )
 
             exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
+            num_reception_affiche = sample.get("num_reception") or (info_betonnage.get("num_reception") if info_betonnage else "-")
 
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
-            col_l1.metric("Client", "TGCC")
+            col_l1.metric("N° Réception", str(num_reception_affiche))
             col_l2.metric("N° Bon Livraison", exact_bl_phase1)
             col_l3.metric("Ouvrage", str((info_betonnage.get("ouvrage") if info_betonnage else None) or sample.get("ouvrage") or "-"))
             col_l4.metric("Échéance Visée", str(sample.get("echeance", "-")))
@@ -1558,7 +1612,9 @@ def show(supabase):
                             f"✅ Lot de {succes_lot} éprouvettes mis à jour / validé !"
                         )
 
-    # HISTORIQUE COMPLET & ÉDITION DE PV
+    # =========================================================
+    # PHASE 3 : HISTORIQUE COMPLET & CONSULTATION DES PVS
+    # =========================================================
     with tab_hist:
         st.subheader("📋 Historique Général & Consultation des PVs")
         try:
@@ -1747,6 +1803,7 @@ def show(supabase):
 
                 colonnes_ordre = [
                     "id",
+                    "num_reception",
                     "ref_controle",
                     "repere_eprouvette",
                     "date_coulee",
