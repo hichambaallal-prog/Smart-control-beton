@@ -20,15 +20,12 @@ def show(supabase):
 
     current_user = str(user_raw).upper()
 
-    # Récupération du rôle stocké dans la session
+    # Détection administrateur pour la suppression
     user_role = str(st.session_state.get("role", "")).upper()
     is_admin = st.session_state.get("is_admin", False) or user_role == "ADMIN"
-    
-    # Détection des techniciens (ex: "TECHNICIENNE LABORATOIRE" ou "TECHNICIEN")
-    is_technicien = "TECHNICIE" in user_role or "SAISIE" in user_role or "AMINA" in current_user
 
-    # Admin ET Techniciens ont le droit de modifier
-    can_edit = is_admin or is_technicien
+    # Autoriser l'édition pour tous les utilisateurs connectés à l'application
+    can_edit = True
 
     # ---------------------------------------------------------
     # 1. GESTION DU MOTEUR D'ÉDITION / MODIFICATION
@@ -158,7 +155,7 @@ def show(supabase):
                 st.rerun()
 
     # ---------------------------------------------------------
-    # 4. HISTORIQUE DES ESSAIS
+    # 4. HISTORIQUE DES ESSAIS ET ACTIONS DE MODIFICATION
     # ---------------------------------------------------------
     st.markdown("---")
     st.subheader("📋 Historique des Essais Enregistrés")
@@ -192,42 +189,39 @@ def show(supabase):
             df_display = pd.DataFrame(clean_rows)
             st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-            # --- SECTION D'ACTION ADAPTÉE AUX RÔLES ---
-            if can_edit:
-                st.markdown("### ⚙️ Actions de Modification / Gestion")
-                
-                selected_id = st.selectbox(
-                    "Sélectionnez un essai par son ID :", 
-                    options=[item["id"] for item in res.data],
-                    key="admin_select_plaque_id"
-                )
+            # --- ACTIONS DE SÉLECTION ET EDITION ---
+            st.markdown("### ⚙️ Actions de Modification / Gestion")
+            
+            selected_id = st.selectbox(
+                "Sélectionnez un essai par son ID :", 
+                options=[item["id"] for item in res.data],
+                key="admin_select_plaque_id"
+            )
 
-                if is_admin:
-                    act_col1, act_col2 = st.columns(2)
-                    with act_col1:
-                        if st.button("✏️ Modifier cet essai", type="secondary", use_container_width=True):
-                            selected_item = next((item for item in res.data if item["id"] == selected_id), None)
-                            if selected_item:
-                                st.session_state["edit_plaque_item"] = selected_item
-                                st.rerun()
-
-                    with act_col2:
-                        if st.button("🗑️ Supprimer cet essai", type="primary", use_container_width=True):
-                            try:
-                                supabase.table("essais_plaque").delete().eq("id", selected_id).execute()
-                                st.success(f"🗑️ Essai #{selected_id} supprimé avec succès.")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erreur lors de la suppression : {e}")
-                else:
-                    # Rôle Technicienne / Amina : Bouton de modification unique
+            if is_admin:
+                act_col1, act_col2 = st.columns(2)
+                with act_col1:
                     if st.button("✏️ Modifier cet essai", type="secondary", use_container_width=True):
                         selected_item = next((item for item in res.data if item["id"] == selected_id), None)
                         if selected_item:
                             st.session_state["edit_plaque_item"] = selected_item
                             st.rerun()
+
+                with act_col2:
+                    if st.button("🗑️ Supprimer cet essai", type="primary", use_container_width=True):
+                        try:
+                            supabase.table("essais_plaque").delete().eq("id", selected_id).execute()
+                            st.success(f"🗑️ Essai #{selected_id} supprimé avec succès.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erreur lors de la suppression : {e}")
             else:
-                st.caption("🔒 *Connectez-vous avec un compte autorisé pour modifier des enregistrements.*")
+                # Bouton de modification disponible pour les techniciens
+                if st.button("✏️ Modifier cet essai", type="secondary", use_container_width=True):
+                    selected_item = next((item for item in res.data if item["id"] == selected_id), None)
+                    if selected_item:
+                        st.session_state["edit_plaque_item"] = selected_item
+                        st.rerun()
 
         else:
             st.info("Aucun essai à la plaque n'a encore été enregistré.")
