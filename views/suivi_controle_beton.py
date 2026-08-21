@@ -8,6 +8,40 @@ import pandas as pd
 import streamlit as st
 
 
+# ==============================================================================
+# 1. GESTION DES UTILISATEURS ET CONNEXION SUPABASE
+# ==============================================================================
+def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
+    """
+    Vérifie le nom d'utilisateur, le mot de passe et récupère le champ 'can_edit'
+    depuis la table 'users' de Supabase.
+    """
+    try:
+        res = (
+            supabase.table("users")
+            .select("*")
+            .eq("username", nom_utilisateur)
+            .eq("password", mot_de_passe)
+            .execute()
+        )
+
+        if res.data:
+            user_info = res.data[0]
+            st.session_state["user_logged"] = True
+            st.session_state["user"] = user_info
+            st.session_state["username"] = user_info.get("username")
+            st.session_state["role"] = user_info.get("role")
+            st.session_state["user_role"] = user_info.get("role")
+            st.session_state["can_edit"] = bool(user_info.get("can_edit", False))
+            return True
+        else:
+            st.error("Nom d'utilisateur ou mot de passe incorrect.")
+            return False
+    except Exception as e:
+        st.error(f"Erreur lors de la connexion : {e}")
+        return False
+
+
 # =========================================================
 # FONCTION UTILITAIRE : EXTRACTION SÉCURISÉE DU N° BL
 # =========================================================
@@ -70,7 +104,7 @@ def extraire_num_bl(*sources):
 
 
 # =========================================================
-# 1. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT EXACT LPEE)
+# 2. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT EXACT LPEE)
 # =========================================================
 def generer_pv_excel(export_data, infos_header):
     """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE."""
@@ -646,7 +680,7 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
 
 
 # =========================================================
-# 2. APPLICATION PRINCIPALE STREAMLIT
+# 3. APPLICATION PRINCIPALE STREAMLIT
 # =========================================================
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
@@ -658,7 +692,7 @@ def show(supabase):
         or user_info.get("role", "")
     ).lower()
 
-    can_edit = st.session_state.get("can_edit", False) or user_info.get("can_edit", False)
+    can_edit = st.session_state.get("can_edit", False) or bool(user_info.get("can_edit", False))
 
     roles_autorises = ["laboratoire", "labo", "admin", "responsable_labo", "qualite"]
 
@@ -824,83 +858,89 @@ def show(supabase):
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
         # ---------------------------------------------------------
-        # SECTION MODIFICATION DE PROGRAMMATION
+        # BLOC 1 : MODIFICATION / AJUSTEMENT (Restreint aux utilisateurs avec can_edit)
         # ---------------------------------------------------------
-        with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
-            st.markdown("##### ⚙️ Éditer les échéances déjà programmées")
-            try:
-                res_progs_exist = (
-                    supabase.table("suivi_controle_beton")
-                    .select("*")
-                    .order("id", desc=True)
-                    .execute()
-                )
-                eprouvettes_enregistrees = res_progs_exist.data if res_progs_exist.data else []
-            except Exception as e_fetch_prog:
-                eprouvettes_enregistrees = []
-                st.error(f"Erreur lors du chargement des programmations : {e_fetch_prog}")
+        if can_edit:
+            with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
+                st.markdown("##### ⚙️ Éditer les échéances déjà programmées")
+                try:
+                    res_progs_exist = (
+                        supabase.table("suivi_controle_beton")
+                        .select("*")
+                        .order("id", desc=True)
+                        .execute()
+                    )
+                    eprouvettes_enregistrees = res_progs_exist.data if res_progs_exist.data else []
+                except Exception as e_fetch_prog:
+                    eprouvettes_enregistrees = []
+                    st.error(f"Erreur lors du chargement des programmations : {e_fetch_prog}")
 
-            if not eprouvettes_enregistrees:
-                st.info("ℹ️ Aucune programmation existante à modifier.")
-            else:
-                df_prog_mod = pd.DataFrame(eprouvettes_enregistrees)
-                
-                # Sélection des colonnes pertinentes pour la modification
-                cols_ed = [
-                    "id",
-                    "ref_controle",
-                    "repere_eprouvette",
-                    "echeance",
-                    "date_ecrasement",
-                    "date_coulee",
-                    "ouvrage",
-                    "classe_beton",
-                ]
-                cols_presentes = [c for c in cols_ed if c in df_prog_mod.columns]
-                df_edit_prog = df_prog_mod[cols_presentes].copy()
+                if not eprouvettes_enregistrees:
+                    st.info("ℹ️ Aucune programmation existante à modifier.")
+                else:
+                    df_prog_mod = pd.DataFrame(eprouvettes_enregistrees)
+                    
+                    cols_ed = [
+                        "id",
+                        "ref_controle",
+                        "repere_eprouvette",
+                        "echeance",
+                        "date_ecrasement",
+                        "date_coulee",
+                        "ouvrage",
+                        "classe_beton",
+                    ]
+                    cols_presentes = [c for c in cols_ed if c in df_prog_mod.columns]
+                    df_edit_prog = df_prog_mod[cols_presentes].copy()
 
-                df_prog_modifiee = st.data_editor(
-                    df_edit_prog,
-                    column_config={
-                        "id": st.column_config.NumberColumn("ID", disabled=True),
-                        "ref_controle": st.column_config.TextColumn("Réf. Contrôle"),
-                        "repere_eprouvette": st.column_config.TextColumn("Repère Eprouvette"),
-                        "echeance": st.column_config.SelectboxColumn(
-                            "Échéance",
-                            options=["3 jours", "7 jours", "28 jours", "90 jours"],
-                        ),
-                        "date_ecrasement": st.column_config.TextColumn("Date Écrasement (AAAA-MM-JJ)"),
-                        "date_coulee": st.column_config.TextColumn("Date Coulée", disabled=True),
-                        "ouvrage": st.column_config.TextColumn("Ouvrage", disabled=True),
-                        "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
-                    },
-                    use_container_width=True,
-                    hide_index=True,
-                    key="editor_modification_phase1",
-                )
+                    df_prog_modifiee = st.data_editor(
+                        df_edit_prog,
+                        column_config={
+                            "id": st.column_config.NumberColumn("ID", disabled=True),
+                            "ref_controle": st.column_config.TextColumn("Réf. Contrôle"),
+                            "repere_eprouvette": st.column_config.TextColumn("Repère Eprouvette"),
+                            "echeance": st.column_config.SelectboxColumn(
+                                "Échéance",
+                                options=["3 jours", "7 jours", "28 jours", "90 jours"],
+                            ),
+                            "date_ecrasement": st.column_config.TextColumn("Date Écrasement (AAAA-MM-JJ)"),
+                            "date_coulee": st.column_config.TextColumn("Date Coulée", disabled=True),
+                            "ouvrage": st.column_config.TextColumn("Ouvrage", disabled=True),
+                            "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                        key="editor_modification_phase1",
+                    )
 
-                if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", use_container_width=True, key="btn_save_mod_prog"):
-                    nb_succes_mod = 0
-                    for _, r_m in df_prog_modifiee.iterrows():
-                        ep_id_mod = int(r_m["id"])
-                        pay_mod = {
-                            "ref_controle": str(r_m.get("ref_controle", "")).strip(),
-                            "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
-                            "echeance": str(r_m.get("echeance", "")).strip(),
-                            "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
-                        }
-                        try:
-                            supabase.table("suivi_controle_beton").update(pay_mod).eq("id", ep_id_mod).execute()
-                            nb_succes_mod += 1
-                        except Exception as err_mod:
-                            st.error(f"Erreur de modification pour l'éprouvette #{ep_id_mod} : {err_mod}")
+                    if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", use_container_width=True, key="btn_save_mod_prog"):
+                        nb_succes_mod = 0
+                        for _, r_m in df_prog_modifiee.iterrows():
+                            ep_id_mod = int(r_m["id"])
+                            pay_mod = {
+                                "ref_controle": str(r_m.get("ref_controle", "")).strip(),
+                                "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
+                                "echeance": str(r_m.get("echeance", "")).strip(),
+                                "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
+                            }
+                            try:
+                                supabase.table("suivi_controle_beton").update(pay_mod).eq("id", ep_id_mod).execute()
+                                nb_succes_mod += 1
+                            except Exception as err_mod:
+                                st.error(f"Erreur de modification pour l'éprouvette #{ep_id_mod} : {err_mod}")
 
-                    if nb_succes_mod > 0:
-                        st.success(f"✅ {nb_succes_mod} programmation(s) mise(s) à jour avec succès !")
-                        st.rerun()
+                        if nb_succes_mod > 0:
+                            st.success(f"✅ {nb_succes_mod} programmation(s) mise(s) à jour avec succès !")
+                            st.rerun()
+        else:
+            st.info("🔒 **Accès restreint :** La modification/ajustement des programmations existantes est réservée aux utilisateurs disposant du droit de modification (`can_edit`).")
 
-        st.markdown("---")
-        st.markdown("##### ➕ Ajouter une Nouvelle Programmation")
+        st.divider()
+
+        # ---------------------------------------------------------
+        # BLOC 2 : AJOUTER UNE NOUVELLE PROGRAMMATION
+        # ---------------------------------------------------------
+        st.subheader("➕ Ajouter une Nouvelle Programmation")
 
         prog_counts = {}
         try:
@@ -1725,3 +1765,13 @@ def show(supabase):
                 st.info("Aucun enregistrement d'écrasement dans la base.")
         except Exception as e:
             st.error(f"Erreur lors du chargement de l'historique : {e}")
+
+
+# =========================================================
+# 4. INITIALISATION DU SESSION STATE
+# =========================================================
+if __name__ == "__main__":
+    if "can_edit" not in st.session_state:
+        st.session_state["can_edit"] = False
+    if "user_logged" not in st.session_state:
+        st.session_state["user_logged"] = False
