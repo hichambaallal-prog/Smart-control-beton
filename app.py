@@ -282,6 +282,8 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
             if selected_user:
                 current_data = st.session_state["users_db"][selected_user]
                 with st.form("edit_user_form"):
+                    # Champ pour corriger ou modifier le nom d'utilisateur
+                    mod_username = st.text_input("Nom d'utilisateur", value=selected_user).strip().upper()
                     mod_password = st.text_input("Nouveau mot de passe (laisser vide si inchangé)", type="password")
                     
                     role_index = ROLES_LIST.index(current_data["role"]) if current_data["role"] in ROLES_LIST else 0
@@ -291,14 +293,26 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                     submit_edit = st.form_submit_button("Enregistrer", use_container_width=True)
 
                     if submit_edit:
-                        updated_password = mod_password if mod_password != "" else current_data["password"]
-                        st.session_state["users_db"][selected_user] = {
-                            "password": updated_password,
-                            "role": mod_role,
-                            "can_edit": mod_can_edit
-                        }
-                        st.success(f"✅ Utilisateur **{selected_user}** mis à jour !")
-                        st.rerun()
+                        if not mod_username:
+                            st.error("❌ Le nom d'utilisateur ne peut pas être vide.")
+                        elif mod_username != selected_user and mod_username in st.session_state["users_db"]:
+                            st.error(f"❌ Le nom d'utilisateur **{mod_username}** existe déjà.")
+                        else:
+                            updated_password = mod_password if mod_password != "" else current_data["password"]
+                            
+                            # Si le nom a été changé/corrigé
+                            if mod_username != selected_user:
+                                del st.session_state["users_db"][selected_user]
+                                if selected_user == current_username:
+                                    st.session_state["user"]["username"] = mod_username
+                            
+                            st.session_state["users_db"][mod_username] = {
+                                "password": updated_password,
+                                "role": mod_role,
+                                "can_edit": mod_can_edit
+                            }
+                            st.success(f"✅ Utilisateur **{mod_username}** mis à jour !")
+                            st.rerun()
 
     with col_del:
         with st.expander("🗑️ Supprimer un utilisateur", expanded=False):
