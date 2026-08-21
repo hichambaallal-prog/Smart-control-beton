@@ -808,7 +808,7 @@ def show(supabase):
                 )
 
     # =========================================================
-    # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
+    # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES (MIS À JOUR)
     # =========================================================
     with tab_prog:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
@@ -828,14 +828,16 @@ def show(supabase):
         except Exception as e:
             st.warning(f"Note lors du contrôle des quotas : {e}")
 
-        # FILTRE STRICT : Ne conserver QUE les bétonnages avec un N° Réception valide
+        # FILTRE REVISITÉ ET SÉCURISÉ : Ne conserver QUE les bétonnages avec un N° Réception non vide
         betonnages_non_programmes = []
         fiches_sans_num_reception = []
 
         for b in betonnages_preleves:
-            num_rec_val = str(b.get("num_reception") or b.get("n_reception") or "").strip()
+            num_rec_raw = b.get("num_reception") if b.get("num_reception") is not None else b.get("n_reception")
+            num_rec_val = str(num_rec_raw).strip() if num_rec_raw is not None else ""
 
-            if not num_rec_val or num_rec_val in ["-", "NONE", "NAN", "N/A"]:
+            # Vérification stricte contre les chaînes vides, None, "-", NaN
+            if not num_rec_val or num_rec_val.upper() in ["-", "NONE", "NAN", "N/A", "NULL"]:
                 fiches_sans_num_reception.append(b)
                 continue
 
