@@ -59,19 +59,19 @@ if st.session_state["user"] is None:
                 if username_input in USERS_DB and USERS_DB[username_input]["password"] == password_input:
                     user_role = USERS_DB[username_input]["role"]
                     can_edit = USERS_DB[username_input]["can_edit"]
-                    st.session_state["user"] = {"username": username_input, "role": user_role}
+                    st.session_state["user"] = {"username": username_input, "role": user_role, "can_edit": can_edit}
                     st.session_state["role"] = user_role
                     st.session_state["can_edit"] = can_edit
                     st.rerun()
                 elif password_input == "admin2026":
                     username = username_input if username_input else "ADMIN"
-                    st.session_state["user"] = {"username": username, "role": "admin"}
+                    st.session_state["user"] = {"username": username, "role": "admin", "can_edit": True}
                     st.session_state["role"] = "admin"
                     st.session_state["can_edit"] = True
                     st.rerun()
                 elif password_input == "ctr2026":
                     username = username_input if username_input else "USER"
-                    st.session_state["user"] = {"username": username, "role": "user"}
+                    st.session_state["user"] = {"username": username, "role": "user", "can_edit": False}
                     st.session_state["role"] = "user"
                     st.session_state["can_edit"] = False
                     st.rerun()
@@ -79,10 +79,15 @@ if st.session_state["user"] is None:
                     st.error("❌ Nom d'utilisateur ou mot de passe incorrect.")
     st.stop()
 
+# Synchronisation systématique du statut can_edit depuis la session
+current_username = st.session_state["user"]["username"]
+if current_username in st.session_state["users_db"]:
+    st.session_state["can_edit"] = st.session_state["users_db"][current_username]["can_edit"]
+    st.session_state["user"]["can_edit"] = st.session_state["can_edit"]
+
 # ==========================================
 # 3. CODE PRINCIPAL (Utilisateur connecté)
 # ==========================================
-# Masquer les boutons de téléchargement pour le rôle "user" (Consultation seule)
 if st.session_state.get("role") == "user":
     st.markdown(
         """
@@ -117,12 +122,10 @@ except Exception as e:
 # Menu latéral (Sidebar)
 with st.sidebar:
     st.title("LPEE - CTR-CSB")
-    current_username = st.session_state["user"]["username"]
     current_role = st.session_state["role"]
 
     st.markdown(f"👤 **{current_username}**")
     
-    # Affichage du rôle et définition des menus accessibles
     if current_role == "laboratoire" or current_role == "technicien":
         if current_username == "HANINE":
             st.info("Rôle : **RESPONSABLE DE DOSSIER**")
@@ -158,7 +161,6 @@ with st.sidebar:
     elif current_role == "user":
         st.info("Rôle : **CONSULTATION (LECTURE SEULE)**")
         st.markdown("---")
-        # Restriction stricte pour "user" : Synthèses uniquement
         available_pages = [
             "Accueil", 
             "Synthèse Béton", 
@@ -177,7 +179,6 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # --- MODULE DE MODIFICATION DE MOT DE PASSE ---
     with st.expander("🔑 Changer mon mot de passe"):
         with st.form("change_pwd_form", clear_on_submit=True):
             old_pwd = st.text_input("Ancien mot de passe", type="password")
@@ -204,6 +205,16 @@ with st.sidebar:
         st.session_state["role"] = None
         st.session_state["can_edit"] = False
         st.rerun()
+
+# Fonction helper pour appeler les modules avec compatibilité de signature
+def render_view(module, supabase_client):
+    try:
+        module.show(supabase_client, can_edit=st.session_state["can_edit"])
+    except TypeError:
+        try:
+            module.show(supabase_client, user=st.session_state["user"])
+        except TypeError:
+            module.show(supabase_client)
 
 # Routage des vues
 if page == "Accueil":
@@ -303,12 +314,12 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
     st.dataframe(data_users, use_container_width=True)
 
 elif page == "Essai à la Plaque":
-    essai_Plaque.show(supabase)
+    render_view(essai_Plaque, supabase)
 elif page == "Synthèse Plaque":
-    synthese_plaque.show(supabase)
+    render_view(synthese_plaque, supabase)
 elif page == "Suivi de Bétonnage":
-    suivi_Betonnage.show(supabase)
+    render_view(suivi_Betonnage, supabase)
 elif page == "Suivi Contrôle Béton":
-    suivi_controle_beton.show(supabase)
+    render_view(suivi_controle_beton, supabase)
 elif page == "Synthèse Béton":
-    synthese_Beton.show(supabase)
+    render_view(synthese_Beton, supabase)
