@@ -818,10 +818,89 @@ def show(supabase):
                 )
 
     # =========================================================
-    # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES (AUTO-REMPLISSAGE)
+    # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES (AJOUT & MODIFICATION)
     # =========================================================
     with tab_prog:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
+
+        # ---------------------------------------------------------
+        # SECTION MODIFICATION DE PROGRAMMATION
+        # ---------------------------------------------------------
+        with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
+            st.markdown("##### ⚙️ Éditer les échéances déjà programmées")
+            try:
+                res_progs_exist = (
+                    supabase.table("suivi_controle_beton")
+                    .select("*")
+                    .order("id", desc=True)
+                    .execute()
+                )
+                eprouvettes_enregistrees = res_progs_exist.data if res_progs_exist.data else []
+            except Exception as e_fetch_prog:
+                eprouvettes_enregistrees = []
+                st.error(f"Erreur lors du chargement des programmations : {e_fetch_prog}")
+
+            if not eprouvettes_enregistrees:
+                st.info("ℹ️ Aucune programmation existante à modifier.")
+            else:
+                df_prog_mod = pd.DataFrame(eprouvettes_enregistrees)
+                
+                # Sélection des colonnes pertinentes pour la modification
+                cols_ed = [
+                    "id",
+                    "ref_controle",
+                    "repere_eprouvette",
+                    "echeance",
+                    "date_ecrasement",
+                    "date_coulee",
+                    "ouvrage",
+                    "classe_beton",
+                ]
+                cols_presentes = [c for c in cols_ed if c in df_prog_mod.columns]
+                df_edit_prog = df_prog_mod[cols_presentes].copy()
+
+                df_prog_modifiee = st.data_editor(
+                    df_edit_prog,
+                    column_config={
+                        "id": st.column_config.NumberColumn("ID", disabled=True),
+                        "ref_controle": st.column_config.TextColumn("Réf. Contrôle"),
+                        "repere_eprouvette": st.column_config.TextColumn("Repère Eprouvette"),
+                        "echeance": st.column_config.SelectboxColumn(
+                            "Échéance",
+                            options=["3 jours", "7 jours", "28 jours", "90 jours"],
+                        ),
+                        "date_ecrasement": st.column_config.TextColumn("Date Écrasement (AAAA-MM-JJ)"),
+                        "date_coulee": st.column_config.TextColumn("Date Coulée", disabled=True),
+                        "ouvrage": st.column_config.TextColumn("Ouvrage", disabled=True),
+                        "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
+                    },
+                    use_container_width=True,
+                    hide_index=True,
+                    key="editor_modification_phase1",
+                )
+
+                if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", use_container_width=True, key="btn_save_mod_prog"):
+                    nb_succes_mod = 0
+                    for _, r_m in df_prog_modifiee.iterrows():
+                        ep_id_mod = int(r_m["id"])
+                        pay_mod = {
+                            "ref_controle": str(r_m.get("ref_controle", "")).strip(),
+                            "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
+                            "echeance": str(r_m.get("echeance", "")).strip(),
+                            "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
+                        }
+                        try:
+                            supabase.table("suivi_controle_beton").update(pay_mod).eq("id", ep_id_mod).execute()
+                            nb_succes_mod += 1
+                        except Exception as err_mod:
+                            st.error(f"Erreur de modification pour l'éprouvette #{ep_id_mod} : {err_mod}")
+
+                    if nb_succes_mod > 0:
+                        st.success(f"✅ {nb_succes_mod} programmation(s) mise(s) à jour avec succès !")
+                        st.rerun()
+
+        st.markdown("---")
+        st.markdown("##### ➕ Ajouter une Nouvelle Programmation")
 
         prog_counts = {}
         try:
@@ -928,7 +1007,7 @@ def show(supabase):
             ref_controle_p = st.text_input(
                 "🏷️ Référence de Contrôle (Préfixe du repère)",
                 value=ref_value,
-                disabled=True, # Le champ est désormais verrouillé
+                disabled=True,
                 key=f"p_ref_ctrl_{b_id}",
             )
             st.session_state[f"ref_controle_beton_{b_id}"] = ref_controle_p
@@ -1015,7 +1094,6 @@ def show(supabase):
 
                     succes_cnt = 0
                     for rep in reperes_p:
-                        # CORRECTION : La ligne "num_reception": num_reception_p a été retirée pour éviter l'erreur Supabase PGRST204
                         payload_prog = {
                             "betonnage_id": b_id,
                             "num_bl": num_bl_p,
