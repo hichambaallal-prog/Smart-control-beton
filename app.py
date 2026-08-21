@@ -22,7 +22,7 @@ if "users_db" not in st.session_state:
         "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
         
         # Techniciens Laboratoire & Responsable de dossier
-        "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": False},
+        "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": True},
         "HANINE": {"password": "hanine2026", "role": "laboratoire", "can_edit": False},
         "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False},
         "HAMDANI": {"password": "hamdani2026", "role": "laboratoire", "can_edit": False},
@@ -127,7 +127,7 @@ with st.sidebar:
         if current_username == "HANINE":
             st.info("Rôle : **RESPONSABLE DE DOSSIER**")
         elif current_username == "AMINA":
-            st.info("Rôle : **TECHNICIENNE LABORATOIRE**")
+            st.info("Rôle : **TECHNICIENNE LABORATOIRE (Saisie/Modification)**")
         else:
             st.info("Rôle : **TECHNICIEN LABORATOIRE**")
         st.markdown("---")
@@ -158,7 +158,7 @@ with st.sidebar:
     elif current_role == "user":
         st.info("Rôle : **CONSULTATION (LECTURE SEULE)**")
         st.markdown("---")
-        # Restricton stricte pour "user" : Synthèses uniquement
+        # Restriction stricte pour "user" : Synthèses uniquement
         available_pages = [
             "Accueil", 
             "Synthèse Béton", 
