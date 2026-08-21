@@ -703,14 +703,14 @@ def show(supabase):
     # =========================================================
     with tab_reception:
         st.subheader("📋 0. Réception & Validation des Bétons")
-        st.info("💡 **Condition requise** : Vous devez attribuer et enregistrer un **N° Réception** à chaque fiche pour débloquer sa programmation d'éprouvettes en Phase 1.")
+        st.info("💡 **Condition requise** : Saisissez manuellement le **N° Réception**. Une fois enregistré, le numéro s'affichera dans le tableau et débloquera la Phase 1.")
 
         if not betonnages_preleves:
             st.info("ℹ️ Aucun bétonnage prélevé dans la base de données.")
         else:
             rows_reception = []
             for item in betonnages_preleves:
-                # Récupération du N° de réception s'il existe dans la BDD
+                # Saisie manuelle : la case est initialement vide si l'utilisateur ne l'a pas encore validée
                 num_rec_exist = item.get("num_reception") or item.get("n_reception") or ""
 
                 classe_b = item.get("classe_beton") or item.get("classe") or "-"
@@ -740,15 +740,15 @@ def show(supabase):
 
             df_reception = pd.DataFrame(rows_reception)
 
-            # Tableau éditable permettant de saisir directement le N° de réception
+            # Tableau éditable permettant la saisie du N° de Réception
             df_edited = st.data_editor(
                 df_reception,
                 column_config={
                     "_id_beton": None, # Masqué
                     "1-Numero de reception": st.column_config.TextColumn(
                         "1-Numero de reception",
-                        help="Saisissez ou modifiez le N° de Réception obligatoire",
-                        required=True,
+                        help="Saisissez le N° de Réception ici (laisser vide sinon)",
+                        required=False,
                     ),
                     "2-Classe de béton": st.column_config.TextColumn("2-Classe de béton", disabled=True),
                     "3-Ouvrage": st.column_config.TextColumn("3-Ouvrage", disabled=True),
@@ -779,11 +779,16 @@ def show(supabase):
                                 st.error(f"Erreur d'enregistrement pour la fiche #{beton_id_val} : {err_u}")
 
                     if succes_rec > 0:
-                        st.success(f"✅ {succes_rec} N° de Réception enregistrés avec succès !")
+                        st.success(f"✅ {succes_rec} N° de Réception enregistré(s) avec succès !")
                         st.rerun()
 
             with col_rec2:
-                excel_reception = exporter_dataframe_excel(df_edited.drop(columns=["_id_beton"]), "Phase_0")
+                # Seules les lignes ayant un numéro de réception saisi et non vide sont affichées / exportables dans le rapport Phase 0
+                df_visibles = df_edited[
+                    df_edited["1-Numero de reception"].str.strip().ne("") & 
+                    df_edited["1-Numero de reception"].str.strip().ne("-")
+                ]
+                excel_reception = exporter_dataframe_excel(df_visibles.drop(columns=["_id_beton"]), "Phase_0")
                 st.download_button(
                     label="📊 Télécharger la liste des réceptions en Excel",
                     data=excel_reception,
@@ -1148,7 +1153,7 @@ def show(supabase):
             st.error(
                 f"🚨 **ATTENTION : {nb_retards} éprouvette(s) non écrasée(s) ont atteint ou dépassé leur date d'échéance !**"
             )
-            
+
             rows_retard = []
             for ep in retards_list:
                 dt_coul_str = ep.get("date_coulee")
