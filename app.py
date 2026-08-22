@@ -22,12 +22,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Injection de la PWA directement dans le document principal (HEAD)
+# Injection PWA dans le HEAD du document principal
 pwa_code = """
 <script>
 const parentDoc = window.parent.document;
 
-// 1. Injection du Manifest PWA
 if (!parentDoc.querySelector('link[rel="manifest"]')) {
     const manifestLink = parentDoc.createElement('link');
     manifestLink.rel = 'manifest';
@@ -35,7 +34,6 @@ if (!parentDoc.querySelector('link[rel="manifest"]')) {
     parentDoc.head.appendChild(manifestLink);
 }
 
-// 2. Injection de la couleur de thème
 if (!parentDoc.querySelector('meta[name="theme-color"]')) {
     const metaTheme = parentDoc.createElement('meta');
     metaTheme.name = 'theme-color';
@@ -43,7 +41,6 @@ if (!parentDoc.querySelector('meta[name="theme-color"]')) {
     parentDoc.head.appendChild(metaTheme);
 }
 
-// 3. Enregistrement du Service Worker
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js')
         .then((reg) => console.log('Service Worker PWA enregistré !', reg))
@@ -54,25 +51,67 @@ if ('serviceWorker' in navigator) {
 components.html(pwa_code, height=0, width=0)
 
 # ==========================================
-# 2. GESTION DES SESSIONS & AUTHENTIFICATION
+# 2. CONNEXION SUPABASE & GESTION BDD USERS
 # ==========================================
-if "users_db" not in st.session_state:
-    st.session_state["users_db"] = {
-        # Administrateur
-        "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
-        
-        # Techniciens Laboratoire & Responsable de dossier
-        "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": True},
-        "HANINE": {"password": "hanine2026", "role": "laboratoire", "can_edit": False},
-        "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False},
-        "HAMDANI": {"password": "hamdani2026", "role": "laboratoire", "can_edit": False},
-        
-        # Opérateurs Bétonnage
-        "ADAM": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
-        "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
-        "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False}
-    }
+try:
+    SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://votre-projet.supabase.co")
+    SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1")
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    supabase = None
 
+DEFAULT_USERS = {
+    "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
+    "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": True},
+    "HANINE": {"password": "hanine2026", "role": "laboratoire", "can_edit": False},
+    "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False},
+    "HAMDANI": {"password": "hamdani2026", "role": "laboratoire", "can_edit": False},
+    "ADAM": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
+    "LAHCEN": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False},
+    "ELIDRISSI": {"password": "ctr2026", "role": "restricted_betonnage", "can_edit": False}
+}
+
+def load_users():
+    """Charge les utilisateurs depuis Supabase (avec secours sur la liste par défaut)."""
+    users = DEFAULT_USERS.copy()
+    if supabase:
+        try:
+            res = supabase.table("app_users").select("*").execute()
+            if res.data:
+                for row in res.data:
+                    users[row["username"]] = {
+                        "password": row["password"],
+                        "role": row["role"],
+                        "can_edit": row.get("can_edit", False)
+                    }
+        except Exception:
+            # Si la table n'existe pas encore sur Supabase, on utilise DEFAULT_USERS
+            pass
+    return users
+
+def save_user_db(username, password, role, can_edit):
+    """Enregistre ou met à jour un utilisateur dans Supabase."""
+    if supabase:
+        try:
+            supabase.table("app_users").upsert({
+                "username": username,
+                "password": password,
+                "role": role,
+                "can_edit": can_edit
+            }).execute()
+        except Exception as e:
+            st.error(f"❌ Erreur de sauvegarde Supabase : {e}")
+
+def delete_user_db(username):
+    """Supprime un utilisateur de Supabase."""
+    if supabase:
+        try:
+            supabase.table("app_users").delete().eq("username", username).execute()
+        except Exception as e:
+            st.error(f"❌ Erreur de suppression Supabase : {e}")
+
+# Initialisation du dictionnaire utilisateur centralisé
+st.session_state["users_db"] = load_users()
 USERS_DB = st.session_state["users_db"]
 
 if "user" not in st.session_state:
@@ -82,19 +121,21 @@ if "role" not in st.session_state:
 if "can_edit" not in st.session_state:
     st.session_state["can_edit"] = False
 
-# --- ÉCRAN DE CONNEXION ---
+# ==========================================
+# 3. ÉCRAN DE CONNEXION
+# ==========================================
 if st.session_state["user"] is None:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.title("🔐 Accès Restreint - LPEE")
         st.caption("Veuillez saisir vos identifiants pour accéder à la plateforme.")
-        
+
         with st.form("login_form", clear_on_submit=False):
             username_input = st.text_input("Nom d'utilisateur").strip().upper()
             password_input = st.text_input("Mot de passe", type="password")
             submit_btn = st.form_submit_button("Se connecter", use_container_width=True, type="primary")
-            
+
             if submit_btn:
                 if username_input in USERS_DB and USERS_DB[username_input]["password"] == password_input:
                     user_role = USERS_DB[username_input]["role"]
@@ -126,9 +167,8 @@ if current_username in st.session_state["users_db"]:
     st.session_state["user"]["can_edit"] = st.session_state["can_edit"]
 
 # ==========================================
-# 3. CODE PRINCIPAL (Utilisateur connecté)
+# 4. CODE PRINCIPAL (Utilisateur connecté)
 # ==========================================
-# Masquer les boutons d'exportation pour le rôle 'user' et spécifiquement pour IKKEN et HAMDANI
 if st.session_state.get("role") == "user" or current_username in ["IKKEN", "HAMDANI"]:
     st.markdown(
         """
@@ -151,22 +191,13 @@ except ImportError as e:
     st.error(f"❌ Erreur lors de l'importation des vues : {e}")
     st.stop()
 
-# Connexion à Supabase
-try:
-    SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://votre-projet.supabase.co")
-    SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1")
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception as e:
-    supabase = None
-    st.error(f"❌ Erreur de connexion Supabase : {e}")
-
 # Menu latéral (Sidebar)
 with st.sidebar:
     st.title("LPEE - CTR-CSB")
     current_role = st.session_state["role"]
 
     st.markdown(f"👤 **{current_username}**")
-    
+
     if current_role in ["laboratoire", "technicien"]:
         if current_username == "HANINE":
             st.info("Rôle : **RESPONSABLE DE DOSSIER**")
@@ -215,8 +246,8 @@ with st.sidebar:
             "Synthèse Béton", 
             "Synthèse Plaque"
         ]
-    
-    # --- MODULE SYNCHRONISATION HORS LIGNE (SQLite -> Supabase) ---
+
+    # --- MODULE SYNCHRONISATION HORS LIGNE ---
     if OFFLINE_SUPPORT:
         st.markdown("---")
         pending_count = get_pending_count()
@@ -240,17 +271,17 @@ with st.sidebar:
     st.markdown("---")
     page = st.radio("Menu Principal", available_pages)
     st.markdown("---")
-    
+
     with st.expander("🔑 Changer mon mot de passe"):
         with st.form("change_pwd_form", clear_on_submit=True):
             old_pwd = st.text_input("Ancien mot de passe", type="password")
             new_pwd = st.text_input("Nouveau mot de passe", type="password")
             confirm_pwd = st.text_input("Confirmer le mot de passe", type="password")
             submit_pwd = st.form_submit_button("Mettre à jour", use_container_width=True)
-            
+
             if submit_pwd:
                 user_record = st.session_state["users_db"].get(current_username)
-                
+
                 if user_record and old_pwd != user_record["password"]:
                     st.error("❌ L'ancien mot de passe est incorrect.")
                 elif new_pwd == "":
@@ -259,7 +290,13 @@ with st.sidebar:
                     st.error("❌ Les nouveaux mots de passe ne correspondent pas.")
                 else:
                     st.session_state["users_db"][current_username]["password"] = new_pwd
-                    st.success("✅ Mot de passe modifié avec succès !")
+                    save_user_db(
+                        current_username, 
+                        new_pwd, 
+                        user_record["role"], 
+                        user_record["can_edit"]
+                    )
+                    st.success("✅ Mot de passe modifié et synchronisé sur le serveur !")
 
     st.markdown("---")
     if st.button("🚪 Déconnexion", use_container_width=True):
@@ -268,7 +305,6 @@ with st.sidebar:
         st.session_state["can_edit"] = False
         st.rerun()
 
-# Fonction helper pour appeler les modules avec compatibilité de signature
 def render_view(module, supabase_client):
     try:
         module.show(supabase_client, can_edit=st.session_state["can_edit"])
@@ -278,15 +314,16 @@ def render_view(module, supabase_client):
         except TypeError:
             module.show(supabase_client)
 
-# ROUTAGE DES VUES
+# ==========================================
+# 5. ROUTAGE DES VUES
+# ==========================================
 if page == "Accueil":
     st.title("🚄 Accueil - LGV CASA SUD")
     st.markdown("### Plateforme de Suivi et Contrôle Qualité - LPEE")
-    
+
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Recherche intelligente du fichier image (al_boraq.jpg.jpg ou al_boraq.jpg)
         image_path = os.path.join(os.path.dirname(__file__), "al_boraq.jpg.jpg")
         if not os.path.exists(image_path):
             image_path = os.path.join(os.path.dirname(__file__), "al_boraq.jpg")
@@ -302,18 +339,18 @@ if page == "Accueil":
             except Exception as e:
                 st.error(f"Erreur lors de la lecture de l'image : {e}")
         else:
-            st.warning("⚠️ L'image 'al_boraq.jpg' (ou 'al_boraq.jpg.jpg') est introuvable à la racine.")
-        
+            st.warning("⚠️ L'image 'al_boraq.jpg' est introuvable à la racine.")
+
     st.markdown("---")
     st.markdown("""
     Bienvenue sur l'application centralisée de gestion des contrôles qualité pour le projet **LGV CASA SUD**.
-    
+
     Utilisez le menu de navigation latéral pour accéder aux différents modules de consultation et de suivi.
     """)
 
 elif page == "Gestion Utilisateurs" and current_role == "admin":
     st.title("👥 Gestion des Utilisateurs & Mots de Passe")
-    st.caption("Consultez, ajoutez, modifiez et supprimez des utilisateurs de la plateforme.")
+    st.caption("Consultez, ajoutez, modifiez et supprimez des utilisateurs de la plateforme (sauvegarde permanente Supabase).")
 
     ROLES_LIST = ["laboratoire", "restricted_betonnage", "admin", "user"]
 
@@ -341,7 +378,8 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                             "role": new_role,
                             "can_edit": new_can_edit
                         }
-                        st.success(f"✅ Utilisateur **{new_username}** ajouté avec succès !")
+                        save_user_db(new_username, new_password, new_role, new_can_edit)
+                        st.success(f"✅ Utilisateur **{new_username}** ajouté et synchronisé sur tous les appareils !")
                         st.rerun()
 
     with col_edit:
@@ -354,11 +392,11 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                 with st.form("edit_user_form"):
                     mod_username = st.text_input("Nom d'utilisateur", value=selected_user).strip().upper()
                     mod_password = st.text_input("Nouveau mot de passe (laisser vide si inchangé)", type="password")
-                    
+
                     role_index = ROLES_LIST.index(current_data["role"]) if current_data["role"] in ROLES_LIST else 0
                     mod_role = st.selectbox("Rôle", ROLES_LIST, index=role_index)
                     mod_can_edit = st.checkbox("Droit de modification (can_edit)", value=current_data["can_edit"])
-                    
+
                     submit_edit = st.form_submit_button("Enregistrer", use_container_width=True)
 
                     if submit_edit:
@@ -368,18 +406,20 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                             st.error(f"❌ Le nom d'utilisateur **{mod_username}** existe déjà.")
                         else:
                             updated_password = mod_password if mod_password != "" else current_data["password"]
-                            
+
                             if mod_username != selected_user:
                                 del st.session_state["users_db"][selected_user]
+                                delete_user_db(selected_user)
                                 if selected_user == current_username:
                                     st.session_state["user"]["username"] = mod_username
-                            
+
                             st.session_state["users_db"][mod_username] = {
                                 "password": updated_password,
                                 "role": mod_role,
                                 "can_edit": mod_can_edit
                             }
-                            st.success(f"✅ Utilisateur **{mod_username}** mis à jour !")
+                            save_user_db(mod_username, updated_password, mod_role, mod_can_edit)
+                            st.success(f"✅ Utilisateur **{mod_username}** mis à jour et synchronisé !")
                             st.rerun()
 
     with col_del:
@@ -393,7 +433,8 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                 else:
                     if st.button("Supprimer définitivement", type="primary", use_container_width=True):
                         del st.session_state["users_db"][user_to_delete]
-                        st.success(f"🗑️ Utilisateur **{user_to_delete}** supprimé avec succès.")
+                        delete_user_db(user_to_delete)
+                        st.success(f"🗑️ Utilisateur **{user_to_delete}** supprimé définitivement.")
                         st.rerun()
 
     st.markdown("---")
@@ -406,7 +447,7 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
             "Rôle": details["role"],
             "Droit de modification (can_edit)": details["can_edit"]
         })
-    
+
     st.dataframe(data_users, use_container_width=True)
 
 elif page == "Essai à la Plaque":
