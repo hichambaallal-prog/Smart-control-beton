@@ -152,7 +152,7 @@ with st.sidebar:
 
     st.markdown(f"👤 **{current_username}**")
     
-    if current_role == "laboratoire" or current_role == "technicien":
+    if current_role in ["laboratoire", "technicien"]:
         if current_username == "HANINE":
             st.info("Rôle : **RESPONSABLE DE DOSSIER**")
         elif current_username == "AMINA":
