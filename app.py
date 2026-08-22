@@ -89,9 +89,9 @@ def load_users():
     return users
 
 def save_user_db(username, password, role, can_edit):
-    """Enregistre ou met à jour un utilisateur dans Supabase (renvoie un statut)."""
+    """Enregistre ou met à jour un utilisateur dans Supabase."""
     if not supabase:
-        return False, "Connexion Supabase non initialisée. Vérifiez vos clés dans st.secrets."
+        return False, "Client Supabase non configuré."
     try:
         supabase.table("app_users").upsert({
             "username": username,
@@ -104,16 +104,16 @@ def save_user_db(username, password, role, can_edit):
         return False, str(e)
 
 def delete_user_db(username):
-    """Supprime un utilisateur de Supabase (renvoie un statut)."""
+    """Supprime un utilisateur de Supabase."""
     if not supabase:
-        return False, "Connexion Supabase non initialisée."
+        return False, "Client Supabase non configuré."
     try:
         supabase.table("app_users").delete().eq("username", username).execute()
         return True, None
     except Exception as e:
         return False, str(e)
 
-# Initialisation du dictionnaire utilisateur centralisé
+# Initialisation de la mémoire session des utilisateurs
 if "users_db" not in st.session_state:
     st.session_state["users_db"] = load_users()
 
@@ -165,7 +165,7 @@ if st.session_state["user"] is None:
                     st.error("❌ Nom d'utilisateur ou mot de passe incorrect.")
     st.stop()
 
-# Synchronisation systématique du statut can_edit
+# Synchronisation du statut d'édition
 current_username = st.session_state["user"]["username"]
 if current_username in st.session_state["users_db"]:
     st.session_state["can_edit"] = st.session_state["users_db"][current_username]["can_edit"]
@@ -304,7 +304,7 @@ with st.sidebar:
                         st.session_state["users_db"][current_username]["password"] = new_pwd
                         st.success("✅ Mot de passe modifié et synchronisé sur le serveur !")
                     else:
-                        st.error(f"❌ Erreur de modification Supabase : {err}")
+                        st.error(f"❌ Erreur Supabase : {err}")
 
     st.markdown("---")
     if st.button("🚪 Déconnexion", use_container_width=True):
@@ -391,7 +391,7 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                             st.success(f"✅ Utilisateur **{new_username}** ajouté et synchronisé !")
                             st.rerun()
                         else:
-                            st.error(f"❌ Impossible d'ajouter l'utilisateur sur Supabase :\n\n`{err}`")
+                            st.error(f"❌ Erreur RLS / Supabase :\n\n`{err}`\n\n👉 *Veuillez exécuter l'instruction SQL `ALTER TABLE app_users DISABLE ROW LEVEL SECURITY;` dans Supabase pour débloquer les écritures.*")
 
     with col_edit:
         with st.expander("✏️ Modifier un utilisateur", expanded=False):
@@ -434,7 +434,7 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                                 st.success(f"✅ Utilisateur **{mod_username}** mis à jour et synchronisé !")
                                 st.rerun()
                             else:
-                                st.error(f"❌ Erreur lors de la modification Supabase :\n\n`{err}`")
+                                st.error(f"❌ Erreur Supabase :\n\n`{err}`")
 
     with col_del:
         with st.expander("🗑️ Supprimer un utilisateur", expanded=False):
@@ -452,7 +452,7 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                             st.success(f"🗑️ Utilisateur **{user_to_delete}** supprimé définitivement.")
                             st.rerun()
                         else:
-                            st.error(f"❌ Erreur lors de la suppression Supabase :\n\n`{err}`")
+                            st.error(f"❌ Erreur Supabase :\n\n`{err}`")
 
     st.markdown("---")
 
