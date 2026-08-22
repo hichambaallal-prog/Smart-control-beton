@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smart-control-beton-v1';
+const CACHE_NAME = 'Smart-control-beton-v1';
 const urlsToCache = [
   '/',
   'app/static/manifest.json',
