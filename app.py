@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 from supabase import create_client, Client
 
@@ -21,22 +22,36 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Injection du Manifest PWA et enregistrement du Service Worker dans le navigateur
+# Injection de la PWA directement dans le document principal (HEAD)
 pwa_code = """
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#0066cc">
-
 <script>
+const parentDoc = window.parent.document;
+
+// 1. Injection du Manifest PWA
+if (!parentDoc.querySelector('link[rel="manifest"]')) {
+    const manifestLink = parentDoc.createElement('link');
+    manifestLink.rel = 'manifest';
+    manifestLink.href = '/manifest.json';
+    parentDoc.head.appendChild(manifestLink);
+}
+
+// 2. Injection de la couleur de thème
+if (!parentDoc.querySelector('meta[name="theme-color"]')) {
+    const metaTheme = parentDoc.createElement('meta');
+    metaTheme.name = 'theme-color';
+    metaTheme.content = '#0066cc';
+    parentDoc.head.appendChild(metaTheme);
+}
+
+// 3. Enregistrement du Service Worker
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-            .then((reg) => console.log('Service Worker enregistré !', reg))
-            .catch((err) => console.error('Erreur Service Worker :', err));
-    });
+    navigator.serviceWorker.register('/sw.js')
+        .then((reg) => console.log('Service Worker PWA enregistré !', reg))
+        .catch((err) => console.error('Erreur Service Worker PWA :', err));
 }
 </script>
 """
-st.markdown(pwa_code, unsafe_allow_html=True)
+components.html(pwa_code, height=0, width=0)
 
 # ==========================================
 # 2. GESTION DES SESSIONS & AUTHENTIFICATION
