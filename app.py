@@ -72,7 +72,7 @@ DEFAULT_USERS = {
 }
 
 def load_users():
-    """Charge les utilisateurs depuis Supabase (avec secours sur la liste par défaut)."""
+    """Charge en temps réel les utilisateurs depuis Supabase."""
     users = DEFAULT_USERS.copy()
     if supabase:
         try:
@@ -117,8 +117,6 @@ def delete_user_db(username):
 if "users_db" not in st.session_state:
     st.session_state["users_db"] = load_users()
 
-USERS_DB = st.session_state["users_db"]
-
 if "user" not in st.session_state:
     st.session_state["user"] = None
 if "role" not in st.session_state:
@@ -142,9 +140,13 @@ if st.session_state["user"] is None:
             submit_btn = st.form_submit_button("Se connecter", use_container_width=True, type="primary")
 
             if submit_btn:
-                if username_input in USERS_DB and USERS_DB[username_input]["password"] == password_input:
-                    user_role = USERS_DB[username_input]["role"]
-                    can_edit = USERS_DB[username_input]["can_edit"]
+                # Rechargement direct depuis Supabase au moment de la tentative d'accès
+                fresh_users = load_users()
+                st.session_state["users_db"] = fresh_users
+
+                if username_input in fresh_users and fresh_users[username_input]["password"] == password_input:
+                    user_role = fresh_users[username_input]["role"]
+                    can_edit = fresh_users[username_input]["can_edit"]
                     st.session_state["user"] = {"username": username_input, "role": user_role, "can_edit": can_edit}
                     st.session_state["role"] = user_role
                     st.session_state["can_edit"] = can_edit
@@ -383,15 +385,11 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                     else:
                         success, err = save_user_db(new_username, new_password, new_role, new_can_edit)
                         if success:
-                            st.session_state["users_db"][new_username] = {
-                                "password": new_password,
-                                "role": new_role,
-                                "can_edit": new_can_edit
-                            }
-                            st.success(f"✅ Utilisateur **{new_username}** ajouté et synchronisé !")
+                            st.session_state["users_db"] = load_users()
+                            st.success(f"✅ Utilisateur **{new_username}** ajouté et synchronisé sur le serveur !")
                             st.rerun()
                         else:
-                            st.error(f"❌ Erreur RLS / Supabase :\n\n`{err}`\n\n👉 *Veuillez exécuter l'instruction SQL `ALTER TABLE app_users DISABLE ROW LEVEL SECURITY;` dans Supabase pour débloquer les écritures.*")
+                            st.error(f"❌ Erreur Supabase :\n\n`{err}`\n\n👉 *Vérifiez que RLS est désactivé sur la table app_users dans Supabase.*")
 
     with col_edit:
         with st.expander("✏️ Modifier un utilisateur", expanded=False):
@@ -421,16 +419,11 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                             success, err = save_user_db(mod_username, updated_password, mod_role, mod_can_edit)
                             if success:
                                 if mod_username != selected_user:
-                                    del st.session_state["users_db"][selected_user]
                                     delete_user_db(selected_user)
                                     if selected_user == current_username:
                                         st.session_state["user"]["username"] = mod_username
 
-                                st.session_state["users_db"][mod_username] = {
-                                    "password": updated_password,
-                                    "role": mod_role,
-                                    "can_edit": mod_can_edit
-                                }
+                                st.session_state["users_db"] = load_users()
                                 st.success(f"✅ Utilisateur **{mod_username}** mis à jour et synchronisé !")
                                 st.rerun()
                             else:
@@ -448,7 +441,7 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                     if st.button("Supprimer définitivement", type="primary", use_container_width=True):
                         success, err = delete_user_db(user_to_delete)
                         if success:
-                            del st.session_state["users_db"][user_to_delete]
+                            st.session_state["users_db"] = load_users()
                             st.success(f"🗑️ Utilisateur **{user_to_delete}** supprimé définitivement.")
                             st.rerun()
                         else:
@@ -456,6 +449,7 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
 
     st.markdown("---")
 
+    st.session_state["users_db"] = load_users()
     data_users = []
     for user, details in st.session_state["users_db"].items():
         data_users.append({
