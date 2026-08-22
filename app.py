@@ -85,33 +85,38 @@ def load_users():
                         "can_edit": row.get("can_edit", False)
                     }
         except Exception:
-            # Si la table n'existe pas encore sur Supabase, on utilise DEFAULT_USERS
             pass
     return users
 
 def save_user_db(username, password, role, can_edit):
-    """Enregistre ou met à jour un utilisateur dans Supabase."""
-    if supabase:
-        try:
-            supabase.table("app_users").upsert({
-                "username": username,
-                "password": password,
-                "role": role,
-                "can_edit": can_edit
-            }).execute()
-        except Exception as e:
-            st.error(f"❌ Erreur de sauvegarde Supabase : {e}")
+    """Enregistre ou met à jour un utilisateur dans Supabase (renvoie un statut)."""
+    if not supabase:
+        return False, "Connexion Supabase non initialisée. Vérifiez vos clés dans st.secrets."
+    try:
+        supabase.table("app_users").upsert({
+            "username": username,
+            "password": password,
+            "role": role,
+            "can_edit": can_edit
+        }).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 def delete_user_db(username):
-    """Supprime un utilisateur de Supabase."""
-    if supabase:
-        try:
-            supabase.table("app_users").delete().eq("username", username).execute()
-        except Exception as e:
-            st.error(f"❌ Erreur de suppression Supabase : {e}")
+    """Supprime un utilisateur de Supabase (renvoie un statut)."""
+    if not supabase:
+        return False, "Connexion Supabase non initialisée."
+    try:
+        supabase.table("app_users").delete().eq("username", username).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 # Initialisation du dictionnaire utilisateur centralisé
-st.session_state["users_db"] = load_users()
+if "users_db" not in st.session_state:
+    st.session_state["users_db"] = load_users()
+
 USERS_DB = st.session_state["users_db"]
 
 if "user" not in st.session_state:
@@ -289,14 +294,17 @@ with st.sidebar:
                 elif new_pwd != confirm_pwd:
                     st.error("❌ Les nouveaux mots de passe ne correspondent pas.")
                 else:
-                    st.session_state["users_db"][current_username]["password"] = new_pwd
-                    save_user_db(
+                    success, err = save_user_db(
                         current_username, 
                         new_pwd, 
                         user_record["role"], 
                         user_record["can_edit"]
                     )
-                    st.success("✅ Mot de passe modifié et synchronisé sur le serveur !")
+                    if success:
+                        st.session_state["users_db"][current_username]["password"] = new_pwd
+                        st.success("✅ Mot de passe modifié et synchronisé sur le serveur !")
+                    else:
+                        st.error(f"❌ Erreur de modification Supabase : {err}")
 
     st.markdown("---")
     if st.button("🚪 Déconnexion", use_container_width=True):
@@ -373,14 +381,17 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                     elif new_username in st.session_state["users_db"]:
                         st.warning(f"⚠️ L'utilisateur **{new_username}** existe déjà.")
                     else:
-                        st.session_state["users_db"][new_username] = {
-                            "password": new_password,
-                            "role": new_role,
-                            "can_edit": new_can_edit
-                        }
-                        save_user_db(new_username, new_password, new_role, new_can_edit)
-                        st.success(f"✅ Utilisateur **{new_username}** ajouté et synchronisé sur tous les appareils !")
-                        st.rerun()
+                        success, err = save_user_db(new_username, new_password, new_role, new_can_edit)
+                        if success:
+                            st.session_state["users_db"][new_username] = {
+                                "password": new_password,
+                                "role": new_role,
+                                "can_edit": new_can_edit
+                            }
+                            st.success(f"✅ Utilisateur **{new_username}** ajouté et synchronisé !")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Impossible d'ajouter l'utilisateur sur Supabase :\n\n`{err}`")
 
     with col_edit:
         with st.expander("✏️ Modifier un utilisateur", expanded=False):
@@ -407,20 +418,23 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                         else:
                             updated_password = mod_password if mod_password != "" else current_data["password"]
 
-                            if mod_username != selected_user:
-                                del st.session_state["users_db"][selected_user]
-                                delete_user_db(selected_user)
-                                if selected_user == current_username:
-                                    st.session_state["user"]["username"] = mod_username
+                            success, err = save_user_db(mod_username, updated_password, mod_role, mod_can_edit)
+                            if success:
+                                if mod_username != selected_user:
+                                    del st.session_state["users_db"][selected_user]
+                                    delete_user_db(selected_user)
+                                    if selected_user == current_username:
+                                        st.session_state["user"]["username"] = mod_username
 
-                            st.session_state["users_db"][mod_username] = {
-                                "password": updated_password,
-                                "role": mod_role,
-                                "can_edit": mod_can_edit
-                            }
-                            save_user_db(mod_username, updated_password, mod_role, mod_can_edit)
-                            st.success(f"✅ Utilisateur **{mod_username}** mis à jour et synchronisé !")
-                            st.rerun()
+                                st.session_state["users_db"][mod_username] = {
+                                    "password": updated_password,
+                                    "role": mod_role,
+                                    "can_edit": mod_can_edit
+                                }
+                                st.success(f"✅ Utilisateur **{mod_username}** mis à jour et synchronisé !")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Erreur lors de la modification Supabase :\n\n`{err}`")
 
     with col_del:
         with st.expander("🗑️ Supprimer un utilisateur", expanded=False):
@@ -432,10 +446,13 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                     st.warning("⚠️ Vous ne pouvez pas supprimer votre propre compte connecté.")
                 else:
                     if st.button("Supprimer définitivement", type="primary", use_container_width=True):
-                        del st.session_state["users_db"][user_to_delete]
-                        delete_user_db(user_to_delete)
-                        st.success(f"🗑️ Utilisateur **{user_to_delete}** supprimé définitivement.")
-                        st.rerun()
+                        success, err = delete_user_db(user_to_delete)
+                        if success:
+                            del st.session_state["users_db"][user_to_delete]
+                            st.success(f"🗑️ Utilisateur **{user_to_delete}** supprimé définitivement.")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Erreur lors de la suppression Supabase :\n\n`{err}`")
 
     st.markdown("---")
 
