@@ -1,9 +1,18 @@
 import os
 import streamlit as st
+from PIL import Image
 from supabase import create_client, Client
 
+# Importation sécurisée du gestionnaire Hors-Ligne SQLite
+try:
+    from offline_manager import init_offline_db, get_pending_count, sync_data_to_supabase, insert_safe
+    init_offline_db()
+    OFFLINE_SUPPORT = True
+except ImportError:
+    OFFLINE_SUPPORT = False
+
 # ==========================================
-# 1. CONFIGURATION DE LA PAGE STREAMLIT
+# 1. CONFIGURATION DE LA PAGE & INJECTION PWA
 # ==========================================
 st.set_page_config(
     page_title="LPEE - CTR-CSB",
@@ -12,10 +21,26 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Injection du Manifest PWA et enregistrement du Service Worker dans le navigateur
+pwa_code = """
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0066cc">
+
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then((reg) => console.log('Service Worker enregistré !', reg))
+            .catch((err) => console.error('Erreur Service Worker :', err));
+    });
+}
+</script>
+"""
+st.markdown(pwa_code, unsafe_allow_html=True)
+
 # ==========================================
 # 2. GESTION DES SESSIONS & AUTHENTIFICATION
 # ==========================================
-# Stockage de la base utilisateurs en session pour permettre la modification dynamique
 if "users_db" not in st.session_state:
     st.session_state["users_db"] = {
         # Administrateur
@@ -79,7 +104,7 @@ if st.session_state["user"] is None:
                     st.error("❌ Nom d'utilisateur ou mot de passe incorrect.")
     st.stop()
 
-# Synchronisation systématique du statut can_edit depuis la session
+# Synchronisation systématique du statut can_edit
 current_username = st.session_state["user"]["username"]
 if current_username in st.session_state["users_db"]:
     st.session_state["can_edit"] = st.session_state["users_db"][current_username]["can_edit"]
@@ -176,8 +201,29 @@ with st.sidebar:
             "Synthèse Plaque"
         ]
     
+    # --- MODULE SYNCHRONISATION HORS LIGNE (SQLite -> Supabase) ---
+    if OFFLINE_SUPPORT:
+        st.markdown("---")
+        pending_count = get_pending_count()
+        if pending_count > 0:
+            st.warning(f"📦 **{pending_count} fiche(s) en attente** (Hors Ligne)")
+            if st.button("🔄 Synchroniser vers Supabase", type="primary", use_container_width=True):
+                if supabase:
+                    with st.spinner("Synchronisation des données en cours..."):
+                        synced_num, errors = sync_data_to_supabase(supabase)
+                        if synced_num > 0:
+                            st.success(f"✅ {synced_num} fiche(s) envoyée(s) sur Supabase !")
+                        if errors:
+                            for err in errors:
+                                st.error(err)
+                        st.rerun()
+                else:
+                    st.error("❌ Pas de connexion Internet détectée pour la synchronisation.")
+        else:
+            st.caption("🟢 Synchronisation : Données à jour.")
+
+    st.markdown("---")
     page = st.radio("Menu Principal", available_pages)
-    
     st.markdown("---")
     
     with st.expander("🔑 Changer mon mot de passe"):
@@ -217,7 +263,7 @@ def render_view(module, supabase_client):
         except TypeError:
             module.show(supabase_client)
 
-# Routage des vues
+# ROUTAGE DES VUES
 if page == "Accueil":
     st.title("🚄 Accueil - LGV CASA SUD")
     st.markdown("### Plateforme de Suivi et Contrôle Qualité - LPEE")
@@ -225,15 +271,23 @@ if page == "Accueil":
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+        # Recherche intelligente du fichier image (al_boraq.jpg.jpg ou al_boraq.jpg)
         image_path = os.path.join(os.path.dirname(__file__), "al_boraq.jpg.jpg")
+        if not os.path.exists(image_path):
+            image_path = os.path.join(os.path.dirname(__file__), "al_boraq.jpg")
+
         if os.path.exists(image_path):
-            st.image(
-                image_path, 
-                caption="Al Boraq - Ligne à Grande Vitesse - Projet LGV CASA SUD", 
-                use_container_width=True
-            )
+            try:
+                img = Image.open(image_path).convert("RGB")
+                st.image(
+                    img, 
+                    caption="Al Boraq - Ligne à Grande Vitesse - Projet LGV CASA SUD", 
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"Erreur lors de la lecture de l'image : {e}")
         else:
-            st.warning("⚠️ L'image 'al_boraq.jpg.jpg' est introuvable à la racine.")
+            st.warning("⚠️ L'image 'al_boraq.jpg' (ou 'al_boraq.jpg.jpg') est introuvable à la racine.")
         
     st.markdown("---")
     st.markdown("""
@@ -283,7 +337,6 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
             if selected_user:
                 current_data = st.session_state["users_db"][selected_user]
                 with st.form("edit_user_form"):
-                    # Champ pour corriger ou modifier le nom d'utilisateur
                     mod_username = st.text_input("Nom d'utilisateur", value=selected_user).strip().upper()
                     mod_password = st.text_input("Nouveau mot de passe (laisser vide si inchangé)", type="password")
                     
@@ -301,7 +354,6 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
                         else:
                             updated_password = mod_password if mod_password != "" else current_data["password"]
                             
-                            # Si le nom a été changé/corrigé
                             if mod_username != selected_user:
                                 del st.session_state["users_db"][selected_user]
                                 if selected_user == current_username:
