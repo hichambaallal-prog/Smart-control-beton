@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smart-control-labo-v1';
+const CACHE_NAME = 'Smart-control-beton-v1';
 const urlsToCache = [
   '/',
   '/manifest.json',
