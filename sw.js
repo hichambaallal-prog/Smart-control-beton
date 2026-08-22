@@ -1,9 +1,9 @@
-const CACHE_NAME = 'Smart-control-beton-v1';
+const CACHE_NAME = 'smart-control-beton-v1';
 const urlsToCache = [
   '/',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png'
+  'app/static/manifest.json',
+  'app/static/icon-192.png',
+  'app/static/icon-512.png'
 ];
 
 // Installation du Service Worker
@@ -32,7 +32,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Gestion des requêtes (Priorité au réseau pour préserver le fonctionnement de Streamlit)
+// Gestion des requêtes (Priorité réseau)
 self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request).catch(() => caches.match(event.request))
