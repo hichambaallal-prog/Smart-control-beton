@@ -126,7 +126,7 @@ def show(supabase):
         if res.data:
             df = pd.DataFrame(res.data)
             
-            # 1. Calcul de la colonne "Durée de transport (min)" en valeur numérique
+            # 1. Calcul de la colonne "Durée de transport (min)"
             if "heure_fin_coulage" in df.columns and "heure_arrivee" in df.columns:
                 def calculer_duree(row):
                     try:
@@ -148,7 +148,7 @@ def show(supabase):
                 
                 df["Durée de transport"] = df.apply(calculer_duree, axis=1)
 
-            # 2. Masquer les colonnes secondaires (EXCLUSION de 'id')
+            # 2. Masquer les colonnes secondaires
             cols_to_drop = [
                 col for col in ["created_at", "created", "heure_fin_coulage", "heure_fin", "client", "centrale_beton"] 
                 if col in df.columns
@@ -175,20 +175,21 @@ def show(supabase):
                 "meteo": "Météo"
             })
 
-            # 4. Positionnement spécifique des colonnes (Placer 'Nb Éprouvettes' en 4ᵉ position)
+            # 4. Positionnement spécifique des colonnes
             desired_first_cols = ["ID", "Date Livraison", "N° BL", "Nb Éprouvettes"]
             remaining_cols = [c for c in df.columns if c not in desired_first_cols]
             
             final_cols = [c for c in desired_first_cols if c in df.columns] + remaining_cols
             df = df[final_cols]
 
-            # 5. Application du style d'alerte pour les durées > 120 minutes
+            # 5. Style d'alerte rouge pour les durées > 120 min (Compatibilité Pandas récente)
             def style_duree_transport(val):
                 if pd.notna(val) and isinstance(val, (int, float)) and val > 120:
                     return 'background-color: #ffcdd2; color: #b71c1c; font-weight: bold;'
                 return ''
 
-            styled_df = df.style.applymap(style_duree_transport, subset=["Durée de transport"]).format(
+            # Utilisation de .map() à la place de .applymap()
+            styled_df = df.style.map(style_duree_transport, subset=["Durée de transport"]).format(
                 {"Durée de transport": lambda x: f"{int(x)} min" if pd.notna(x) else "-"}
             )
 
@@ -203,7 +204,7 @@ def show(supabase):
                 record_options = {f"ID {r['id']} - BL: {r.get('bl_num', 'N/A')} - Ouvrage: {r.get('ouvrage', '')}": r for r in res.data}
                 selected_key = st.selectbox("Sélectionner l'enregistrement à gérer", list(record_options.keys()), key="admin_select_record")
                 selected_item = record_options[selected_key]
-                rec_id = selected_item["id"]  # Identifiant unique pour forcer le rafraîchissement des champs
+                rec_id = selected_item["id"]  # Identifiant unique
                 
                 # Disposition des colonnes selon le rôle
                 if is_admin:
@@ -267,7 +268,7 @@ def show(supabase):
                             if st.form_submit_button("💾 Enregistrer toutes les modifications"):
                                 new_bl_clean = new_bl.strip()
                                 
-                                # Vérification des doublons de BL en cas de modification
+                                # Vérification des doublons de BL
                                 check_bl_edit = supabase.table("suivi_betonnage").select("id").eq("bl_num", new_bl_clean).neq("id", rec_id).execute()
                                 
                                 if check_bl_edit.data:
