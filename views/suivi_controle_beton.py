@@ -696,7 +696,7 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
     # --- Priorité au Numéro de Réception (Phase 0) ---
     num_reception = None
     if info_betonnage:
-        num_reception = info_betonnage.get("num_reception") or info_betonnage.get("n_reception")
+        num_reception = info_betonnage.get("num_reception") or info_betonnage.get("num_reception")
     
     if num_reception and str(num_reception).strip() not in ["", "-", "None", "NaN", "N/A"]:
         val_defaut = str(num_reception).strip()
@@ -797,7 +797,7 @@ def show(supabase):
         else:
             rows_reception = []
             for item in betonnages_preleves:
-                num_rec_exist = item.get("num_reception") or item.get("n_reception") or ""
+                num_rec_exist = item.get("num_reception") or item.get("num_reception") or ""
                 date_liv = item.get("date_coulee") or item.get("date_livraison") or "-"
 
                 classe_b = item.get("classe_beton") or item.get("classe") or "-"
