@@ -269,6 +269,7 @@ def show(supabase):
                                             "technicien": new_technicien,
                                             "bl_num": new_bl_clean,
                                             "ouvrage": new_ouvrage,
+                                            "nb_eprouvettes": int(new_nb_eprouvettes),
                                             "quantite_m3": float(new_quantite),
                                             "heure_fin_coulage": new_heure_fin.strftime("%H:%M"),
                                             "heure_arrivee": new_heure_arrivee.strftime("%H:%M"),
@@ -279,7 +280,6 @@ def show(supabase):
                                             "temperature_ambiante": float(new_temp_amb),
                                             "affaissement": int(new_affaissement),
                                             "prelevement": new_prelevement,
-                                            "nb_eprouvettes": int(new_nb_eprouvettes),
                                             "observations": new_observations
                                         }).eq("id", rec_id).execute()
                                         
