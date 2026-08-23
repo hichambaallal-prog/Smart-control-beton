@@ -817,13 +817,13 @@ def show(supabase):
 
                 rows_reception.append({
                     "_id_beton": item.get("id"),
-                    "1-Numero de reception": str(num_rec_exist),
-                    "2-Date de livraison": str(date_liv),
-                    "3-Nb d'éprouvettes": nb_ep_b,
-                    "4-Classe de béton": classe_b,
-                    "5-Ouvrage": ouvrage_b,
-                    "6-Affaissement": affaissement_b,
-                    "7-Temperature de béton frais": temp_b,
+                    "-Numero de reception": str(num_rec_exist),
+                    "-Date de livraison": str(date_liv),
+                    "-Nb d'éprouvettes": nb_ep_b,
+                    "-Classe de béton": classe_b,
+                    "-Ouvrage": ouvrage_b,
+                    "-Affaissement": affaissement_b,
+                    "-Temperature de béton frais": temp_b,
                 })
 
             df_reception = pd.DataFrame(rows_reception)
@@ -833,17 +833,17 @@ def show(supabase):
                 df_reception,
                 column_config={
                     "_id_beton": None, # Masqué
-                    "1-Numero de reception": st.column_config.TextColumn(
-                        "1-Numero de reception",
+                    "-Numero de reception": st.column_config.TextColumn(
+                        "-Numero de reception",
                         help="Saisissez le N° de Réception ici (laisser vide sinon)",
                         required=False,
                     ),
-                    "2-Date de livraison": st.column_config.TextColumn("2-Date de livraison", disabled=True),
-                    "3-Nb d'éprouvettes": st.column_config.NumberColumn("7-Nb d'éprouvettes", disabled=True),
-                    "4-Classe de béton": st.column_config.TextColumn("3-Classe de béton", disabled=True),
-                    "5-Ouvrage": st.column_config.TextColumn("4-Ouvrage", disabled=True),
-                    "6-Affaissement": st.column_config.TextColumn("5-Affaissement", disabled=True),
-                    "7-Temperature de béton frais": st.column_config.TextColumn("6-Temperature de béton frais", disabled=True),
+                    "-Date de livraison": st.column_config.TextColumn("2-Date de livraison", disabled=True),
+                    "-Nb d'éprouvettes": st.column_config.NumberColumn("7-Nb d'éprouvettes", disabled=True),
+                    "-Classe de béton": st.column_config.TextColumn("3-Classe de béton", disabled=True),
+                    "-Ouvrage": st.column_config.TextColumn("4-Ouvrage", disabled=True),
+                    "-Affaissement": st.column_config.TextColumn("5-Affaissement", disabled=True),
+                    "-Temperature de béton frais": st.column_config.TextColumn("6-Temperature de béton frais", disabled=True),
                 },
                 use_container_width=True,
                 hide_index=True,
