@@ -219,9 +219,9 @@ def generer_pv_excel(export_data, infos_header):
     ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/")
     ws["F1"].font = font_regular
     
-    ws["H1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/")
+    ws["H1"] = "BETON"
     ws["H1"].font = font_bold
-    ws["H1"].alignment = align_left
+    ws["H1"].alignment = align_center
     # --------------------------------------------------------
 
     ws["E2"] = "DOSSIER :"
