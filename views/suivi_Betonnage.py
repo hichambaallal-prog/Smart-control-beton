@@ -77,32 +77,43 @@ def show(supabase):
 
     # Bouton Enregistrer
     if st.button("💾 Enregistrer", key="btn_enregistrer"):
-        data = {
-            "date_livraison": str(date_livraison),
-            "bl_num": bl_num,
-            "ouvrage": ouvrage,
-            "quantite_m3": float(quantite_m3),
-            "client": client,
-            "classe_beton": classe_beton,
-            "centrale_beton": centrale,
-            "meteo": meteo,
-            "heure_fin_coulage": heure_fin.strftime("%H:%M"),
-            "heure_arrivee": heure_arrivee.strftime("%H:%M"),
-            "temperature": float(temp_beton),
-            "temperature_ambiante": float(temp_ambiante),
-            "affaissement": int(affaissement),
-            "prelevement": prelevement,
-            "nb_eprouvettes": int(nb_eprouvettes),
-            "observations": observations,
-            "technicien": technicien
-        }
+        bl_clean = bl_num.strip()
         
-        try:
-            supabase.table("suivi_betonnage").insert(data).execute()
-            st.success("Enregistrement réussi !")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erreur d'enregistrement : {e}")
+        if not bl_clean:
+            st.error("⚠️ Le numéro BL ne peut pas être vide.")
+        else:
+            # Vérification si le N° BL existe déjà en base
+            check_bl = supabase.table("suivi_betonnage").select("id").eq("bl_num", bl_clean).execute()
+            
+            if check_bl.data:
+                st.error(f"❌ Le N° BL **{bl_clean}** existe déjà. Impossible d'ajouter un doublon !")
+            else:
+                data = {
+                    "date_livraison": str(date_livraison),
+                    "bl_num": bl_clean,
+                    "ouvrage": ouvrage,
+                    "quantite_m3": float(quantite_m3),
+                    "client": client,
+                    "classe_beton": classe_beton,
+                    "centrale_beton": centrale,
+                    "meteo": meteo,
+                    "heure_fin_coulage": heure_fin.strftime("%H:%M"),
+                    "heure_arrivee": heure_arrivee.strftime("%H:%M"),
+                    "temperature": float(temp_beton),
+                    "temperature_ambiante": float(temp_ambiante),
+                    "affaissement": int(affaissement),
+                    "prelevement": prelevement,
+                    "nb_eprouvettes": int(nb_eprouvettes),
+                    "observations": observations,
+                    "technicien": technicien
+                }
+                
+                try:
+                    supabase.table("suivi_betonnage").insert(data).execute()
+                    st.success("Enregistrement réussi !")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erreur d'enregistrement : {e}")
 
     # ---------------------------------------------------------
     # 2. AFFICHAGE DE L'HISTORIQUE ET ESPACE DE MODIFICATION
@@ -210,7 +221,6 @@ def show(supabase):
                             def_h_fin = parse_heure_safe(selected_item.get("heure_fin_coulage"), "08:00")
                             def_h_arr = parse_heure_safe(selected_item.get("heure_arrivee"), "08:35")
 
-                            # Utilisation de clés dynamiques incluant l'ID (rec_id)
                             new_date_livraison = st.date_input("Date de livraison", value=def_date, key=f"edit_date_{rec_id}")
                             new_technicien = st.text_input("Nom du Technicien LPEE", value=selected_item.get("technicien", "Agent LPEE"), key=f"edit_tech_{rec_id}")
                             new_bl = st.text_input("N° BL", value=selected_item.get("bl_num", ""), key=f"edit_bl_{rec_id}")
@@ -245,30 +255,38 @@ def show(supabase):
                             new_observations = st.text_area("Observations", value=selected_item.get("observations", ""), key=f"edit_obs_{rec_id}")
                             
                             if st.form_submit_button("💾 Enregistrer toutes les modifications"):
-                                try:
-                                    supabase.table("suivi_betonnage").update({
-                                        "date_livraison": str(new_date_livraison),
-                                        "technicien": new_technicien,
-                                        "bl_num": new_bl,
-                                        "ouvrage": new_ouvrage,
-                                        "quantite_m3": float(new_quantite),
-                                        "heure_fin_coulage": new_heure_fin.strftime("%H:%M"),
-                                        "heure_arrivee": new_heure_arrivee.strftime("%H:%M"),
-                                        "classe_beton": new_classe,
-                                        "centrale_beton": new_centrale,
-                                        "meteo": new_meteo,
-                                        "temperature": float(new_temp_beton),
-                                        "temperature_ambiante": float(new_temp_amb),
-                                        "affaissement": int(new_affaissement),
-                                        "prelevement": new_prelevement,
-                                        "nb_eprouvettes": int(new_nb_eprouvettes),
-                                        "observations": new_observations
-                                    }).eq("id", rec_id).execute()
-                                    
-                                    st.success("Modifications enregistrées avec succès !")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erreur de mise à jour : {e}")
+                                new_bl_clean = new_bl.strip()
+                                
+                                # Vérification des doublons de BL en cas de modification
+                                check_bl_edit = supabase.table("suivi_betonnage").select("id").eq("bl_num", new_bl_clean).neq("id", rec_id).execute()
+                                
+                                if check_bl_edit.data:
+                                    st.error(f"❌ Le N° BL **{new_bl_clean}** est déjà utilisé par un autre enregistrement.")
+                                else:
+                                    try:
+                                        supabase.table("suivi_betonnage").update({
+                                            "date_livraison": str(new_date_livraison),
+                                            "technicien": new_technicien,
+                                            "bl_num": new_bl_clean,
+                                            "ouvrage": new_ouvrage,
+                                            "quantite_m3": float(new_quantite),
+                                            "heure_fin_coulage": new_heure_fin.strftime("%H:%M"),
+                                            "heure_arrivee": new_heure_arrivee.strftime("%H:%M"),
+                                            "classe_beton": new_classe,
+                                            "centrale_beton": new_centrale,
+                                            "meteo": new_meteo,
+                                            "temperature": float(new_temp_beton),
+                                            "temperature_ambiante": float(new_temp_amb),
+                                            "affaissement": int(new_affaissement),
+                                            "prelevement": new_prelevement,
+                                            "nb_eprouvettes": int(new_nb_eprouvettes),
+                                            "observations": new_observations
+                                        }).eq("id", rec_id).execute()
+                                        
+                                        st.success("Modifications enregistrées avec succès !")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erreur de mise à jour : {e}")
 
                 # --- BLOC DE SUPPRESSION (RESERVÉ UNIQUEMENT À L'ADMINISTRATEUR) ---
                 if is_admin:
