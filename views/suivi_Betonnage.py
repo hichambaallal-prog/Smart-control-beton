@@ -126,7 +126,7 @@ def show(supabase):
         if res.data:
             df = pd.DataFrame(res.data)
             
-            # 1. Calcul de la colonne "Durée de transport"
+            # 1. Calcul de la colonne "Durée de transport (min)" en valeur numérique
             if "heure_fin_coulage" in df.columns and "heure_arrivee" in df.columns:
                 def calculer_duree(row):
                     try:
@@ -142,9 +142,9 @@ def show(supabase):
                         diff = int((h_arr - h_fin).total_seconds() / 60)
                         if diff < 0:
                             diff += 1440
-                        return f"{diff} min"
+                        return diff
                     except:
-                        return "-"
+                        return None
                 
                 df["Durée de transport"] = df.apply(calculer_duree, axis=1)
 
@@ -179,12 +179,21 @@ def show(supabase):
             desired_first_cols = ["ID", "Date Livraison", "N° BL", "Nb Éprouvettes"]
             remaining_cols = [c for c in df.columns if c not in desired_first_cols]
             
-            # Reconstruction de la liste finale des colonnes
             final_cols = [c for c in desired_first_cols if c in df.columns] + remaining_cols
             df = df[final_cols]
 
-            # 5. Affichage du tableau en masquant l'index natif Pandas
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            # 5. Application du style d'alerte pour les durées > 120 minutes
+            def style_duree_transport(val):
+                if pd.notna(val) and isinstance(val, (int, float)) and val > 120:
+                    return 'background-color: #ffcdd2; color: #b71c1c; font-weight: bold;'
+                return ''
+
+            styled_df = df.style.applymap(style_duree_transport, subset=["Durée de transport"]).format(
+                {"Durée de transport": lambda x: f"{int(x)} min" if pd.notna(x) else "-"}
+            )
+
+            # 6. Affichage du tableau stylisé
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
             # --- BLOC MODIFICATION (AUTORISÉ POUR AMINA ET ADMIN) ---
             if is_admin or can_edit:
