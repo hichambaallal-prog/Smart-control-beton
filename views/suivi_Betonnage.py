@@ -92,6 +92,7 @@ def show(supabase):
                     "date_livraison": str(date_livraison),
                     "bl_num": bl_clean,
                     "ouvrage": ouvrage,
+                     "nb_eprouvettes": int(nb_eprouvettes),
                     "quantite_m3": float(quantite_m3),
                     "client": client,
                     "classe_beton": classe_beton,
@@ -103,7 +104,6 @@ def show(supabase):
                     "temperature_ambiante": float(temp_ambiante),
                     "affaissement": int(affaissement),
                     "prelevement": prelevement,
-                    "nb_eprouvettes": int(nb_eprouvettes),
                     "observations": observations,
                     "technicien": technicien
                 }
