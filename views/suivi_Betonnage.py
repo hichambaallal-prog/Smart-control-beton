@@ -262,7 +262,7 @@ def show(supabase):
                             new_temp_amb = st.number_input("Température Ambiante (°C)", value=float(selected_item.get("temperature_ambiante", 25.0)), step=0.1, format="%.1f", key=f"edit_t_amb_{rec_id}")
                             new_affaissement = st.number_input("Affaissement (mm)", value=int(selected_item.get("affaissement", 150)), step=10, key=f"edit_aff_{rec_id}")
                             
-                            prelevement_list = ["OUI - Conforme (NF EN 12350-2)", "NON"]
+                            prelevement_list = ["OUI", "NON"]
                             current_prel = selected_item.get("prelevement", "NON")
                             idx_prel = prelevement_list.index(current_prel) if current_prel in prelevement_list else 1
                             new_prelevement = st.selectbox("Prélèvement", prelevement_list, index=idx_prel, key=f"edit_prel_{rec_id}")
