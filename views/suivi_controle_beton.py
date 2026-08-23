@@ -213,9 +213,16 @@ def generer_pv_excel(export_data, infos_header):
 
     ws["E1"] = "RE N° :"
     ws["E1"].font = font_bold
-    ws.merge_cells("F1:H1")
+    
+    # ----------- MODIFICATIONS COLONNES F, G et H -----------
+    ws.merge_cells("F1:G1")
     ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/01")
     ws["F1"].font = font_regular
+    
+    ws["H1"] = "BETON"
+    ws["H1"].font = font_bold
+    ws["H1"].alignment = align_center
+    # --------------------------------------------------------
 
     ws["E2"] = "DOSSIER :"
     ws["E2"].font = font_bold
@@ -953,7 +960,7 @@ def show(supabase):
                         "ouvrage",
                         "classe_beton",
                     ]
-                    cols_presentes = [c for c in cols_ed if c in df_prog_mod.columns]
+                    cols_presentes = [c for c in df_prog_mod.columns if c in cols_ed]
                     df_edit_prog = df_prog_mod[cols_presentes].copy()
 
                     df_prog_modifiee = st.data_editor(
@@ -1693,11 +1700,8 @@ def show(supabase):
                 else tech_global
             )
 
-            # Mise à jour dynamique de la référence RE N°
-            re_num_dynamique = f"25/260/LGV/{num_reception_affiche}" if num_reception_affiche and str(num_reception_affiche) != "-" else "25/260/LGV/ B/01"
-
             infos_header = {
-                "re_num": re_num_dynamique,
+                "re_num": "25/260/LGV/ B/01",
                 "dossier": "2025-260-05985-2025-0247",
                 "client": "TGCC",
                 "num_bl": num_bl_valeur,
@@ -1854,14 +1858,8 @@ def show(supabase):
                         else sample_h.get("technicien")
                     )
 
-                    # Récupération du N° de Réception pour l'historique
-                    num_rec_h = sample_h.get("num_reception") or sample_h.get("n_reception") or (
-                        info_beton_h.get("num_reception") or info_beton_h.get("n_reception") if info_beton_h else "-"
-                    )
-                    re_num_h_dynamique = f"25/260/LGV/{num_rec_h}" if num_rec_h and str(num_rec_h) != "-" else "25/260/LGV/ B/01"
-
                     infos_header_h = {
-                        "re_num": re_num_h_dynamique,
+                        "re_num": "25/260/LGV/ B/01",
                         "dossier": "2025-260-05985-2025-0247",
                         "client": "TGCC",
                         "num_bl": num_bl_h,
