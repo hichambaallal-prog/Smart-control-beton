@@ -213,16 +213,9 @@ def generer_pv_excel(export_data, infos_header):
 
     ws["E1"] = "RE N° :"
     ws["E1"].font = font_bold
-    
-    # ----------- MODIFICATIONS COLONNES F, G et H -----------
-    ws.merge_cells("F1:G1")
-    ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/")
+    ws.merge_cells("F1:H1")
+    ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/01")
     ws["F1"].font = font_regular
-    
-    ws["H1"] = "BETON"
-    ws["H1"].font = font_bold
-    ws["H1"].alignment = align_center
-    # --------------------------------------------------------
 
     ws["E2"] = "DOSSIER :"
     ws["E2"].font = font_bold
@@ -826,11 +819,11 @@ def show(supabase):
                     "_id_beton": item.get("id"),
                     "1-Numero de reception": str(num_rec_exist),
                     "2-Date de livraison": str(date_liv),
-                    "3-Nb d'éprouvettes": nb_ep_b,
-                    "4-Classe de béton": classe_b,
-                    "5-Ouvrage": ouvrage_b,
-                    "6-Affaissement": affaissement_b,
-                    "7-Temperature de béton frais": temp_b,
+                    "3-Classe de béton": classe_b,
+                    "4-Ouvrage": ouvrage_b,
+                    "5-Affaissement": affaissement_b,
+                    "6-Temperature de béton frais": temp_b,
+                    "7-Nb d'éprouvettes": nb_ep_b,
                 })
 
             df_reception = pd.DataFrame(rows_reception)
@@ -846,11 +839,11 @@ def show(supabase):
                         required=False,
                     ),
                     "2-Date de livraison": st.column_config.TextColumn("2-Date de livraison", disabled=True),
-                    "3-Nb d'éprouvettes": st.column_config.NumberColumn("7-Nb d'éprouvettes", disabled=True),
-                    "4-Classe de béton": st.column_config.TextColumn("3-Classe de béton", disabled=True),
-                    "5-Ouvrage": st.column_config.TextColumn("4-Ouvrage", disabled=True),
-                    "6-Affaissement": st.column_config.TextColumn("5-Affaissement", disabled=True),
-                    "7-Temperature de béton frais": st.column_config.TextColumn("6-Temperature de béton frais", disabled=True),
+                    "3-Classe de béton": st.column_config.TextColumn("3-Classe de béton", disabled=True),
+                    "4-Ouvrage": st.column_config.TextColumn("4-Ouvrage", disabled=True),
+                    "5-Affaissement": st.column_config.TextColumn("5-Affaissement", disabled=True),
+                    "6-Temperature de béton frais": st.column_config.TextColumn("6-Temperature de béton frais", disabled=True),
+                    "7-Nb d'éprouvettes": st.column_config.NumberColumn("7-Nb d'éprouvettes", disabled=True),
                 },
                 use_container_width=True,
                 hide_index=True,
@@ -960,7 +953,7 @@ def show(supabase):
                         "ouvrage",
                         "classe_beton",
                     ]
-                    cols_presentes = [c for c in df_prog_mod.columns if c in cols_ed]
+                    cols_presentes = [c for c in cols_ed if c in df_prog_mod.columns]
                     df_edit_prog = df_prog_mod[cols_presentes].copy()
 
                     df_prog_modifiee = st.data_editor(
@@ -1701,7 +1694,7 @@ def show(supabase):
             )
 
             infos_header = {
-                "re_num": "25/260/LGV/ B/",
+                "re_num": "25/260/LGV/ B/01",
                 "dossier": "2025-260-05985-2025-0247",
                 "client": "TGCC",
                 "num_bl": num_bl_valeur,
@@ -1859,7 +1852,7 @@ def show(supabase):
                     )
 
                     infos_header_h = {
-                        "re_num": "25/260/LGV/ B/",
+                        "re_num": "25/260/LGV/ B/01",
                         "dossier": "2025-260-05985-2025-0247",
                         "client": "TGCC",
                         "num_bl": num_bl_h,
