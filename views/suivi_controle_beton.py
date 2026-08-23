@@ -1859,7 +1859,7 @@ def show(supabase):
                     )
 
                     infos_header_h = {
-                        "re_num": "25/260/LGV/ B/01",
+                        "re_num": "25/260/LGV/ B/",
                         "dossier": "2025-260-05985-2025-0247",
                         "client": "TGCC",
                         "num_bl": num_bl_h,
