@@ -63,7 +63,7 @@ def show(supabase):
             key="saisie_prel"
         )
         
-        is_non_prelevement = "NON" in prelevement
+        is_non_prelevement = (prelevement == "NON")
         
         nb_eprouvettes = st.number_input(
             "Nb d'éprouvettes", 
@@ -126,6 +126,10 @@ def show(supabase):
         if res.data:
             df = pd.DataFrame(res.data)
             
+            # Nettoyage d'affichage de la colonne "prelevement" pour les anciens enregistrements
+            if "prelevement" in df.columns:
+                df["prelevement"] = df["prelevement"].apply(lambda x: "OUI" if "OUI" in str(x).upper() else ("NON" if "NON" in str(x).upper() else str(x)))
+
             # 1. Calcul de la colonne "Durée de transport (min)"
             if "heure_fin_coulage" in df.columns and "heure_arrivee" in df.columns:
                 def calculer_duree(row):
@@ -188,7 +192,7 @@ def show(supabase):
                     return 'background-color: #ffcdd2; color: #b71c1c; font-weight: bold;'
                 return ''
 
-            # Dictionnaire de formatage des nombres (sans virgule pour qte, 1 chiffre après la virgule pour temp)
+            # Dictionnaire de formatage des nombres
             format_dict = {
                 "Durée de transport": lambda x: f"{int(x)} min" if pd.notna(x) else "-",
                 "Quantité (m³)": "{:.0f}",
@@ -201,7 +205,7 @@ def show(supabase):
             # 6. Affichage du tableau stylisé
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-            # --- BLOC MODIFICATION (AUTORISÉ POUR AMINA ET ADMIN) ---
+            # --- BLOC MODIFICATION ---
             if is_admin or can_edit:
                 st.markdown("---")
                 st.subheader("🛠️ Espace Administration - Suivi Béton")
@@ -211,7 +215,6 @@ def show(supabase):
                 selected_item = record_options[selected_key]
                 rec_id = selected_item["id"]
                 
-                # Disposition des colonnes selon le rôle
                 if is_admin:
                     col_ed, col_del = st.columns([2, 1])
                 else:
@@ -263,8 +266,9 @@ def show(supabase):
                             new_affaissement = st.number_input("Affaissement (mm)", value=int(selected_item.get("affaissement", 150)), step=10, key=f"edit_aff_{rec_id}")
                             
                             prelevement_list = ["OUI", "NON"]
-                            current_prel = selected_item.get("prelevement", "NON")
-                            idx_prel = prelevement_list.index(current_prel) if current_prel in prelevement_list else 1
+                            raw_prel = str(selected_item.get("prelevement", "NON")).upper()
+                            current_prel = "OUI" if "OUI" in raw_prel else "NON"
+                            idx_prel = prelevement_list.index(current_prel)
                             new_prelevement = st.selectbox("Prélèvement", prelevement_list, index=idx_prel, key=f"edit_prel_{rec_id}")
                             
                             new_nb_eprouvettes = st.number_input("Nb d'éprouvettes", value=int(selected_item.get("nb_eprouvettes", 0)), min_value=0, key=f"edit_eprov_{rec_id}")
