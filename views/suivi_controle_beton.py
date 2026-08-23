@@ -216,7 +216,7 @@ def generer_pv_excel(export_data, infos_header):
     
     # ----------- MODIFICATIONS COLONNES F, G et H -----------
     ws.merge_cells("F1:G1")
-    ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/01")
+    ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/")
     ws["F1"].font = font_regular
     
     ws["H1"] = "BETON"
@@ -1701,7 +1701,7 @@ def show(supabase):
             )
 
             infos_header = {
-                "re_num": "25/260/LGV/ B/01",
+                "re_num": "25/260/LGV/ B/",
                 "dossier": "2025-260-05985-2025-0247",
                 "client": "TGCC",
                 "num_bl": num_bl_valeur,
