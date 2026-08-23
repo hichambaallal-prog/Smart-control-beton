@@ -59,7 +59,7 @@ def show(supabase):
         
         prelevement = st.selectbox(
             "Prélèvement", 
-            ["OUI - Conforme (NF EN 12350-2)", "NON"],
+            ["OUI", "NON"],
             key="saisie_prel"
         )
         
