@@ -92,7 +92,6 @@ def show(supabase):
                     "date_livraison": str(date_livraison),
                     "bl_num": bl_clean,
                     "ouvrage": ouvrage,
-                     "nb_eprouvettes": int(nb_eprouvettes),
                     "quantite_m3": float(quantite_m3),
                     "client": client,
                     "classe_beton": classe_beton,
@@ -104,6 +103,7 @@ def show(supabase):
                     "temperature_ambiante": float(temp_ambiante),
                     "affaissement": int(affaissement),
                     "prelevement": prelevement,
+                    "nb_eprouvettes": int(nb_eprouvettes),
                     "observations": observations,
                     "technicien": technicien
                 }
@@ -163,24 +163,25 @@ def show(supabase):
                 "heure_arrivee": "Heure d'arrivée",
                 "bl_num": "N° BL",
                 "ouvrage": "Ouvrage",
-                 "nb_eprouvettes": "Nb Éprouvettes",
                 "quantite_m3": "Quantité (m³)",
                 "classe_beton": "Classe",
                 "temperature": "Temp. Béton",
                 "temperature_ambiante": "Temp. Ambiante",
                 "affaissement": "Affaissement",
                 "prelevement": "Prélèvement",
+                "nb_eprouvettes": "Nb Éprouvettes",
                 "observations": "Observations",
                 "technicien": "Technicien",
                 "meteo": "Météo"
             })
 
-            # 4. Placer la colonne ID en première position
-            all_cols = list(df.columns)
-            if "ID" in all_cols:
-                all_cols.remove("ID")
-                final_cols = ["ID"] + all_cols
-                df = df[final_cols]
+            # 4. Positionnement spécifique des colonnes (Placer 'Nb Éprouvettes' en 4ᵉ position)
+            desired_first_cols = ["ID", "Date Livraison", "N° BL", "Nb Éprouvettes"]
+            remaining_cols = [c for c in df.columns if c not in desired_first_cols]
+            
+            # Reconstruction de la liste finale des colonnes
+            final_cols = [c for c in desired_first_cols if c in df.columns] + remaining_cols
+            df = df[final_cols]
 
             # 5. Affichage du tableau en masquant l'index natif Pandas
             st.dataframe(df, use_container_width=True, hide_index=True)
@@ -269,7 +270,6 @@ def show(supabase):
                                             "technicien": new_technicien,
                                             "bl_num": new_bl_clean,
                                             "ouvrage": new_ouvrage,
-                                            "nb_eprouvettes": int(new_nb_eprouvettes),
                                             "quantite_m3": float(new_quantite),
                                             "heure_fin_coulage": new_heure_fin.strftime("%H:%M"),
                                             "heure_arrivee": new_heure_arrivee.strftime("%H:%M"),
@@ -280,6 +280,7 @@ def show(supabase):
                                             "temperature_ambiante": float(new_temp_amb),
                                             "affaissement": int(new_affaissement),
                                             "prelevement": new_prelevement,
+                                            "nb_eprouvettes": int(new_nb_eprouvettes),
                                             "observations": new_observations
                                         }).eq("id", rec_id).execute()
                                         
