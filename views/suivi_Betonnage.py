@@ -182,16 +182,21 @@ def show(supabase):
             final_cols = [c for c in desired_first_cols if c in df.columns] + remaining_cols
             df = df[final_cols]
 
-            # 5. Style d'alerte rouge pour les durées > 120 min (Compatibilité Pandas récente)
+            # 5. Style d'alerte rouge pour les durées > 120 min
             def style_duree_transport(val):
                 if pd.notna(val) and isinstance(val, (int, float)) and val > 120:
                     return 'background-color: #ffcdd2; color: #b71c1c; font-weight: bold;'
                 return ''
 
-            # Utilisation de .map() à la place de .applymap()
-            styled_df = df.style.map(style_duree_transport, subset=["Durée de transport"]).format(
-                {"Durée de transport": lambda x: f"{int(x)} min" if pd.notna(x) else "-"}
-            )
+            # Dictionnaire de formatage des nombres (sans virgule pour qte, 1 chiffre après la virgule pour temp)
+            format_dict = {
+                "Durée de transport": lambda x: f"{int(x)} min" if pd.notna(x) else "-",
+                "Quantité (m³)": "{:.0f}",
+                "Temp. Béton": "{:.1f}",
+                "Temp. Ambiante": "{:.1f}"
+            }
+
+            styled_df = df.style.map(style_duree_transport, subset=["Durée de transport"]).format(format_dict)
 
             # 6. Affichage du tableau stylisé
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
@@ -204,7 +209,7 @@ def show(supabase):
                 record_options = {f"ID {r['id']} - BL: {r.get('bl_num', 'N/A')} - Ouvrage: {r.get('ouvrage', '')}": r for r in res.data}
                 selected_key = st.selectbox("Sélectionner l'enregistrement à gérer", list(record_options.keys()), key="admin_select_record")
                 selected_item = record_options[selected_key]
-                rec_id = selected_item["id"]  # Identifiant unique
+                rec_id = selected_item["id"]
                 
                 # Disposition des colonnes selon le rôle
                 if is_admin:
@@ -268,7 +273,6 @@ def show(supabase):
                             if st.form_submit_button("💾 Enregistrer toutes les modifications"):
                                 new_bl_clean = new_bl.strip()
                                 
-                                # Vérification des doublons de BL
                                 check_bl_edit = supabase.table("suivi_betonnage").select("id").eq("bl_num", new_bl_clean).neq("id", rec_id).execute()
                                 
                                 if check_bl_edit.data:
@@ -299,7 +303,7 @@ def show(supabase):
                                     except Exception as e:
                                         st.error(f"Erreur de mise à jour : {e}")
 
-                # --- BLOC DE SUPPRESSION (RESERVÉ UNIQUEMENT À L'ADMINISTRATEUR) ---
+                # --- BLOC DE SUPPRESSION ---
                 if is_admin:
                     with col_del:
                         st.markdown("##### ⚠️ Suppression")
