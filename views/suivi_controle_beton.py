@@ -819,11 +819,11 @@ def show(supabase):
                     "_id_beton": item.get("id"),
                     "1-Numero de reception": str(num_rec_exist),
                     "2-Date de livraison": str(date_liv),
-                    "3-Classe de béton": classe_b,
-                    "4-Ouvrage": ouvrage_b,
-                    "5-Affaissement": affaissement_b,
-                    "6-Temperature de béton frais": temp_b,
-                    "7-Nb d'éprouvettes": nb_ep_b,
+                    "3-Nb d'éprouvettes": nb_ep_b,
+                    "4-Classe de béton": classe_b,
+                    "5-Ouvrage": ouvrage_b,
+                    "6-Affaissement": affaissement_b,
+                    "7-Temperature de béton frais": temp_b,
                 })
 
             df_reception = pd.DataFrame(rows_reception)
