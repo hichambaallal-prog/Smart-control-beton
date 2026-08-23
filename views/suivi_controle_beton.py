@@ -219,7 +219,8 @@ def generer_pv_excel(export_data, infos_header):
     ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/")
     ws["F1"].font = font_regular
     
-    ws["H1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/")
+    # H1 est maintenant lié au numéro de réception de la phase 0
+    ws["H1"] = remplacer_na(infos_header.get("num_reception"), "25/260/LGV/ B/")
     ws["H1"].font = font_bold
     ws["H1"].alignment = align_left
     # --------------------------------------------------------
@@ -1700,8 +1701,10 @@ def show(supabase):
                 else tech_global
             )
 
+            # --- ICI NOUS PASSONS num_reception À infos_header ---
             infos_header = {
                 "re_num": "25/260/LGV/ B/",
+                "num_reception": num_reception_affiche,  # <--- AJOUT IMPORTANT POUR H1
                 "dossier": "2025-260-05985-2025-0247",
                 "client": "TGCC",
                 "num_bl": num_bl_valeur,
@@ -1820,6 +1823,12 @@ def show(supabase):
                     b_id_h = sample_h.get("betonnage_id")
 
                     info_beton_h = obtenir_infos_betonnage_parent(supabase, b_id_h)
+                    
+                    # --- RÉCUPÉRATION DU NUMÉRO DE RÉCEPTION POUR LE RE-EXPORT ---
+                    num_reception_h = sample_h.get("num_reception") or sample_h.get("n_reception") or (
+                        info_beton_h.get("num_reception") or info_beton_h.get("n_reception") if info_beton_h else "-"
+                    )
+
                     tous_essais_hist = obtenir_historique_betonnage(supabase, b_id_h)
 
                     export_data_h = []
@@ -1860,6 +1869,7 @@ def show(supabase):
 
                     infos_header_h = {
                         "re_num": "25/260/LGV/ B/",
+                        "num_reception": num_reception_h,  # <--- AJOUT IMPORTANT POUR H1 (HISTORIQUE)
                         "dossier": "2025-260-05985-2025-0247",
                         "client": "TGCC",
                         "num_bl": num_bl_h,
