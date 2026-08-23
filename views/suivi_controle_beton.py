@@ -1693,8 +1693,11 @@ def show(supabase):
                 else tech_global
             )
 
+            # Mise à jour dynamique de la référence RE N°
+            re_num_dynamique = f"25/260/LGV/{num_reception_affiche}" if num_reception_affiche and str(num_reception_affiche) != "-" else "25/260/LGV/ B/01"
+
             infos_header = {
-                "re_num": "25/260/LGV/ B/01",
+                "re_num": re_num_dynamique,
                 "dossier": "2025-260-05985-2025-0247",
                 "client": "TGCC",
                 "num_bl": num_bl_valeur,
@@ -1851,8 +1854,14 @@ def show(supabase):
                         else sample_h.get("technicien")
                     )
 
+                    # Récupération du N° de Réception pour l'historique
+                    num_rec_h = sample_h.get("num_reception") or sample_h.get("n_reception") or (
+                        info_beton_h.get("num_reception") or info_beton_h.get("n_reception") if info_beton_h else "-"
+                    )
+                    re_num_h_dynamique = f"25/260/LGV/{num_rec_h}" if num_rec_h and str(num_rec_h) != "-" else "25/260/LGV/ B/01"
+
                     infos_header_h = {
-                        "re_num": "25/260/LGV/ B/01",
+                        "re_num": re_num_h_dynamique,
                         "dossier": "2025-260-05985-2025-0247",
                         "client": "TGCC",
                         "num_bl": num_bl_h,
