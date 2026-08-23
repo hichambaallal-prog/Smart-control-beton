@@ -62,11 +62,11 @@ def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=Non
             .eq("num_reception", num_clean)
             .execute()
         )
-        # Recherche par n_reception si applicable
+        # Recherche par num_reception si applicable
         res2 = (
             supabase.table("suivi_betonnage")
-            .select("id, n_reception")
-            .eq("n_reception", num_clean)
+            .select("id, num_reception")
+            .eq("num_reception", num_clean)
             .execute()
         )
         
