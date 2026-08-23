@@ -43,6 +43,46 @@ def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
 
 
 # =========================================================
+# FONCTION UTILITAIRE : VÉRIFICATION DES DOUBLONS DU N° DE RÉCEPTION
+# =========================================================
+def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=None):
+    """
+    Vérifie dans la table 'suivi_betonnage' si le num_reception existe déjà.
+    Retourne True si le numéro est en doublon, sinon False.
+    """
+    if not num_reception or str(num_reception).strip() in ["", "-", "None", "NaN", "N/A"]:
+        return False
+        
+    num_clean = str(num_reception).strip()
+    try:
+        # Recherche par num_reception
+        res1 = (
+            supabase.table("suivi_betonnage")
+            .select("id, num_reception")
+            .eq("num_reception", num_clean)
+            .execute()
+        )
+        # Recherche par n_reception si applicable
+        res2 = (
+            supabase.table("suivi_betonnage")
+            .select("id, n_reception")
+            .eq("n_reception", num_clean)
+            .execute()
+        )
+        
+        matches = (res1.data or []) + (res2.data or [])
+        
+        for m in matches:
+            # S'il existe un enregistrement ayant le même numéro mais un ID différent
+            if current_beton_id is None or int(m.get("id")) != int(current_beton_id):
+                return True
+    except Exception as e:
+        st.warning(f"Note lors de la vérification des doublons : {e}")
+        
+    return False
+
+
+# =========================================================
 # FONCTION UTILITAIRE : EXTRACTION SÉCURISÉE DU N° BL
 # =========================================================
 def extraire_num_bl(*sources):
@@ -814,28 +854,49 @@ def show(supabase):
             with col_rec1:
                 if st.button("💾 Enregistrer les N° de Réception", type="primary", use_container_width=True):
                     succes_rec = 0
+                    bloque_doublon = False
+
+                    # 1. Étape de validation préalable de tous les numéros saisis (détection doublons)
+                    nouveaux_numeros = {}
                     for _, row_rec in df_edited.iterrows():
                         beton_id_val = int(row_rec["_id_beton"])
                         n_rec_val = str(row_rec["1-Numero de reception"]).strip()
 
-                        if n_rec_val and n_rec_val != "-":
+                        if n_rec_val and n_rec_val not in ["-", ""]:
+                            # Vérification doublons internes à la saisie actuelle
+                            if n_rec_val in nouveaux_numeros.values():
+                                st.error(f"❌ **Saisie Bloquée** : Le N° de réception `{n_rec_val}` est saisi en double dans la table ci-dessus !")
+                                bloque_doublon = True
+                                break
+                            
+                            # Vérification doublons existants en Base de données
+                            if verifier_doublon_num_reception(supabase, n_rec_val, current_beton_id=beton_id_val):
+                                st.error(f"❌ **Enregistrement Bloqué** : Le N° de réception `{n_rec_val}` existe déjà dans la base de données pour une autre fiche !")
+                                bloque_doublon = True
+                                break
+
+                            nouveaux_numeros[beton_id_val] = n_rec_val
+
+                    # 2. Si aucun doublon n'est détecté, procéder à l'enregistrement
+                    if not bloque_doublon:
+                        for b_id_save, n_rec_save in nouveaux_numeros.items():
                             try:
                                 supabase.table("suivi_betonnage").update(
-                                    {"num_reception": n_rec_val}
-                                ).eq("id", beton_id_val).execute()
+                                    {"num_reception": n_rec_save}
+                                ).eq("id", b_id_save).execute()
                                 succes_rec += 1
                             except Exception:
                                 try:
                                     supabase.table("suivi_betonnage").update(
-                                        {"n_reception": n_rec_val}
-                                    ).eq("id", beton_id_val).execute()
+                                        {"n_reception": n_rec_save}
+                                ).eq("id", b_id_save).execute()
                                     succes_rec += 1
                                 except Exception as err_u2:
-                                    st.error(f"Erreur d'enregistrement pour la fiche #{beton_id_val} : {err_u2}")
+                                    st.error(f"Erreur d'enregistrement pour la fiche #{b_id_save} : {err_u2}")
 
-                    if succes_rec > 0:
-                        st.success(f"✅ {succes_rec} N° de Réception enregistré(s) avec succès !")
-                        st.rerun()
+                        if succes_rec > 0:
+                            st.success(f"✅ {succes_rec} N° de Réception enregistré(s) avec succès !")
+                            st.rerun()
 
             with col_rec2:
                 df_visibles = df_edited[
@@ -883,6 +944,7 @@ def show(supabase):
                     
                     cols_ed = [
                         "id",
+                        "betonnage_id",
                         "ref_controle",
                         "repere_eprouvette",
                         "echeance",
@@ -898,7 +960,8 @@ def show(supabase):
                         df_edit_prog,
                         column_config={
                             "id": st.column_config.NumberColumn("ID", disabled=True),
-                            "ref_controle": st.column_config.TextColumn("Réf. Contrôle"),
+                            "betonnage_id": None,
+                            "ref_controle": st.column_config.TextColumn("Réf. Contrôle (N° Réception)"),
                             "repere_eprouvette": st.column_config.TextColumn("Repère Eprouvette"),
                             "echeance": st.column_config.SelectboxColumn(
                                 "Échéance",
@@ -916,23 +979,45 @@ def show(supabase):
 
                     if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", use_container_width=True, key="btn_save_mod_prog"):
                         nb_succes_mod = 0
+                        bloque_mod_doublon = False
+
                         for _, r_m in df_prog_modifiee.iterrows():
                             ep_id_mod = int(r_m["id"])
-                            pay_mod = {
-                                "ref_controle": str(r_m.get("ref_controle", "")).strip(),
-                                "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
-                                "echeance": str(r_m.get("echeance", "")).strip(),
-                                "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
-                            }
-                            try:
-                                supabase.table("suivi_controle_beton").update(pay_mod).eq("id", ep_id_mod).execute()
-                                nb_succes_mod += 1
-                            except Exception as err_mod:
-                                st.error(f"Erreur de modification pour l'éprouvette #{ep_id_mod} : {err_mod}")
+                            b_id_mod = r_m.get("betonnage_id")
+                            ref_ctrl_mod = str(r_m.get("ref_controle", "")).strip()
 
-                        if nb_succes_mod > 0:
-                            st.success(f"✅ {nb_succes_mod} programmation(s) mise(s) à jour avec succès !")
-                            st.rerun()
+                            # Vérification des doublons sur la modification du N° Réception / Réf Contrôle
+                            if ref_ctrl_mod and verifier_doublon_num_reception(supabase, ref_ctrl_mod, current_beton_id=b_id_mod):
+                                st.error(f"❌ **Modification Bloquée** : La Réf. Contrôle / N° Réception `{ref_ctrl_mod}` existe déjà sur une autre fiche !")
+                                bloque_mod_doublon = True
+                                break
+
+                        if not bloque_mod_doublon:
+                            for _, r_m in df_prog_modifiee.iterrows():
+                                ep_id_mod = int(r_m["id"])
+                                b_id_mod = r_m.get("betonnage_id")
+                                ref_ctrl_mod = str(r_m.get("ref_controle", "")).strip()
+
+                                pay_mod = {
+                                    "ref_controle": ref_ctrl_mod,
+                                    "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
+                                    "echeance": str(r_m.get("echeance", "")).strip(),
+                                    "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
+                                }
+                                try:
+                                    supabase.table("suivi_controle_beton").update(pay_mod).eq("id", ep_id_mod).execute()
+                                    if b_id_mod:
+                                        try:
+                                            supabase.table("suivi_betonnage").update({"num_reception": ref_ctrl_mod}).eq("id", b_id_mod).execute()
+                                        except Exception:
+                                            pass
+                                    nb_succes_mod += 1
+                                except Exception as err_mod:
+                                    st.error(f"Erreur de modification pour l'éprouvette #{ep_id_mod} : {err_mod}")
+
+                            if nb_succes_mod > 0:
+                                st.success(f"✅ {nb_succes_mod} programmation(s) mise(s) à jour avec succès !")
+                                st.rerun()
         else:
             st.info("🔒 **Accès restreint :** La modification/ajustement des programmations existantes est réservée aux utilisateurs disposant du droit de modification (`can_edit`).")
 
