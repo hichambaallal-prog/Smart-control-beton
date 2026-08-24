@@ -1,12 +1,13 @@
 from datetime import date, datetime
 import io
 import re
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import numpy as np
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -37,12 +38,12 @@ def get_default_fck(df_display):
 
 
 # =========================================================
-# GRAPHIC PLOTLY - EVOLUTION RESISTANCE BETON
+# GRAPHIQUE MATPLOTLIB - ÉVOLUTION RÉSISTANCE BÉTON
 # =========================================================
 
 
 def generer_courbe_beton(df_classe, valeur_fck=30.0):
-  fig = go.Figure()
+  fig, ax = plt.subplots(figsize=(10, 4.5))
 
   if df_classe.empty or "Date Coulée" not in df_classe.columns:
     return fig
@@ -58,57 +59,50 @@ def generer_courbe_beton(df_classe, valeur_fck=30.0):
 
   # Courbe à 7 jours (Vert)
   if "Moy. Fc (MPa) [7 Jours]" in df_plot.columns:
-    fig.add_trace(
-        go.Scatter(
-            x=df_plot["Date_dt_plot"],
-            y=pd.to_numeric(
-                df_plot["Moy. Fc (MPa) [7 Jours]"], errors="coerce"
-            ),
-            mode="lines+markers",
-            name="RC 7J",
-            line=dict(color="#8BC34A", width=3),
-            marker=dict(size=7),
-        )
+    y7 = pd.to_numeric(df_plot["Moy. Fc (MPa) [7 Jours]"], errors="coerce")
+    ax.plot(
+        df_plot["Date_dt_plot"],
+        y7,
+        marker="o",
+        color="#8BC34A",
+        linewidth=2.5,
+        label="RC 7J",
     )
 
   # Courbe à 28 jours (Bleu)
   if "Moy. Fc (MPa) [28 Jours]" in df_plot.columns:
-    fig.add_trace(
-        go.Scatter(
-            x=df_plot["Date_dt_plot"],
-            y=pd.to_numeric(
-                df_plot["Moy. Fc (MPa) [28 Jours]"], errors="coerce"
-            ),
-            mode="lines+markers",
-            name="RC 28J",
-            line=dict(color="#4A86E8", width=3),
-            marker=dict(size=7),
-        )
+    y28 = pd.to_numeric(df_plot["Moy. Fc (MPa) [28 Jours]"], errors="coerce")
+    ax.plot(
+        df_plot["Date_dt_plot"],
+        y28,
+        marker="o",
+        color="#4A86E8",
+        linewidth=2.5,
+        label="RC 28J",
     )
 
   # Ligne de la valeur caractéristique (Rouge fixe)
   if valeur_fck is not None and valeur_fck > 0:
-    fig.add_trace(
-        go.Scatter(
-            x=df_plot["Date_dt_plot"],
-            y=[valeur_fck] * len(df_plot),
-            mode="lines",
-            name=f"Valeur cible ({valeur_fck} MPa)",
-            line=dict(color="#FF0000", width=2, dash="dash"),
-        )
+    ax.axhline(
+        y=valeur_fck,
+        color="#FF0000",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"Valeur cible ({valeur_fck} MPa)",
     )
 
-  fig.update_layout(
-      title="📈 Évolution Chronologique des Résistances du Béton",
-      xaxis_title="Date de coulage",
-      yaxis_title="Résistance (MPa)",
-      hovermode="x unified",
-      xaxis=dict(type="date", tickformat="%d/%m/%Y"),
-      template="plotly_white",
-      legend=dict(
-          orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-      ),
+  ax.set_title(
+      "📈 Évolution Chronologique des Résistances du Béton",
+      fontsize=12,
+      fontweight="bold",
+      pad=12,
   )
+  ax.set_xlabel("Date de coulage", fontsize=10)
+  ax.set_ylabel("Résistance (MPa)", fontsize=10)
+  ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m/%Y"))
+  ax.grid(True, linestyle=":", alpha=0.6)
+  ax.legend(loc="lower right", frameon=True)
+  plt.tight_layout()
 
   return fig
 
@@ -1514,7 +1508,7 @@ def show(supabase):
           st.dataframe(df_stats_j, use_container_width=True)
 
           # =========================================================
-          # COURBE PLOTLY JOURNALIÈRE
+          # COURBE MATPLOTLIB JOURNALIÈRE
           # =========================================================
           st.markdown("---")
           default_fck_j = get_default_fck(df_display_cj)
@@ -1527,7 +1521,7 @@ def show(supabase):
               key="fck_j_input",
           )
           fig_j = generer_courbe_beton(df_display_cj, valeur_fck_j)
-          st.plotly_chart(fig_j, use_container_width=True)
+          st.pyplot(fig_j, use_container_width=True)
 
     with tab_m_c:
       st.markdown("### Bilan mensuel par classe et ouvrage")
@@ -1614,7 +1608,7 @@ def show(supabase):
           st.dataframe(df_stats_m, use_container_width=True)
 
           # =========================================================
-          # COURBE PLOTLY MENSUELLE
+          # COURBE MATPLOTLIB MENSUELLE
           # =========================================================
           st.markdown("---")
           default_fck_m = get_default_fck(df_display_cm)
@@ -1628,4 +1622,4 @@ def show(supabase):
           )
 
           fig_beton = generer_courbe_beton(df_display_cm, valeur_fck)
-          st.plotly_chart(fig_beton, use_container_width=True)
+          st.pyplot(fig_beton, use_container_width=True)
