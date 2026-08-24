@@ -866,13 +866,8 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
         f"=MAX({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
     )
 
-    f_std_fc28 = (
-        f"=ECARTYPE.STANDARD({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
-    )
-    f_cv_fc28 = (
-        "=SIERREUR(("
-        f"{col_map_excel['fc28']}{row_std}/{col_map_excel['fc28']}{row_moy})*100,"
-        " 0)"
+    f_std_fc28 = f"=STDEV.S({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
+f_cv_fc28 = f"=IFERROR(({col_map_excel['fc28']}{row_std}/{col_map_excel['fc28']}{row_moy})*100, 0)"
     )
   else:
     f_min_aff = f_moy_aff = f_max_aff = "-"
