@@ -55,7 +55,7 @@ def afficher_evolution_resistances(df, key_suffix=""):
 
   df_plot = df.copy()
 
-  # Mappage étendu des colonnes brutes et formatées
+  # 1. Mappage explicite puis recherche dynamique des colonnes
   col_map = {
       "Date Coulée": "date_prelevement",
       "Date Prélèvement": "date_prelevement",
@@ -77,7 +77,26 @@ def afficher_evolution_resistances(df, key_suffix=""):
       columns={k: v for k, v in col_map.items() if k in df_plot.columns}
   )
 
-  # 1. Conversion des dates
+  for col in df_plot.columns:
+    c_str = str(col).lower().strip()
+    if "date" in c_str and "date_prelevement" not in df_plot.columns:
+      df_plot["date_prelevement"] = df_plot[col]
+    elif "classe" in c_str and "classe_beton" not in df_plot.columns:
+      df_plot["classe_beton"] = df_plot[col]
+    elif (
+        "7" in c_str
+        and ("fc" in c_str or "jour" in c_str or "rc" in c_str)
+        and "rc_7j" not in df_plot.columns
+    ):
+      df_plot["rc_7j"] = df_plot[col]
+    elif (
+        "28" in c_str
+        and ("fc" in c_str or "jour" in c_str or "rc" in c_str)
+        and "rc_28j" not in df_plot.columns
+    ):
+      df_plot["rc_28j"] = df_plot[col]
+
+  # Conversion des dates
   if "date_prelevement" in df_plot.columns:
     df_plot["date_prelevement"] = pd.to_datetime(
         df_plot["date_prelevement"], errors="coerce"
@@ -91,7 +110,14 @@ def afficher_evolution_resistances(df, key_suffix=""):
     st.info("Aucune date valide pour le graphique.")
     return
 
-  # 2. Filtre par Classe de Béton
+  # Conversion numérique des résistances
+  for col_rc in ["rc_7j", "rc_28j"]:
+    if col_rc in df_plot.columns:
+      df_plot[col_rc] = pd.to_numeric(df_plot[col_rc], errors="coerce")
+    else:
+      df_plot[col_rc] = np.nan
+
+  # 2. Gestion des classes & détection automatique de la classe avec données
   if "classe_beton" in df_plot.columns:
     classes_disponibles = sorted(
         [
@@ -104,9 +130,17 @@ def afficher_evolution_resistances(df, key_suffix=""):
     classes_disponibles = []
 
   if classes_disponibles:
+    default_idx = 0
+    for idx, cls in enumerate(classes_disponibles):
+      sub_cls = df_plot[df_plot["classe_beton"] == cls]
+      if sub_cls["rc_7j"].notna().any() or sub_cls["rc_28j"].notna().any():
+        default_idx = idx
+        break
+
     classe_selectionnee = st.selectbox(
         "Sélectionner la classe de béton :",
         classes_disponibles,
+        index=default_idx,
         key=f"select_classe_beton_{key_suffix}",
     )
     df_classe = df_plot[df_plot["classe_beton"] == classe_selectionnee].copy()
@@ -118,101 +152,117 @@ def afficher_evolution_resistances(df, key_suffix=""):
     st.warning("Aucune donnée enregistrée pour cette classe de béton.")
     return
 
-  # 3. Définition de la valeur cible fck
-  if "fck" in df_classe.columns and pd.notnull(df_classe["fck"].iloc[0]):
-    fck_defaut = float(df_classe["fck"].iloc[0])
-  else:
-    fck_defaut = float(get_default_fck(df_classe))
+  # 3. Réglages d'affichage et valeur fck
+  col_cfg1, col_cfg2 = st.columns([1, 1])
+  with col_cfg1:
+    mode_agreg = st.radio(
+        "Granularité d'affichage :",
+        ["Par Jour", "Par Mois"],
+        horizontal=True,
+        key=f"agreg_mode_{key_suffix}",
+    )
 
-  fck_cible = st.number_input(
-      "Valeur cible caractéristique fck (MPa) :",
-      value=fck_defaut,
-      step=1.0,
-      key=f"fck_input_{key_suffix}",
-  )
-
-  # 4. Conversion numérique et groupement mensuel strict
-  for col_rc in ["rc_7j", "rc_28j"]:
-    if col_rc in df_classe.columns:
-      df_classe[col_rc] = pd.to_numeric(df_classe[col_rc], errors="coerce")
+  with col_cfg2:
+    if "fck" in df_classe.columns and pd.notnull(df_classe["fck"].iloc[0]):
+      fck_defaut = float(df_classe["fck"].iloc[0])
     else:
-      df_classe[col_rc] = np.nan
+      fck_defaut = float(get_default_fck(df_classe))
 
-  df_classe["Mois_Period"] = df_classe["date_prelevement"].dt.to_period("M")
+    fck_cible = st.number_input(
+        "Valeur cible fck (MPa) :",
+        value=fck_defaut,
+        step=1.0,
+        key=f"fck_input_{key_suffix}",
+    )
 
-  df_mensuel = (
-      df_classe.groupby("Mois_Period")
-      .agg(RC_7J=("rc_7j", "mean"), RC_28J=("rc_28j", "mean"))
-      .reset_index()
-      .sort_values("Mois_Period")
-  )
+  # 4. Groupement des données
+  if mode_agreg == "Par Jour":
+    df_classe["Period_Str"] = df_classe["date_prelevement"].dt.strftime(
+        "%d/%m/%Y"
+    )
+    df_grouped = (
+        df_classe.groupby(["date_prelevement", "Period_Str"])
+        .agg(RC_7J=("rc_7j", "mean"), RC_28J=("rc_28j", "mean"))
+        .reset_index()
+        .sort_values("date_prelevement")
+    )
+    df_grouped["X_Axis"] = df_grouped["Period_Str"]
+  else:
+    df_classe["Period"] = df_classe["date_prelevement"].dt.to_period("M")
+    df_grouped = (
+        df_classe.groupby("Period")
+        .agg(RC_7J=("rc_7j", "mean"), RC_28J=("rc_28j", "mean"))
+        .reset_index()
+        .sort_values("Period")
+    )
+    df_grouped["X_Axis"] = df_grouped["Period"].dt.strftime("%m/%Y")
 
-  # Formatage textuel explicite pour verrouiller l'axe X uniquement sur les mois présents
-  df_mensuel["Mois_Str"] = df_mensuel["Mois_Period"].dt.strftime("%m/%Y")
-
-  if df_mensuel.empty:
-    st.info("Aucune donnée d'écrasement disponible pour la période.")
+  if df_grouped.empty or (
+      df_grouped["RC_7J"].isna().all() and df_grouped["RC_28J"].isna().all()
+  ):
+    st.info("Aucune donnée d'écrasement disponible pour cette classe.")
     return
 
-  # 5. Construction du graphique Plotly
+  # 5. Graphique Plotly
   fig = go.Figure()
 
-  # Courbe Cible (fck)
+  # Ligne Cible (fck)
   fig.add_trace(
       go.Scatter(
-          x=df_mensuel["Mois_Str"],
-          y=[fck_cible] * len(df_mensuel),
+          x=df_grouped["X_Axis"],
+          y=[fck_cible] * len(df_grouped),
           mode="lines",
           name=f"Cible ({fck_cible} MPa)",
           line=dict(color="#1f77b4", width=2.5, dash="dash"),
       )
   )
 
-  # Courbe 28 Jours (Moyenne Mensuelle)
-  fig.add_trace(
-      go.Scatter(
-          x=df_mensuel["Mois_Str"],
-          y=df_mensuel["RC_28J"],
-          mode="lines+markers+text",
-          name="RC 28J (Moyenne)",
-          text=df_mensuel["RC_28J"].apply(
-              lambda v: f"{v:.1f}" if pd.notna(v) else ""
-          ),
-          textposition="top center",
-          line=dict(color="#5DADE2", width=3),
-          marker=dict(size=8),
-          connectgaps=True,
-      )
-  )
+  # Courbe 28 Jours
+  if df_grouped["RC_28J"].notna().any():
+    fig.add_trace(
+        go.Scatter(
+            x=df_grouped["X_Axis"],
+            y=df_grouped["RC_28J"],
+            mode="lines+markers+text",
+            name="RC 28J (Moyenne)",
+            text=df_grouped["RC_28J"].apply(
+                lambda v: f"{v:.1f}" if pd.notna(v) else ""
+            ),
+            textposition="top center",
+            line=dict(color="#5DADE2", width=3),
+            marker=dict(size=8),
+            connectgaps=True,
+        )
+    )
 
-  # Courbe 7 Jours (Moyenne Mensuelle)
-  fig.add_trace(
-      go.Scatter(
-          x=df_mensuel["Mois_Str"],
-          y=df_mensuel["RC_7J"],
-          mode="lines+markers+text",
-          name="RC 7J (Moyenne)",
-          text=df_mensuel["RC_7J"].apply(
-              lambda v: f"{v:.1f}" if pd.notna(v) else ""
-          ),
-          textposition="bottom center",
-          line=dict(color="#E74C3C", width=3),
-          marker=dict(size=8),
-          connectgaps=True,
-      )
-  )
+  # Courbe 7 Jours
+  if df_grouped["RC_7J"].notna().any():
+    fig.add_trace(
+        go.Scatter(
+            x=df_grouped["X_Axis"],
+            y=df_grouped["RC_7J"],
+            mode="lines+markers+text",
+            name="RC 7J (Moyenne)",
+            text=df_grouped["RC_7J"].apply(
+                lambda v: f"{v:.1f}" if pd.notna(v) else ""
+            ),
+            textposition="bottom center",
+            line=dict(color="#E74C3C", width=3),
+            marker=dict(size=8),
+            connectgaps=True,
+        )
+    )
 
-  # Personnalisation de l'affichage mensuel catégoriel
   fig.update_layout(
       title=dict(
           text=(
-              f"Évolution Mensuelle des Résistances - Classe"
+              f"Évolution des Résistances ({mode_agreg}) - Classe"
               f" {classe_selectionnee}"
           ),
           font=dict(size=18),
       ),
       xaxis=dict(
-          title="Mois",
+          title="Date / Période",
           type="category",
           showgrid=True,
           gridcolor="#E5E8E8",
@@ -1623,7 +1673,6 @@ def show(supabase):
           df_stats_j = compute_statistics_df(df_display_cj)
           st.dataframe(df_stats_j, use_container_width=True)
 
-          # COURBE PLOTLY DYNAMIQUE JOURNALIÈRE
           st.markdown("---")
           afficher_evolution_resistances(df_j_c, key_suffix="journalier")
 
@@ -1711,6 +1760,5 @@ def show(supabase):
           df_stats_m = compute_statistics_df(df_display_cm)
           st.dataframe(df_stats_m, use_container_width=True)
 
-          # COURBE PLOTLY DYNAMIQUE MENSUELLE
           st.markdown("---")
           afficher_evolution_resistances(df_m_c, key_suffix="mensuel")
