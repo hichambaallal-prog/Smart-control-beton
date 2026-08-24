@@ -61,7 +61,7 @@ def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=Non
 
 
 # =========================================================
-# FONCTION UTILITAIRE : EXTRACTION SÉCURISÉE DU N° BL
+# FONCTION UTILITAIRE : EXTRACTION SÉCURISÉE DU N° BL & DATE COULÉE
 # =========================================================
 def extraire_num_bl(*sources):
     """Inspecte récursivement les sources pour extraire le N° de Bon de Livraison (BL)."""
@@ -85,6 +85,17 @@ def extraire_num_bl(*sources):
                 if val and val.upper() not in invalid:
                     return val
     return "-"
+
+
+def extraire_date_coulee(item):
+    """Extrait la date de coulée / livraison exacte depuis l'objet bétonnage."""
+    if not item or not isinstance(item, dict):
+        return str(date.today())
+    for k in ["date_coulee", "date_livraison", "date_prelevement"]:
+        val = str(item.get(k) or "").strip()
+        if val and val.upper() not in ["N/A", "NONE", "NAN", "-", ""]:
+            return val[:10]
+    return str(date.today())
 
 
 # =========================================================
@@ -539,6 +550,9 @@ def show(supabase):
     except Exception as e:
         st.error(f"❌ Erreur lors du chargement des bétonnages : {e}")
 
+    # Indexation par ID pour synchronisation rapide des dates de coulée
+    map_betonnages = {b.get("id"): b for b in betonnages_preleves}
+
     # =========================================================
     # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION
     # =========================================================
@@ -553,10 +567,11 @@ def show(supabase):
             for item in betonnages_preleves:
                 aff_val = item.get("affaissement") or item.get("slump") or "-"
                 temp_val = item.get("temperature") or item.get("temp_beton") or "-"
+                dt_livraison_exacte = extraire_date_coulee(item)
                 rows_reception.append({
                     "_id_beton": item.get("id"),
                     "1-Numero de reception": str(item.get("num_reception") or ""),
-                    "2-Date de livraison": str(item.get("date_coulee") or item.get("date_livraison") or "-"),
+                    "2-Date de livraison": dt_livraison_exacte,
                     "3-Nb d'éprouvettes": int(item.get("nb_eprouvettes") or 12),
                     "4-Classe de béton": item.get("classe_beton") or item.get("classe") or "-",
                     "5-Ouvrage": item.get("ouvrage") or "-",
@@ -637,6 +652,36 @@ def show(supabase):
                     st.error(f"Erreur lors du chargement des programmations : {e}")
 
                 if eprouvettes_enregistrees:
+                    # Synchronisation automatique des dates de coulée incohérentes avec la Phase 0
+                    dates_corrigees_count = 0
+                    for ep in eprouvettes_enregistrees:
+                        parent_beton = map_betonnages.get(ep.get("betonnage_id"))
+                        if parent_beton:
+                            date_coulee_correcte = extraire_date_coulee(parent_beton)
+                            if ep.get("date_coulee") != date_coulee_correcte:
+                                ep["date_coulee"] = date_coulee_correcte
+                                # Recalcul automatique de la date d'écrasement en fonction de l'échéance
+                                try:
+                                    nb_j = int(str(ep.get("echeance", "28")).replace("jours", "").replace("j", "").strip())
+                                    dt_c = datetime.strptime(date_coulee_correcte, "%Y-%m-%d").date()
+                                    nouvelle_date_ecrasement = str(dt_c + timedelta(days=nb_j))
+                                    ep["date_ecrasement"] = nouvelle_date_ecrasement
+                                except Exception:
+                                    nouvelle_date_ecrasement = ep.get("date_ecrasement")
+
+                                # Mise à jour dans Supabase
+                                try:
+                                    supabase.table("suivi_controle_beton").update({
+                                        "date_coulee": date_coulee_correcte,
+                                        "date_ecrasement": nouvelle_date_ecrasement
+                                    }).eq("id", ep["id"]).execute()
+                                    dates_corrigees_count += 1
+                                except Exception:
+                                    pass
+
+                    if dates_corrigees_count > 0:
+                        st.success(f"🔄 **Synchronisation effectuée** : {dates_corrigees_count} date(s) de coulée réalignée(s) sur la Phase 0 !")
+
                     df_edit_prog = pd.DataFrame(eprouvettes_enregistrees)
                     cols_ed = [c for c in ["id", "betonnage_id", "ref_controle", "repere_eprouvette", "echeance", "date_ecrasement", "date_coulee", "ouvrage", "classe_beton"] if c in df_edit_prog.columns]
 
@@ -647,7 +692,8 @@ def show(supabase):
                             "betonnage_id": None,
                             "ref_controle": st.column_config.TextColumn("Réf. Contrôle (N° Réception)"),
                             "echeance": st.column_config.SelectboxColumn("Échéance", options=["3 jours", "7 jours", "28 jours", "90 jours"]),
-                            "date_coulee": st.column_config.TextColumn("Date Coulée", disabled=True),
+                            "date_coulee": st.column_config.TextColumn("Date Coulée"),
+                            "date_ecrasement": st.column_config.TextColumn("Date Écrasement"),
                             "ouvrage": st.column_config.TextColumn("Ouvrage", disabled=True),
                             "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
                         },
@@ -672,6 +718,7 @@ def show(supabase):
                                     "ref_controle": ref_ctrl,
                                     "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
                                     "echeance": str(r_m.get("echeance", "")).strip(),
+                                    "date_coulee": str(r_m.get("date_coulee", "")).strip(),
                                     "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
                                 }
                                 try:
@@ -715,7 +762,7 @@ def show(supabase):
 
         if betonnages_non_programmes:
             options_beton = {
-                f"N° Réception: {b.get('num_reception') or b.get('n_reception')} | Classe: {b.get('classe_beton', 'N/A')} | Date: {b.get('date_coulee', 'N/A')} | Ouvrage: {b.get('ouvrage', 'N/A')} | BL: {extraire_num_bl(b)}": b
+                f"N° Réception: {b.get('num_reception') or b.get('n_reception')} | Date Coulée: {extraire_date_coulee(b)} | Classe: {b.get('classe_beton', 'N/A')} | Ouvrage: {b.get('ouvrage', 'N/A')} | BL: {extraire_num_bl(b)}": b
                 for b in betonnages_non_programmes
             }
             choix_label_p = st.selectbox("Sélectionner la fiche de bétonnage :", list(options_beton.keys()), key="prog_beton_select")
@@ -729,8 +776,9 @@ def show(supabase):
             eprouvettes_deja_prog = prog_counts.get(b_id, 0)
             solde_disponible = max(0, total_eprouvettes_prevues - eprouvettes_deja_prog)
 
-            date_coulee_raw = beton_p.get("date_coulee") or str(date.today())
-            try: date_coulee_p = datetime.strptime(str(date_coulee_raw), "%Y-%m-%d").date()
+            # Lecture garantie de la Date Coulée directement depuis la Phase 0
+            date_coulee_raw = extraire_date_coulee(beton_p)
+            try: date_coulee_p = datetime.strptime(date_coulee_raw, "%Y-%m-%d").date()
             except Exception: date_coulee_p = date.today()
 
             st.markdown("---")
@@ -751,7 +799,7 @@ def show(supabase):
             echeance_key = echeance_p.replace(" ", "_")
 
             col_e1, col_e2, col_e3 = st.columns(3)
-            col_e1.date_input("Date de Coulée", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
+            col_e1.date_input("Date de Coulée (Phase 0)", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
             date_ecrasement_prevue = col_e2.date_input("Date d'Écrasement Prévue", value=date_coulee_p + timedelta(days=nb_j), key=f"p_date_ecras_{b_id}_{echeance_key}")
             
             max_allowed = solde_disponible if not mode_admin else 50
@@ -970,7 +1018,7 @@ def show(supabase):
                 "re_num": "25/260/LGV/ B/", "dossier": "2025-260-05985-2025-0247", "client": "TGCC",
                 "num_bl": exact_bl_phase1, "ouvrage": (info_betonnage or {}).get("ouvrage") or sample.get("ouvrage"),
                 "lieu_prelevement": (info_betonnage or {}).get("ouvrage") or sample.get("ouvrage"),
-                "classe_beton": sample.get("classe_beton", "C35/45"), "date_coulee": (info_betonnage or {}).get("date_coulee") or sample.get("date_coulee"),
+                "classe_beton": sample.get("classe_beton", "C35/45"), "date_coulee": extraire_date_coulee(info_betonnage or sample),
                 "affaissement": (info_betonnage or {}).get("affaissement"), "temperature": (info_betonnage or {}).get("temperature"),
                 "forme": sample.get("forme", "Cylindrique 150x300"), "centrale": (info_betonnage or {}).get("centrale") or sample.get("centrale"),
                 "observations": obs_globale, "technicien_prelevement": (info_betonnage or {}).get("technicien_prelevement") or tech_global,
