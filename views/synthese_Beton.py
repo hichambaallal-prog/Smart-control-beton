@@ -1,8 +1,6 @@
 from datetime import date, datetime
 import io
 import re
-import matplotlib.dates as mdates
-import matplotlib.pyplot as plt
 import numpy as np
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -38,15 +36,14 @@ def get_default_fck(df_display):
 
 
 # =========================================================
-# GRAPHIQUE MATPLOTLIB - ÉVOLUTION RÉSISTANCE BÉTON
+# GRAPHIQUE NATIF STREAMLIT (SANS DÉPENDANCE EXTERNE)
 # =========================================================
 
 
-def generer_courbe_beton(df_classe, valeur_fck=30.0):
-  fig, ax = plt.subplots(figsize=(10, 4.5))
-
+def afficher_courbe_beton(df_classe, valeur_fck=30.0):
   if df_classe.empty or "Date Coulée" not in df_classe.columns:
-    return fig
+    st.info("Données insuffisantes pour afficher le graphique.")
+    return
 
   df_plot = df_classe.copy()
   df_plot["Date_dt_plot"] = pd.to_datetime(
@@ -55,56 +52,26 @@ def generer_courbe_beton(df_classe, valeur_fck=30.0):
   df_plot = df_plot.dropna(subset=["Date_dt_plot"]).sort_values("Date_dt_plot")
 
   if df_plot.empty:
-    return fig
+    st.info("Aucune date valide pour le graphique.")
+    return
 
-  # Courbe à 7 jours (Vert)
+  chart_data = {}
+
   if "Moy. Fc (MPa) [7 Jours]" in df_plot.columns:
-    y7 = pd.to_numeric(df_plot["Moy. Fc (MPa) [7 Jours]"], errors="coerce")
-    ax.plot(
-        df_plot["Date_dt_plot"],
-        y7,
-        marker="o",
-        color="#8BC34A",
-        linewidth=2.5,
-        label="RC 7J",
+    chart_data["RC 7J"] = pd.to_numeric(
+        df_plot["Moy. Fc (MPa) [7 Jours]"], errors="coerce"
     )
 
-  # Courbe à 28 jours (Bleu)
   if "Moy. Fc (MPa) [28 Jours]" in df_plot.columns:
-    y28 = pd.to_numeric(df_plot["Moy. Fc (MPa) [28 Jours]"], errors="coerce")
-    ax.plot(
-        df_plot["Date_dt_plot"],
-        y28,
-        marker="o",
-        color="#4A86E8",
-        linewidth=2.5,
-        label="RC 28J",
+    chart_data["RC 28J"] = pd.to_numeric(
+        df_plot["Moy. Fc (MPa) [28 Jours]"], errors="coerce"
     )
 
-  # Ligne de la valeur caractéristique (Rouge fixe)
   if valeur_fck is not None and valeur_fck > 0:
-    ax.axhline(
-        y=valeur_fck,
-        color="#FF0000",
-        linestyle="--",
-        linewidth=1.5,
-        label=f"Valeur cible ({valeur_fck} MPa)",
-    )
+    chart_data[f"Cible ({valeur_fck} MPa)"] = valeur_fck
 
-  ax.set_title(
-      "📈 Évolution Chronologique des Résistances du Béton",
-      fontsize=12,
-      fontweight="bold",
-      pad=12,
-  )
-  ax.set_xlabel("Date de coulage", fontsize=10)
-  ax.set_ylabel("Résistance (MPa)", fontsize=10)
-  ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m/%Y"))
-  ax.grid(True, linestyle=":", alpha=0.6)
-  ax.legend(loc="lower right", frameon=True)
-  plt.tight_layout()
-
-  return fig
+  df_chart = pd.DataFrame(chart_data, index=df_plot["Date_dt_plot"])
+  st.line_chart(df_chart)
 
 
 # =========================================================
@@ -1508,9 +1475,10 @@ def show(supabase):
           st.dataframe(df_stats_j, use_container_width=True)
 
           # =========================================================
-          # COURBE MATPLOTLIB JOURNALIÈRE
+          # COURBE STREAMLIT NATIVE JOURNALIÈRE
           # =========================================================
           st.markdown("---")
+          st.markdown("### 📈 Évolution Chronologique des Résistances")
           default_fck_j = get_default_fck(df_display_cj)
           valeur_fck_j = st.number_input(
               "Valeur cible caractéristique fck (MPa) :",
@@ -1520,8 +1488,7 @@ def show(supabase):
               step=1.0,
               key="fck_j_input",
           )
-          fig_j = generer_courbe_beton(df_display_cj, valeur_fck_j)
-          st.pyplot(fig_j, use_container_width=True)
+          afficher_courbe_beton(df_display_cj, valeur_fck_j)
 
     with tab_m_c:
       st.markdown("### Bilan mensuel par classe et ouvrage")
@@ -1608,9 +1575,10 @@ def show(supabase):
           st.dataframe(df_stats_m, use_container_width=True)
 
           # =========================================================
-          # COURBE MATPLOTLIB MENSUELLE
+          # COURBE STREAMLIT NATIVE MENSUELLE
           # =========================================================
           st.markdown("---")
+          st.markdown("### 📈 Évolution Chronologique des Résistances")
           default_fck_m = get_default_fck(df_display_cm)
           valeur_fck = st.number_input(
               "Valeur cible caractéristique fck (MPa) :",
@@ -1621,5 +1589,4 @@ def show(supabase):
               key="fck_mensuel_input",
           )
 
-          fig_beton = generer_courbe_beton(df_display_cm, valeur_fck)
-          st.pyplot(fig_beton, use_container_width=True)
+          afficher_courbe_beton(df_display_cm, valeur_fck)
