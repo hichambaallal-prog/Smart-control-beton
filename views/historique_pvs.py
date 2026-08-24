@@ -55,16 +55,25 @@ def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=Non
         
     num_clean = str(num_reception).strip()
     try:
-        res = (
+        # Recherche par num_reception
+        res1 = (
+            supabase.table("suivi_betonnage")
+            .select("id, num_reception")
+            .eq("num_reception", num_clean)
+            .execute()
+        )
+        # Recherche par num_reception si applicable
+        res2 = (
             supabase.table("suivi_betonnage")
             .select("id, num_reception")
             .eq("num_reception", num_clean)
             .execute()
         )
         
-        matches = res.data or []
+        matches = (res1.data or []) + (res2.data or [])
         
         for m in matches:
+            # S'il existe un enregistrement ayant le même numéro mais un ID différent
             if current_beton_id is None or int(m.get("id")) != int(current_beton_id):
                 return True
     except Exception as e:
@@ -205,6 +214,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["E1"] = "RE N° :"
     ws["E1"].font = font_bold
     
+    # ----------- MODIFICATIONS COLONNES F, G et H -----------
     ws.merge_cells("F1:G1")
     ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/")
     ws["F1"].font = font_regular
@@ -212,6 +222,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["H1"] = "BETON"
     ws["H1"].font = font_bold
     ws["H1"].alignment = align_center
+    # --------------------------------------------------------
 
     ws["E2"] = "DOSSIER :"
     ws["E2"].font = font_bold
@@ -632,7 +643,7 @@ def generer_pv_excel(export_data, infos_header):
 def exporter_dataframe_excel(df, date_chaine):
     """Génère un fichier Excel à partir du DataFrame."""
     buffer = io.BytesIO()
-    nom_feuille = f"Planning_{date_chaine}"[:31]
+    nom_feuille = f"Planning_{date_chaine}"[:31]  # Limitation max 31 caractères pour Excel
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name=nom_feuille)
 
@@ -689,7 +700,10 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
     if session_key in st.session_state and st.session_state[session_key]:
         return st.session_state[session_key]
 
-    num_reception = info_betonnage.get("num_reception") if info_betonnage else None
+    # --- Priorité au Numéro de Réception ---
+    num_reception = None
+    if info_betonnage:
+        num_reception = info_betonnage.get("num_reception") or info_betonnage.get("num_reception")
     
     if num_reception and str(num_reception).strip() not in ["", "-", "None", "NaN", "N/A"]:
         val_defaut = str(num_reception).strip()
@@ -753,6 +767,9 @@ def show(supabase):
             if not df_valides.empty:
                 st.markdown("##### 📥 Re-télécharger un Procès-Verbal")
 
+                # =================================================
+                # DOUBLE BARRE DE RECHERCHE POUR LES PVs
+                # =================================================
                 col_rech_pv1, col_rech_pv2 = st.columns(2)
                 
                 with col_rech_pv1:
@@ -790,6 +807,7 @@ def show(supabase):
                         groupes_valides[cle_pv] = []
                     groupes_valides[cle_pv].append(row.to_dict())
 
+                # Application des filtres de recherche sur les clés
                 liste_cles_pvs = list(groupes_valides.keys())
                 
                 if recherche_pv:
@@ -907,7 +925,6 @@ def show(supabase):
             colonnes_ordre = [
                 "id",
                 "betonnage_id",
-                "ref_controle",
                 "repere_eprouvette",
                 "num_bl",
                 "ouvrage",
@@ -917,18 +934,34 @@ def show(supabase):
                 "temp_beton_C",
                 "echeance",
                 "date_ecrasement",
-                "forme",
-                "section",
-                "force_kn",
                 "fc_mpa",
                 "technicien",
-                "observations"
             ]
 
             cols_existantes = [col for col in colonnes_ordre if col in df_all.columns]
             cols_restantes = [col for col in df_all.columns if col not in cols_existantes]
             df_final = df_all[cols_existantes + cols_restantes]
 
+            # ==========================================
+            # EXCLUSION DE TOUTES LES COLONNES DEMANDÉES
+            # ==========================================
+            colonnes_a_exclure = [
+                "forme", 
+                "section", 
+                "force_kn", 
+                "observations", 
+                "masse", 
+                "ref_controle", 
+                "reference_controle",
+                "refernce_controle", 
+                "num_reception"
+            ]
+            colonnes_a_garder = [col for col in df_final.columns if col not in colonnes_a_exclure]
+            df_final = df_final[colonnes_a_garder]
+
+            # ==========================================
+            # FILTRES DE RECHERCHE POUR LE TABLEAU GLOBAL
+            # ==========================================
             col_search_tab1, col_search_tab2 = st.columns(2)
             
             with col_search_tab1:
@@ -937,11 +970,21 @@ def show(supabase):
             with col_search_tab2:
                 search_date_tab = st.text_input("📅 Recherche par Date de coulée", placeholder="Ex: 2026-08-24")
 
-            if search_ref_tab:
-                df_final = df_final[df_final["ref_controle"].astype(str).str.contains(search_ref_tab, case=False, na=False)]
+            # Application des filtres sur le dataframe d'origine si le champ réference est saisi
+            if search_ref_tab: 
+                col_ref_trouvee = None
+                for col_ref in ["ref_controle", "reference_controle", "refernce_controle"]:
+                    if col_ref in df_all.columns:
+                        col_ref_trouvee = col_ref
+                        break
+                
+                if col_ref_trouvee:
+                    masque_recherche_ref = df_all[col_ref_trouvee].astype(str).str.contains(search_ref_tab, case=False, na=False)
+                    df_final = df_final[masque_recherche_ref]
                 
             if search_date_tab:
                 df_final = df_final[df_final["date_coulee"].astype(str).str.contains(search_date_tab, case=False, na=False)]
+            # ==========================================
 
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
