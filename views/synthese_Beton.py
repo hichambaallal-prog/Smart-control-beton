@@ -55,23 +55,32 @@ def afficher_evolution_resistances(df, key_suffix=""):
 
   df_plot = df.copy()
 
-  # Normalisation automatique des noms de colonnes (brutes vs formatées)
+  # Mappage étendu des colonnes brutes et formatées
   col_map = {
       "Date Coulée": "date_prelevement",
       "Date Prélèvement": "date_prelevement",
+      "date_coulee": "date_prelevement",
+      "date_prelevement": "date_prelevement",
       "Classe Béton": "classe_beton",
+      "classe_beton": "classe_beton",
       "Classe": "classe_beton",
       "Moy. Fc (MPa) [7 Jours]": "rc_7j",
+      "Fc (MPa) [7 Jours]": "rc_7j",
+      "fc_mpa_7 jours": "rc_7j",
+      "rc_7j": "rc_7j",
       "Moy. Fc (MPa) [28 Jours]": "rc_28j",
+      "Fc (MPa) [28 Jours]": "rc_28j",
+      "fc_mpa_28 jours": "rc_28j",
+      "rc_28j": "rc_28j",
   }
   df_plot = df_plot.rename(
       columns={k: v for k, v in col_map.items() if k in df_plot.columns}
   )
 
-  # 1. Conversion et formatage des dates au format mensuel
+  # 1. Conversion des dates
   if "date_prelevement" in df_plot.columns:
     df_plot["date_prelevement"] = pd.to_datetime(
-        df_plot["date_prelevement"], dayfirst=True, errors="coerce"
+        df_plot["date_prelevement"], errors="coerce"
     )
     df_plot = df_plot.dropna(subset=["date_prelevement"])
   else:
@@ -122,32 +131,36 @@ def afficher_evolution_resistances(df, key_suffix=""):
       key=f"fck_input_{key_suffix}",
   )
 
-  # 4. Groupement mensuel et calcul des moyennes de résistance
-  df_classe["rc_7j"] = pd.to_numeric(df_classe.get("rc_7j"), errors="coerce")
-  df_classe["rc_28j"] = pd.to_numeric(df_classe.get("rc_28j"), errors="coerce")
+  # 4. Conversion numérique et groupement mensuel strict
+  for col_rc in ["rc_7j", "rc_28j"]:
+    if col_rc in df_classe.columns:
+      df_classe[col_rc] = pd.to_numeric(df_classe[col_rc], errors="coerce")
+    else:
+      df_classe[col_rc] = np.nan
 
-  df_classe["Mois"] = (
-      df_classe["date_prelevement"].dt.to_period("M").dt.to_timestamp()
-  )
+  df_classe["Mois_Period"] = df_classe["date_prelevement"].dt.to_period("M")
 
   df_mensuel = (
-      df_classe.groupby("Mois")
+      df_classe.groupby("Mois_Period")
       .agg(RC_7J=("rc_7j", "mean"), RC_28J=("rc_28j", "mean"))
       .reset_index()
-      .sort_values("Mois")
+      .sort_values("Mois_Period")
   )
+
+  # Formatage textuel explicite pour verrouiller l'axe X uniquement sur les mois présents
+  df_mensuel["Mois_Str"] = df_mensuel["Mois_Period"].dt.strftime("%m/%Y")
 
   if df_mensuel.empty:
     st.info("Aucune donnée d'écrasement disponible pour la période.")
     return
 
-  # 5. Construction du graphique Plotly avec repères mensuels
+  # 5. Construction du graphique Plotly
   fig = go.Figure()
 
   # Courbe Cible (fck)
   fig.add_trace(
       go.Scatter(
-          x=df_mensuel["Mois"],
+          x=df_mensuel["Mois_Str"],
           y=[fck_cible] * len(df_mensuel),
           mode="lines",
           name=f"Cible ({fck_cible} MPa)",
@@ -158,28 +171,38 @@ def afficher_evolution_resistances(df, key_suffix=""):
   # Courbe 28 Jours (Moyenne Mensuelle)
   fig.add_trace(
       go.Scatter(
-          x=df_mensuel["Mois"],
+          x=df_mensuel["Mois_Str"],
           y=df_mensuel["RC_28J"],
-          mode="lines+markers",
+          mode="lines+markers+text",
           name="RC 28J (Moyenne)",
+          text=df_mensuel["RC_28J"].apply(
+              lambda v: f"{v:.1f}" if pd.notna(v) else ""
+          ),
+          textposition="top center",
           line=dict(color="#5DADE2", width=3),
           marker=dict(size=8),
+          connectgaps=True,
       )
   )
 
   # Courbe 7 Jours (Moyenne Mensuelle)
   fig.add_trace(
       go.Scatter(
-          x=df_mensuel["Mois"],
+          x=df_mensuel["Mois_Str"],
           y=df_mensuel["RC_7J"],
-          mode="lines+markers",
+          mode="lines+markers+text",
           name="RC 7J (Moyenne)",
+          text=df_mensuel["RC_7J"].apply(
+              lambda v: f"{v:.1f}" if pd.notna(v) else ""
+          ),
+          textposition="bottom center",
           line=dict(color="#E74C3C", width=3),
           marker=dict(size=8),
+          connectgaps=True,
       )
   )
 
-  # Personnalisation des axes et de l'affichage mensuel
+  # Personnalisation de l'affichage mensuel catégoriel
   fig.update_layout(
       title=dict(
           text=(
@@ -190,8 +213,7 @@ def afficher_evolution_resistances(df, key_suffix=""):
       ),
       xaxis=dict(
           title="Mois",
-          tickformat="%B %Y",
-          dtick="M1",
+          type="category",
           showgrid=True,
           gridcolor="#E5E8E8",
       ),
@@ -867,8 +889,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     )
 
     f_std_fc28 = f"=STDEV.S({col_map_excel['fc28']}{start_data_row}:{col_map_excel['fc28']}{end_data_row})"
-f_cv_fc28 = f"=IFERROR(({col_map_excel['fc28']}{row_std}/{col_map_excel['fc28']}{row_moy})*100, 0)"
-    )
+    f_cv_fc28 = f"=IFERROR(({col_map_excel['fc28']}{row_std}/{col_map_excel['fc28']}{row_moy})*100, 0)"
   else:
     f_min_aff = f_moy_aff = f_max_aff = "-"
     f_min_temp = f_moy_temp = f_max_temp = "-"
@@ -1602,11 +1623,9 @@ def show(supabase):
           df_stats_j = compute_statistics_df(df_display_cj)
           st.dataframe(df_stats_j, use_container_width=True)
 
-          # =========================================================
           # COURBE PLOTLY DYNAMIQUE JOURNALIÈRE
-          # =========================================================
           st.markdown("---")
-          afficher_evolution_resistances(df_display_cj, key_suffix="journalier")
+          afficher_evolution_resistances(df_j_c, key_suffix="journalier")
 
     with tab_m_c:
       st.markdown("### Bilan mensuel par classe et ouvrage")
@@ -1692,8 +1711,6 @@ def show(supabase):
           df_stats_m = compute_statistics_df(df_display_cm)
           st.dataframe(df_stats_m, use_container_width=True)
 
-          # =========================================================
           # COURBE PLOTLY DYNAMIQUE MENSUELLE
-          # =========================================================
           st.markdown("---")
-          afficher_evolution_resistances(df_display_cm, key_suffix="mensuel")
+          afficher_evolution_resistances(df_m_c, key_suffix="mensuel")
