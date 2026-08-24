@@ -1,6 +1,7 @@
 from datetime import date, datetime
 import io
 import re
+import matplotlib.pyplot as plt
 import numpy as np
 import openpyxl
 from openpyxl.chart import LineChart, Reference
@@ -43,7 +44,7 @@ def get_default_fck(df_display):
 
 
 # =========================================================
-# GÉNÉRATION DU FICHIER EXCEL POUR LA COURBE (GRAPHIQUE NATIF EXCEL)
+# GÉNÉRATION DES FICHIERS POUR LA COURBE (EXCEL & PDF)
 # =========================================================
 
 
@@ -103,9 +104,6 @@ def generate_excel_courbe(
   chart.width = 18
   chart.height = 10
 
-  # CORRECTION 1 : Relier les points de mesure en ignorant les cellules vides
-  chart.display_blanks_as = "span"
-
   data = Reference(
       ws, min_col=2, min_row=1, max_col=4, max_row=len(df_grouped) + 1
   )
@@ -114,16 +112,96 @@ def generate_excel_courbe(
   chart.add_data(data, titles_from_data=True)
   chart.set_categories(cats)
 
-  # CORRECTION 2 : Ajouter des marqueurs sur chaque série pour rendre les points isolés visibles
-  for series in chart.series:
-    series.marker.symbol = "circle"
-    series.marker.size = 5
-    series.graphicalProperties.line.width = 20000
-
   # Positionnement du graphique dans la feuille
   ws.add_chart(chart, "F2")
 
   wb.save(output)
+  output.seek(0)
+  return output.getvalue()
+
+
+def generate_pdf_courbe(
+    df_grouped, classe_selectionnee, fck_cible, mode_agreg
+):
+  """Génère un fichier PDF haute définition contant la courbe d'évolution des résistances."""
+  fig_pdf, ax = plt.subplots(figsize=(10, 5), dpi=300)
+
+  # Ligne de référence Cible
+  ax.plot(
+      df_grouped["X_Axis"],
+      [fck_cible] * len(df_grouped),
+      label=f"Cible ({fck_cible} MPa)",
+      color="#1f77b4",
+      linestyle="--",
+      linewidth=2,
+  )
+
+  # Courbe RC 28J
+  if df_grouped["RC_28J"].notna().any():
+    ax.plot(
+        df_grouped["X_Axis"],
+        df_grouped["RC_28J"],
+        label="RC 28J",
+        color="#5DADE2",
+        marker="o",
+        linewidth=2.5,
+    )
+    for i, txt in enumerate(df_grouped["RC_28J"]):
+      if pd.notna(txt):
+        ax.annotate(
+            f"{txt:.1f}",
+            (df_grouped["X_Axis"].iloc[i], txt),
+            textcoords="offset points",
+            xytext=(0, 7),
+            ha="center",
+            fontsize=8,
+            fontweight="bold",
+            color="#2C3E50",
+        )
+
+  # Courbe RC 7J
+  if df_grouped["RC_7J"].notna().any():
+    ax.plot(
+        df_grouped["X_Axis"],
+        df_grouped["RC_7J"],
+        label="RC 7J",
+        color="#E74C3C",
+        marker="o",
+        linewidth=2.5,
+    )
+    for i, txt in enumerate(df_grouped["RC_7J"]):
+      if pd.notna(txt):
+        ax.annotate(
+            f"{txt:.1f}",
+            (df_grouped["X_Axis"].iloc[i], txt),
+            textcoords="offset points",
+            xytext=(0, -14),
+            ha="center",
+            fontsize=8,
+            fontweight="bold",
+            color="#900C3F",
+        )
+
+  ax.set_title(
+      f"Évolution des Résistances ({mode_agreg}) - Classe {classe_selectionnee}",
+      fontsize=12,
+      fontweight="bold",
+      pad=15,
+  )
+  ax.set_xlabel("Date / Période", fontsize=10, fontweight="bold")
+  ax.set_ylabel(
+      "Résistance à la compression (MPa)", fontsize=10, fontweight="bold"
+  )
+  ax.grid(True, linestyle=":", alpha=0.6)
+  ax.legend(
+      loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3, frameon=True
+  )
+  plt.xticks(rotation=45 if len(df_grouped) > 8 else 0)
+  plt.tight_layout()
+
+  output = io.BytesIO()
+  plt.savefig(output, format="pdf", bbox_inches="tight")
+  plt.close(fig_pdf)
   output.seek(0)
   return output.getvalue()
 
@@ -370,18 +448,36 @@ def afficher_evolution_resistances(df, key_suffix=""):
 
   st.plotly_chart(fig, use_container_width=True)
 
-  # Téléchargement de la courbe au format Excel avec graphique natif
+  # Exportation Téléchargement : Excel + PDF
+  col_dl1, col_dl2 = st.columns(2)
+
   excel_courbe_bytes = generate_excel_courbe(
       df_grouped, classe_selectionnee, fck_cible, mode_agreg
   )
-  clean_cls = str(classe_selectionnee).replace(" ", "_").replace("/", "-")
-  st.download_button(
-      label="📊 Télécharger la courbe en Excel (.xlsx)",
-      data=excel_courbe_bytes,
-      file_name=f"Courbe_Evolution_Resistances_{clean_cls}.xlsx",
-      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      key=f"download_fig_excel_{key_suffix}",
+  pdf_courbe_bytes = generate_pdf_courbe(
+      df_grouped, classe_selectionnee, fck_cible, mode_agreg
   )
+  clean_cls = (
+      str(classe_selectionnee).replace(" ", "_").replace("/", "-")
+  )
+
+  with col_dl1:
+    st.download_button(
+        label="📊 Télécharger la courbe en Excel (.xlsx)",
+        data=excel_courbe_bytes,
+        file_name=f"Courbe_Evolution_Resistances_{clean_cls}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"download_fig_excel_{key_suffix}",
+    )
+
+  with col_dl2:
+    st.download_button(
+        label="📄 Télécharger la courbe en PDF (.pdf)",
+        data=pdf_courbe_bytes,
+        file_name=f"Courbe_Evolution_Resistances_{clean_cls}.pdf",
+        mime="application/pdf",
+        key=f"download_fig_pdf_{key_suffix}",
+    )
 
 
 # =========================================================
@@ -389,9 +485,7 @@ def afficher_evolution_resistances(df, key_suffix=""):
 # =========================================================
 
 
-def generate_excel_synthesis_betonnage(
-    df_data, titre_periode, is_mensuel=False
-):
+def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False):
   output = io.BytesIO()
   wb = openpyxl.Workbook()
   ws = wb.active
