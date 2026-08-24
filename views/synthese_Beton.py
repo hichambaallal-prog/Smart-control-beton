@@ -103,6 +103,9 @@ def generate_excel_courbe(
   chart.width = 18
   chart.height = 10
 
+  # CORRECTION 1 : Relier les points de mesure en ignorant les cellules vides
+  chart.display_blanks_as = "span"
+
   data = Reference(
       ws, min_col=2, min_row=1, max_col=4, max_row=len(df_grouped) + 1
   )
@@ -110,6 +113,12 @@ def generate_excel_courbe(
 
   chart.add_data(data, titles_from_data=True)
   chart.set_categories(cats)
+
+  # CORRECTION 2 : Ajouter des marqueurs sur chaque série pour rendre les points isolés visibles
+  for series in chart.series:
+    series.marker.symbol = "circle"
+    series.marker.size = 5
+    series.graphicalProperties.line.width = 20000
 
   # Positionnement du graphique dans la feuille
   ws.add_chart(chart, "F2")
@@ -365,9 +374,7 @@ def afficher_evolution_resistances(df, key_suffix=""):
   excel_courbe_bytes = generate_excel_courbe(
       df_grouped, classe_selectionnee, fck_cible, mode_agreg
   )
-  clean_cls = (
-      str(classe_selectionnee).replace(" ", "_").replace("/", "-")
-  )
+  clean_cls = str(classe_selectionnee).replace(" ", "_").replace("/", "-")
   st.download_button(
       label="📊 Télécharger la courbe en Excel (.xlsx)",
       data=excel_courbe_bytes,
@@ -382,7 +389,9 @@ def afficher_evolution_resistances(df, key_suffix=""):
 # =========================================================
 
 
-def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False):
+def generate_excel_synthesis_betonnage(
+    df_data, titre_periode, is_mensuel=False
+):
   output = io.BytesIO()
   wb = openpyxl.Workbook()
   ws = wb.active
