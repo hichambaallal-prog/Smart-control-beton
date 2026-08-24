@@ -103,7 +103,7 @@ def show(supabase):
                     "temperature_ambiante": float(temp_ambiante),
                     "affaissement": int(affaissement),
                     "prelevement": prelevement,
-                    "nb_eprouvettes": int(nb_eprouvettes),
+                    "nb_eprouvettes": 0 if prelevement == "NON" else int(nb_eprouvettes),
                     "observations": observations,
                     "technicien": technicien
                 }
@@ -126,9 +126,13 @@ def show(supabase):
         if res.data:
             df = pd.DataFrame(res.data)
             
-            # Nettoyage d'affichage de la colonne "prelevement" pour les anciens enregistrements
+            # Nettoyage d'affichage de la colonne "prelevement" et mise à zéro systématique si NON
             if "prelevement" in df.columns:
                 df["prelevement"] = df["prelevement"].apply(lambda x: "OUI" if "OUI" in str(x).upper() else ("NON" if "NON" in str(x).upper() else str(x)))
+                
+                # RÈGLE : Si Prélèvement est NON, Nb Éprouvettes doit être systématiquement 0
+                if "nb_eprouvettes" in df.columns:
+                    df.loc[df["prelevement"] == "NON", "nb_eprouvettes"] = 0
 
             # 1. Calcul de la colonne "Durée de transport (min)"
             if "heure_fin_coulage" in df.columns and "heure_arrivee" in df.columns:
@@ -197,7 +201,8 @@ def show(supabase):
                 "Durée de transport": lambda x: f"{int(x)} min" if pd.notna(x) else "-",
                 "Quantité (m³)": "{:.0f}",
                 "Temp. Béton": "{:.1f}",
-                "Temp. Ambiante": "{:.1f}"
+                "Temp. Ambiante": "{:.1f}",
+                "Nb Éprouvettes": "{:.0f}"
             }
 
             styled_df = df.style.map(style_duree_transport, subset=["Durée de transport"]).format(format_dict)
@@ -271,7 +276,8 @@ def show(supabase):
                             idx_prel = prelevement_list.index(current_prel)
                             new_prelevement = st.selectbox("Prélèvement", prelevement_list, index=idx_prel, key=f"edit_prel_{rec_id}")
                             
-                            new_nb_eprouvettes = st.number_input("Nb d'éprouvettes", value=int(selected_item.get("nb_eprouvettes", 0)), min_value=0, key=f"edit_eprov_{rec_id}")
+                            def_eprov = 0 if new_prelevement == "NON" else int(selected_item.get("nb_eprouvettes", 0))
+                            new_nb_eprouvettes = st.number_input("Nb d'éprouvettes", value=def_eprov, min_value=0, key=f"edit_eprov_{rec_id}")
                             new_observations = st.text_area("Observations", value=selected_item.get("observations", ""), key=f"edit_obs_{rec_id}")
                             
                             if st.form_submit_button("💾 Enregistrer toutes les modifications"):
@@ -298,7 +304,7 @@ def show(supabase):
                                             "temperature_ambiante": float(new_temp_amb),
                                             "affaissement": int(new_affaissement),
                                             "prelevement": new_prelevement,
-                                            "nb_eprouvettes": int(new_nb_eprouvettes),
+                                            "nb_eprouvettes": 0 if new_prelevement == "NON" else int(new_nb_eprouvettes),
                                             "observations": new_observations
                                         }).eq("id", rec_id).execute()
                                         
