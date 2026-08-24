@@ -917,7 +917,48 @@ def show(supabase):
             cols_existantes = [col for col in colonnes_ordre if col in df_all.columns]
             cols_restantes = [col for col in df_all.columns if col not in cols_existantes]
             df_final = df_all[cols_existantes + cols_restantes]
+# ... (votre code précédent de renommage et d'ordre des colonnes) ...
+            
+            cols_existantes = [col for col in colonnes_ordre if col in df_all.columns]
+            cols_restantes = [col for col in df_all.columns if col not in cols_existantes]
+            df_final = df_all[cols_existantes + cols_restantes]
 
+            # ==========================================
+            # AJOUT DES FILTRES DE RECHERCHE
+            # ==========================================
+            col_search1, col_search2 = st.columns(2)
+            
+            with col_search1:
+                search_ref = st.text_input("🔍 Recherche par Réf. Contrôle", placeholder="Ex: REF-123-GARE CASA SUD")
+                
+            with col_search2:
+                search_date = st.text_input("📅 Recherche par Date de coulée", placeholder="Ex: 2026-08-24")
+
+            # Application des filtres si les champs ne sont pas vides
+            if search_ref:
+                df_final = df_final[df_final["ref_controle"].astype(str).str.contains(search_ref, case=False, na=False)]
+                
+            if search_date:
+                df_final = df_final[df_final["date_coulee"].astype(str).str.contains(search_date, case=False, na=False)]
+            # ==========================================
+
+            # Affichage du DataFrame filtré
+            st.dataframe(df_final, use_container_width=True, hide_index=True)
+
+            excel_historique = exporter_dataframe_excel(df_final, "Historique_Global")
+            st.download_button(
+                label="📊 Télécharger la base de données globale (Excel)",
+                data=excel_historique,
+                file_name=f"Historique_Global_Beton_{date.today()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="btn_download_hist_global",
+            )
+        else:
+            st.info("ℹ️ Aucun historique disponible dans la base de données.")
+            
+    except Exception as e:
+        st.error(f"Erreur lors du chargement de l'historique global : {e}")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
             excel_historique = exporter_dataframe_excel(df_final, "Historique_Global")
