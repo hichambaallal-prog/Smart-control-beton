@@ -284,6 +284,19 @@ def afficher_evolution_resistances(df, key_suffix=""):
 
   st.plotly_chart(fig, use_container_width=True)
 
+  # Téléchargement du graphique sous forme HTML interactif
+  html_bytes = fig.to_html(include_plotlyjs="cdn").encode("utf-8")
+  clean_cls = (
+      str(classe_selectionnee).replace(" ", "_").replace("/", "-")
+  )
+  st.download_button(
+      label="📉 Télécharger la courbe (HTML interactif)",
+      data=html_bytes,
+      file_name=f"Courbe_Evolution_Resistances_{clean_cls}.html",
+      mime="text/html",
+      key=f"download_fig_html_{key_suffix}",
+  )
+
 
 # =========================================================
 # 1. GENERATION EXCEL (CONFORME LPEE - LGV CASA SUD)
@@ -1191,7 +1204,6 @@ def load_and_process_controle_data(supabase):
     valid_dates = group_df["date_dt"].dropna()
     row_dict["date_dt"] = valid_dates.min() if not valid_dates.empty else pd.NaT
 
-    # MISE À JOUR : Préservation des valeurs individuelles au lieu d'une moyenne
     for ech in ["3 jours", "7 jours", "28 jours"]:
       vals = group_df[group_df["echeance_clean"] == ech]["fc_mpa"].dropna()
       if not vals.empty:
