@@ -286,7 +286,7 @@ def generate_excel_synthesis_betonnage(
   end_data_row = row_idx - 1
 
   # Statistiques MIN / MAX
-  headers_flat = [
+ headers_flat = [
       c[0] if is_multi else str(c) for c in df_data.columns[:nb_cols]
   ]
   target_kws = [
@@ -304,24 +304,22 @@ def generate_excel_synthesis_betonnage(
 
   for stat_label in ["MIN", "MAX"]:
     ws.row_dimensions[row_idx].height = 26
-    ws.cell(
-        row=row_idx,
-        column=1,
-        value=stat_label,
-        font=FONT_BOLD,
-        fill=FILL_STAT,
-        alignment=ALIGN_CENTER,
-        border=BORDER_DARK,
-    )
+    
+    # --- CORRECTION 1 : Label de la statistique ---
+    c_stat = ws.cell(row=row_idx, column=1, value=stat_label)
+    c_stat.font = FONT_BOLD
+    c_stat.fill = FILL_STAT
+    c_stat.alignment = ALIGN_CENTER
+    c_stat.border = BORDER_DARK
+
     for col_num in range(2, len(headers_flat) + 1):
-      c = ws.cell(
-          row=row_idx,
-          column=col_num,
-          font=FONT_BOLD,
-          fill=FILL_STAT,
-          alignment=ALIGN_CENTER,
-          border=BORDER_DARK,
-      )
+      # --- CORRECTION 2 : Cellules de calcul des statistiques ---
+      c = ws.cell(row=row_idx, column=col_num)
+      c.font = FONT_BOLD
+      c.fill = FILL_STAT
+      c.alignment = ALIGN_CENTER
+      c.border = BORDER_DARK
+      
       if col_num in target_cols:
         col_ltr = get_column_letter(col_num)
         c.value = (
@@ -338,23 +336,20 @@ def generate_excel_synthesis_betonnage(
   # Total Volume
   ws.row_dimensions[row_idx].height = 30
   for col_num in range(1, len(headers_flat) + 1):
-    c = ws.cell(
-        row=row_idx,
-        column=col_num,
-        font=FONT_BOLD,
-        border=BORDER_TOTAL,
-        alignment=ALIGN_CENTER,
-    )
+    # --- CORRECTION 3 : Ligne du Total ---
+    c = ws.cell(row=row_idx, column=col_num)
+    c.font = FONT_BOLD
+    c.border = BORDER_TOTAL
+    c.alignment = ALIGN_CENTER
+    
     if col_num == 1:
       c.value = "TOTAL"
     else:
       col_name = headers_flat[col_num - 1]
       if "quantité" in col_name.lower() or "volume" in col_name.lower():
         col_ltr = get_column_letter(col_num)
-        c.value, c.number_format = (
-            f"=SUM({col_ltr}{start_data_row}:{col_ltr}{end_data_row})",
-            '0.0 "m³"',
-        )
+        c.value = f"=SUM({col_ltr}{start_data_row}:{col_ltr}{end_data_row})"
+        c.number_format = '0.0 "m³"'
 
   _add_signatures(ws, row_idx + 3, mid_col_idx, nb_cols)
 
