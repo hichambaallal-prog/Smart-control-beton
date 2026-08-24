@@ -6,6 +6,7 @@ import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -23,6 +24,70 @@ def extract_numeric(val):
     num = float(match.group())
     return int(num) if num.is_integer() else num
   return None
+
+
+# =========================================================
+# GRAPHIC PLOTLY - EVOLUTION RESISTANCE BETON
+# =========================================================
+
+
+def generer_courbe_beton(df_classe, valeur_fck):
+  fig = go.Figure()
+
+  if df_classe.empty or "Date Coulée" not in df_classe.columns:
+    return fig
+
+  # Tri chronologique par date de coulage
+  df_sorted = df_classe.copy()
+  df_sorted["_date_dt_sort"] = pd.to_datetime(
+      df_sorted["Date Coulée"], errors="coerce", dayfirst=True
+  )
+  df_sorted = df_sorted.sort_values(by="_date_dt_sort").drop(
+      columns=["_date_dt_sort"]
+  )
+
+  # Courbe à 7 jours (Vert)
+  if "Moy. Fc (MPa) [7 Jours]" in df_sorted.columns:
+    fig.add_trace(
+        go.Scatter(
+            x=df_sorted["Date Coulée"],
+            y=df_sorted["Moy. Fc (MPa) [7 Jours]"],
+            mode="lines+markers",
+            name="RC 7J",
+            line=dict(color="#8BC34A", width=3),
+        )
+    )
+
+  # Courbe à 28 jours (Bleu)
+  if "Moy. Fc (MPa) [28 Jours]" in df_sorted.columns:
+    fig.add_trace(
+        go.Scatter(
+            x=df_sorted["Date Coulée"],
+            y=df_sorted["Moy. Fc (MPa) [28 Jours]"],
+            mode="lines+markers",
+            name="RC28",
+            line=dict(color="#4A86E8", width=3),
+        )
+    )
+
+  # Ligne de la valeur caractéristique (Rouge fixe)
+  fig.add_trace(
+      go.Scatter(
+          x=df_sorted["Date Coulée"],
+          y=[valeur_fck] * len(df_sorted),
+          mode="lines",
+          name=f"Valeur caractéristique ({valeur_fck} MPa)",
+          line=dict(color="#FF0000", width=3, dash="dash"),
+      )
+  )
+
+  fig.update_layout(
+      title="Courbe d'évolution du béton",
+      xaxis_title="Date de coulage",
+      yaxis_title="Résistance (MPa)",
+      hovermode="x unified",
+  )
+  return fig
 
 
 # =========================================================
@@ -286,9 +351,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
 
   end_data_row = row_idx - 1
 
-  # ---------------------------------------------------------
   # STATISTIQUES MIN / MAX : Uniquement Températures & Affaissement
-  # ---------------------------------------------------------
   headers_flat = [
       c[0] if is_multi else str(c) for c in df_data.columns[:nb_cols]
   ]
@@ -363,9 +426,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
           horizontal="center", vertical="center", wrap_text=True
       )
 
-  # ---------------------------------------------------------
   # VISA / SIGNATURES
-  # ---------------------------------------------------------
   row_idx += 3
   ws.merge_cells(
       start_row=row_idx,
@@ -414,9 +475,7 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
 
   ws.row_dimensions[row_idx].height = 20
 
-  # ---------------------------------------------------------
   # LARGEURS DE COLONNES (A À J)
-  # ---------------------------------------------------------
   ws.column_dimensions["A"].width = 14
   ws.column_dimensions["B"].width = 12
   ws.column_dimensions["C"].width = 11.22
@@ -747,9 +806,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
     ws.row_dimensions[row_idx].height = 22
     row_idx += 1
 
-  # ---------------------------------------------------------
   # VISA / SIGNATURES
-  # ---------------------------------------------------------
   row_idx += 2
   ws.merge_cells(
       start_row=row_idx,
@@ -798,9 +855,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
   ws.row_dimensions[row_idx].height = 20
 
-  # ---------------------------------------------------------
   # LARGEURS DE COLONNES (A À J)
-  # ---------------------------------------------------------
   ws.column_dimensions["A"].width = 14
   ws.column_dimensions["C"].width = 40.0
   cols_12 = ["B", "D", "E", "F", "G", "H", "I", "J"]
@@ -1085,9 +1140,7 @@ def show(supabase):
                 list(df_temp["classe_beton"].dropna().unique())
             )
           if "ouvrage" in df_temp.columns:
-            ouvrages_j += sorted(
-                list(df_temp["ouvrage"].dropna().unique())
-            )
+            ouvrages_j += sorted(list(df_temp["ouvrage"].dropna().unique()))
 
         with col2:
           selected_class = st.selectbox(
@@ -1249,9 +1302,7 @@ def show(supabase):
                 list(df_m_temp["classe_beton"].dropna().unique())
             )
           if "ouvrage" in df_m_temp.columns:
-            ouvrages_m += sorted(
-                list(df_m_temp["ouvrage"].dropna().unique())
-            )
+            ouvrages_m += sorted(list(df_m_temp["ouvrage"].dropna().unique()))
 
         with col_m2:
           selected_class_m = st.selectbox(
@@ -1382,7 +1433,9 @@ def show(supabase):
     ouvrages_dispo = ["Tous"]
     if not df_merged.empty:
       if "Classe Béton" in df_merged.columns:
-        classes_dispo += sorted(list(df_merged["Classe Béton"].dropna().unique()))
+        classes_dispo += sorted(
+            list(df_merged["Classe Béton"].dropna().unique())
+        )
       if "Ouvrage" in df_merged.columns:
         ouvrages_dispo += sorted(list(df_merged["Ouvrage"].dropna().unique()))
 
@@ -1527,3 +1580,21 @@ def show(supabase):
           st.markdown("### 📈 Synthèse Statistique Mensuelle")
           df_stats_m = compute_statistics_df(df_display_cm)
           st.dataframe(df_stats_m, use_container_width=True)
+
+          # =========================================================
+          # AFFICHAGE DE LA COURBE PLOTLY D'ÉVOLUTION
+          # =========================================================
+          st.markdown("---")
+          st.markdown("### 📊 Courbe d'Évolution des Résistances")
+
+          valeur_fck = st.number_input(
+              "Valeur caractéristique attendue à 28 jours (MPa) :",
+              min_value=10.0,
+              max_value=80.0,
+              value=30.0,
+              step=1.0,
+              key="fck_mensuel",
+          )
+
+          fig_beton = generer_courbe_beton(df_display_cm, valeur_fck)
+          st.plotly_chart(fig_beton, use_container_width=True)
