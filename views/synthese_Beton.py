@@ -6,8 +6,8 @@ import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
-
 
 # =========================================================
 # UTILITAIRES D'EXTRACTION NUMÉRIQUE & FCK
@@ -32,46 +32,184 @@ def get_default_fck(df_display):
       val = extract_numeric(df_display.loc[first_class, "Classe Béton"])
       if val is not None and val > 0:
         return float(val)
-  return 30.0
+  elif "classe_beton" in df_display.columns and not df_display.empty:
+    first_class = df_display["classe_beton"].dropna().first_valid_index()
+    if first_class is not None:
+      val = extract_numeric(df_display.loc[first_class, "classe_beton"])
+      if val is not None and val > 0:
+        return float(val)
+  return 35.0
 
 
 # =========================================================
-# GRAPHIQUE NATIF STREAMLIT (SANS DÉPENDANCE EXTERNE)
+# GRAPHIQUE PLOTLY : ÉVOLUTION DES RÉSISTANCES
 # =========================================================
 
 
-def afficher_courbe_beton(df_classe, valeur_fck=30.0):
-  if df_classe.empty or "Date Coulée" not in df_classe.columns:
-    st.info("Données insuffisantes pour afficher le graphique.")
+def afficher_evolution_resistances(df, key_suffix=""):
+  st.markdown("### 📈 Évolution Chronologique des Résistances")
+
+  if df.empty:
+    st.info("Données insuffisantes pour afficher l'évolution.")
     return
 
-  df_plot = df_classe.copy()
-  df_plot["Date_dt_plot"] = pd.to_datetime(
-      df_plot["Date Coulée"], dayfirst=True, errors="coerce"
+  df_plot = df.copy()
+
+  # Normalisation automatique des noms de colonnes (brutes vs formatées)
+  col_map = {
+      "Date Coulée": "date_prelevement",
+      "Date Prélèvement": "date_prelevement",
+      "Classe Béton": "classe_beton",
+      "Classe": "classe_beton",
+      "Moy. Fc (MPa) [7 Jours]": "rc_7j",
+      "Moy. Fc (MPa) [28 Jours]": "rc_28j",
+  }
+  df_plot = df_plot.rename(
+      columns={k: v for k, v in col_map.items() if k in df_plot.columns}
   )
-  df_plot = df_plot.dropna(subset=["Date_dt_plot"]).sort_values("Date_dt_plot")
+
+  # 1. Conversion et formatage des dates au format mensuel
+  if "date_prelevement" in df_plot.columns:
+    df_plot["date_prelevement"] = pd.to_datetime(
+        df_plot["date_prelevement"], dayfirst=True, errors="coerce"
+    )
+    df_plot = df_plot.dropna(subset=["date_prelevement"])
+  else:
+    st.info("Colonne de date non identifiée.")
+    return
 
   if df_plot.empty:
     st.info("Aucune date valide pour le graphique.")
     return
 
-  chart_data = {}
-
-  if "Moy. Fc (MPa) [7 Jours]" in df_plot.columns:
-    chart_data["RC 7J"] = pd.to_numeric(
-        df_plot["Moy. Fc (MPa) [7 Jours]"], errors="coerce"
+  # 2. Filtre par Classe de Béton
+  if "classe_beton" in df_plot.columns:
+    classes_disponibles = sorted(
+        [
+            str(c)
+            for c in df_plot["classe_beton"].dropna().unique()
+            if str(c).strip()
+        ]
     )
+  else:
+    classes_disponibles = []
 
-  if "Moy. Fc (MPa) [28 Jours]" in df_plot.columns:
-    chart_data["RC 28J"] = pd.to_numeric(
-        df_plot["Moy. Fc (MPa) [28 Jours]"], errors="coerce"
+  if classes_disponibles:
+    classe_selectionnee = st.selectbox(
+        "Sélectionner la classe de béton :",
+        classes_disponibles,
+        key=f"select_classe_beton_{key_suffix}",
     )
+    df_classe = df_plot[df_plot["classe_beton"] == classe_selectionnee].copy()
+  else:
+    classe_selectionnee = "Tous"
+    df_classe = df_plot.copy()
 
-  if valeur_fck is not None and valeur_fck > 0:
-    chart_data[f"Cible ({valeur_fck} MPa)"] = valeur_fck
+  if df_classe.empty:
+    st.warning("Aucune donnée enregistrée pour cette classe de béton.")
+    return
 
-  df_chart = pd.DataFrame(chart_data, index=df_plot["Date_dt_plot"])
-  st.line_chart(df_chart)
+  # 3. Définition de la valeur cible fck
+  if "fck" in df_classe.columns and pd.notnull(df_classe["fck"].iloc[0]):
+    fck_defaut = float(df_classe["fck"].iloc[0])
+  else:
+    fck_defaut = float(get_default_fck(df_classe))
+
+  fck_cible = st.number_input(
+      "Valeur cible caractéristique fck (MPa) :",
+      value=fck_defaut,
+      step=1.0,
+      key=f"fck_input_{key_suffix}",
+  )
+
+  # 4. Groupement mensuel et calcul des moyennes de résistance
+  df_classe["rc_7j"] = pd.to_numeric(df_classe.get("rc_7j"), errors="coerce")
+  df_classe["rc_28j"] = pd.to_numeric(df_classe.get("rc_28j"), errors="coerce")
+
+  df_classe["Mois"] = (
+      df_classe["date_prelevement"].dt.to_period("M").dt.to_timestamp()
+  )
+
+  df_mensuel = (
+      df_classe.groupby("Mois")
+      .agg(RC_7J=("rc_7j", "mean"), RC_28J=("rc_28j", "mean"))
+      .reset_index()
+      .sort_values("Mois")
+  )
+
+  if df_mensuel.empty:
+    st.info("Aucune donnée d'écrasement disponible pour la période.")
+    return
+
+  # 5. Construction du graphique Plotly avec repères mensuels
+  fig = go.Figure()
+
+  # Courbe Cible (fck)
+  fig.add_trace(
+      go.Scatter(
+          x=df_mensuel["Mois"],
+          y=[fck_cible] * len(df_mensuel),
+          mode="lines",
+          name=f"Cible ({fck_cible} MPa)",
+          line=dict(color="#1f77b4", width=2.5, dash="dash"),
+      )
+  )
+
+  # Courbe 28 Jours (Moyenne Mensuelle)
+  fig.add_trace(
+      go.Scatter(
+          x=df_mensuel["Mois"],
+          y=df_mensuel["RC_28J"],
+          mode="lines+markers",
+          name="RC 28J (Moyenne)",
+          line=dict(color="#5DADE2", width=3),
+          marker=dict(size=8),
+      )
+  )
+
+  # Courbe 7 Jours (Moyenne Mensuelle)
+  fig.add_trace(
+      go.Scatter(
+          x=df_mensuel["Mois"],
+          y=df_mensuel["RC_7J"],
+          mode="lines+markers",
+          name="RC 7J (Moyenne)",
+          line=dict(color="#E74C3C", width=3),
+          marker=dict(size=8),
+      )
+  )
+
+  # Personnalisation des axes et de l'affichage mensuel
+  fig.update_layout(
+      title=dict(
+          text=(
+              f"Évolution Mensuelle des Résistances - Classe"
+              f" {classe_selectionnee}"
+          ),
+          font=dict(size=18),
+      ),
+      xaxis=dict(
+          title="Mois",
+          tickformat="%B %Y",
+          dtick="M1",
+          showgrid=True,
+          gridcolor="#E5E8E8",
+      ),
+      yaxis=dict(
+          title="Résistance à la compression (MPa)",
+          showgrid=True,
+          gridcolor="#E5E8E8",
+          zeroline=False,
+      ),
+      legend=dict(
+          orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5
+      ),
+      plot_bgcolor="white",
+      height=500,
+      margin=dict(l=40, r=40, t=60, b=60),
+  )
+
+  st.plotly_chart(fig, use_container_width=True)
 
 
 # =========================================================
@@ -337,7 +475,6 @@ def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False)
   headers_flat = [
       c[0] if is_multi else str(c) for c in df_data.columns[:nb_cols]
   ]
-
   target_keywords = [
       "temp. béton",
       "temp. ambiante",
@@ -1283,15 +1420,11 @@ def show(supabase):
 
         with col_m2:
           selected_class_m = st.selectbox(
-              "Filtrer par classe :",
-              classes_m,
-              key="b_class_m",
+              "Filtrer par classe :", classes_m, key="b_class_m"
           )
         with col_m3:
           selected_ouvrage_m = st.selectbox(
-              "Filtrer par ouvrage :",
-              ouvrages_m,
-              key="b_ouv_m",
+              "Filtrer par ouvrage :", ouvrages_m, key="b_ouv_m"
           )
 
         if data_m:
@@ -1475,20 +1608,10 @@ def show(supabase):
           st.dataframe(df_stats_j, use_container_width=True)
 
           # =========================================================
-          # COURBE STREAMLIT NATIVE JOURNALIÈRE
+          # COURBE PLOTLY DYNAMIQUE JOURNALIÈRE
           # =========================================================
           st.markdown("---")
-          st.markdown("### 📈 Évolution Chronologique des Résistances")
-          default_fck_j = get_default_fck(df_display_cj)
-          valeur_fck_j = st.number_input(
-              "Valeur cible caractéristique fck (MPa) :",
-              min_value=10.0,
-              max_value=80.0,
-              value=default_fck_j,
-              step=1.0,
-              key="fck_j_input",
-          )
-          afficher_courbe_beton(df_display_cj, valeur_fck_j)
+          afficher_evolution_resistances(df_display_cj, key_suffix="journalier")
 
     with tab_m_c:
       st.markdown("### Bilan mensuel par classe et ouvrage")
@@ -1575,18 +1698,7 @@ def show(supabase):
           st.dataframe(df_stats_m, use_container_width=True)
 
           # =========================================================
-          # COURBE STREAMLIT NATIVE MENSUELLE
+          # COURBE PLOTLY DYNAMIQUE MENSUELLE
           # =========================================================
           st.markdown("---")
-          st.markdown("### 📈 Évolution Chronologique des Résistances")
-          default_fck_m = get_default_fck(df_display_cm)
-          valeur_fck = st.number_input(
-              "Valeur cible caractéristique fck (MPa) :",
-              min_value=10.0,
-              max_value=80.0,
-              value=default_fck_m,
-              step=1.0,
-              key="fck_mensuel_input",
-          )
-
-          afficher_courbe_beton(df_display_cm, valeur_fck)
+          afficher_evolution_resistances(df_display_cm, key_suffix="mensuel")
