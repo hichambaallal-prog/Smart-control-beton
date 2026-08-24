@@ -778,12 +778,6 @@ def show(supabase):
                         placeholder="Ex: gare casa sud, B/394...",
                         key="search_input_pv"
                     )
-                with col_rech_pv2:
-                    recherche_date_pv = st.text_input(
-                        "📅 Rechercher par Date d'écrasement", 
-                        placeholder="Ex: 2026-08-08",
-                        key="search_date_pv"
-                    )
 
                 groupes_valides = {}
                 for _, row in df_valides.iterrows():
