@@ -917,9 +917,7 @@ def show(supabase):
             cols_existantes = [col for col in colonnes_ordre if col in df_all.columns]
             cols_restantes = [col for col in df_all.columns if col not in cols_existantes]
             df_final = df_all[cols_existantes + cols_restantes]
-# ... (votre code précédent de renommage et d'ordre des colonnes) ...
-            
-            cols_existantes = [col for col in colonnes_ordre if col in df_all.columns]
+cols_existantes = [col for col in colonnes_ordre if col in df_all.columns]
             cols_restantes = [col for col in df_all.columns if col not in cols_existantes]
             df_final = df_all[cols_existantes + cols_restantes]
 
@@ -956,9 +954,6 @@ def show(supabase):
             )
         else:
             st.info("ℹ️ Aucun historique disponible dans la base de données.")
-            
-    except Exception as e:
-        st.error(f"Erreur lors du chargement de l'historique global : {e}")
             st.dataframe(df_final, use_container_width=True, hide_index=True)
 
             excel_historique = exporter_dataframe_excel(df_final, "Historique_Global")
