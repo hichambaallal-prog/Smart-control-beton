@@ -780,7 +780,7 @@ def show(supabase):
                     )
                 with col_rech_pv2:
                     recherche_date_pv = st.text_input(
-                        "📅 Rechercher par Date d'écrasement", 
+                        "📅 Rechercher par Date Coulée", 
                         placeholder="Ex: 2026-08-08",
                         key="search_date_pv"
                     )
