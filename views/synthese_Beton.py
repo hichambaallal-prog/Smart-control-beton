@@ -3,6 +3,7 @@ import io
 import re
 import numpy as np
 import openpyxl
+from openpyxl.chart import LineChart, Reference
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -39,6 +40,83 @@ def get_default_fck(df_display):
       if val is not None and val > 0:
         return float(val)
   return 35.0
+
+
+# =========================================================
+# GÉNÉRATION DU FICHIER EXCEL POUR LA COURBE (GRAPHIQUE NATIF EXCEL)
+# =========================================================
+
+
+def generate_excel_courbe(
+    df_grouped, classe_selectionnee, fck_cible, mode_agreg
+):
+  output = io.BytesIO()
+  wb = openpyxl.Workbook()
+  ws = wb.active
+  ws.title = "Courbe & Données"
+
+  # En-têtes
+  ws.append(
+      ["Période", f"Cible ({fck_cible} MPa)", "RC 7J (MPa)", "RC 28J (MPa)"]
+  )
+
+  # Style en-têtes
+  font_th = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+  fill_th = PatternFill(
+      start_color="1F4E79", end_color="1F4E79", fill_type="solid"
+  )
+  for col_i in range(1, 5):
+    cell = ws.cell(row=1, column=col_i)
+    cell.font = font_th
+    cell.fill = fill_th
+    cell.alignment = Alignment(horizontal="center", vertical="center")
+
+  # Insertion des données
+  for _, row in df_grouped.iterrows():
+    rc7 = float(row["RC_7J"]) if pd.notna(row["RC_7J"]) else None
+    rc28 = float(row["RC_28J"]) if pd.notna(row["RC_28J"]) else None
+    ws.append([str(row["X_Axis"]), float(fck_cible), rc7, rc28])
+
+  # Formatage des cellules de données
+  for r in range(2, len(df_grouped) + 2):
+    ws.cell(row=r, column=1).alignment = Alignment(horizontal="center")
+    for c in range(2, 5):
+      cell = ws.cell(row=r, column=c)
+      cell.alignment = Alignment(horizontal="center")
+      if cell.value is not None:
+        cell.number_format = "0.0"
+
+  # Ajustement des largeurs de colonnes
+  ws.column_dimensions["A"].width = 16
+  ws.column_dimensions["B"].width = 16
+  ws.column_dimensions["C"].width = 16
+  ws.column_dimensions["D"].width = 16
+
+  # Création du graphique natif Excel
+  chart = LineChart()
+  chart.title = (
+      f"Évolution des Résistances ({mode_agreg}) - Classe {classe_selectionnee}"
+  )
+  chart.style = 10
+  chart.y_axis.title = "Résistance à la compression (MPa)"
+  chart.x_axis.title = "Date / Période"
+  chart.width = 18
+  chart.height = 10
+
+  data = Reference(
+      ws, min_col=2, min_row=1, max_col=4, max_row=len(df_grouped) + 1
+  )
+  cats = Reference(ws, min_col=1, min_row=2, max_row=len(df_grouped) + 1)
+
+  chart.add_data(data, titles_from_data=True)
+  chart.set_categories(cats)
+
+  # Positionnement du graphique dans la feuille
+  ws.add_chart(chart, "F2")
+
+  wb.save(output)
+  output.seek(0)
+  return output.getvalue()
 
 
 # =========================================================
@@ -108,7 +186,6 @@ def afficher_evolution_resistances(df, key_suffix=""):
     st.info("Aucune date valide pour le graphique.")
     return
 
-  # Conversion dynamique pour extraire la valeur moyenne pour le tracé de la courbe Plotly
   def parse_mean_value(val):
     if pd.isna(val) or val is None:
       return np.nan
@@ -284,17 +361,19 @@ def afficher_evolution_resistances(df, key_suffix=""):
 
   st.plotly_chart(fig, use_container_width=True)
 
-  # Téléchargement du graphique sous forme HTML interactif
-  html_bytes = fig.to_html(include_plotlyjs="cdn").encode("utf-8")
+  # Téléchargement de la courbe au format Excel avec graphique natif
+  excel_courbe_bytes = generate_excel_courbe(
+      df_grouped, classe_selectionnee, fck_cible, mode_agreg
+  )
   clean_cls = (
       str(classe_selectionnee).replace(" ", "_").replace("/", "-")
   )
   st.download_button(
-      label="📉 Télécharger la courbe (HTML interactif)",
-      data=html_bytes,
-      file_name=f"Courbe_Evolution_Resistances_{clean_cls}.html",
-      mime="text/html",
-      key=f"download_fig_html_{key_suffix}",
+      label="📊 Télécharger la courbe en Excel (.xlsx)",
+      data=excel_courbe_bytes,
+      file_name=f"Courbe_Evolution_Resistances_{clean_cls}.xlsx",
+      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      key=f"download_fig_excel_{key_suffix}",
   )
 
 
