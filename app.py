@@ -192,7 +192,8 @@ try:
         suivi_controle_beton,
         essai_Plaque,
         synthese_Beton,
-        synthese_plaque
+        synthese_plaque,
+        historique_pvs # <--- NOUVELLE IMPORTATION
     )
 except ImportError as e:
     st.error(f"❌ Erreur lors de l'importation des vues : {e}")
@@ -216,6 +217,7 @@ with st.sidebar:
         available_pages = [
             "Accueil", 
             "Suivi Contrôle Béton", 
+            "Historique Complet & PVs", # <--- AJOUT ICI
             "Suivi de Bétonnage", 
             "Essai à la Plaque", 
             "Synthèse Béton", 
@@ -235,6 +237,7 @@ with st.sidebar:
             "Synthèse Plaque", 
             "Suivi de Bétonnage", 
             "Suivi Contrôle Béton", 
+            "Historique Complet & PVs", # <--- AJOUT ICI
             "Synthèse Béton"
         ]
     elif current_role == "user":
@@ -243,6 +246,7 @@ with st.sidebar:
         available_pages = [
             "Accueil", 
             "Synthèse Béton", 
+            "Historique Complet & PVs", # <--- AJOUT ICI
             "Synthèse Plaque"
         ]
     else:
@@ -250,7 +254,8 @@ with st.sidebar:
         st.markdown("---")
         available_pages = [
             "Accueil", 
-            "Synthèse Béton", 
+            "Synthèse Béton",
+            "Historique Complet & PVs", # <--- AJOUT ICI 
             "Synthèse Plaque"
         ]
 
@@ -469,5 +474,7 @@ elif page == "Suivi de Bétonnage":
     render_view(suivi_Betonnage, supabase)
 elif page == "Suivi Contrôle Béton":
     render_view(suivi_controle_beton, supabase)
+elif page == "Historique Complet & PVs": # <--- NOUVELLE ROUTE
+    render_view(historique_pvs, supabase)
 elif page == "Synthèse Béton":
     render_view(synthese_Beton, supabase)
