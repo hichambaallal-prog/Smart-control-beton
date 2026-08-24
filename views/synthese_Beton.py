@@ -55,7 +55,6 @@ def afficher_evolution_resistances(df, key_suffix=""):
 
   df_plot = df.copy()
 
-  # 1. Mappage explicite puis recherche dynamique des colonnes
   col_map = {
       "Date Coulée": "date_prelevement",
       "Date Prélèvement": "date_prelevement",
@@ -96,7 +95,6 @@ def afficher_evolution_resistances(df, key_suffix=""):
     ):
       df_plot["rc_28j"] = df_plot[col]
 
-  # Conversion des dates
   if "date_prelevement" in df_plot.columns:
     df_plot["date_prelevement"] = pd.to_datetime(
         df_plot["date_prelevement"], errors="coerce"
@@ -110,14 +108,23 @@ def afficher_evolution_resistances(df, key_suffix=""):
     st.info("Aucune date valide pour le graphique.")
     return
 
-  # Conversion numérique des résistances
+  # Conversion dynamique pour extraire la valeur moyenne pour le tracé de la courbe Plotly
+  def parse_mean_value(val):
+    if pd.isna(val) or val is None:
+      return np.nan
+    if isinstance(val, (int, float)):
+      return float(val)
+    found = re.findall(r"[-+]?\d*\.\d+|\d+", str(val).replace(",", "."))
+    if found:
+      return np.mean([float(x) for x in found])
+    return np.nan
+
   for col_rc in ["rc_7j", "rc_28j"]:
     if col_rc in df_plot.columns:
-      df_plot[col_rc] = pd.to_numeric(df_plot[col_rc], errors="coerce")
+      df_plot[col_rc] = df_plot[col_rc].apply(parse_mean_value)
     else:
       df_plot[col_rc] = np.nan
 
-  # 2. Gestion des classes & détection automatique de la classe avec données
   if "classe_beton" in df_plot.columns:
     classes_disponibles = sorted(
         [
@@ -152,7 +159,6 @@ def afficher_evolution_resistances(df, key_suffix=""):
     st.warning("Aucune donnée enregistrée pour cette classe de béton.")
     return
 
-  # 3. Réglages d'affichage et valeur fck
   col_cfg1, col_cfg2 = st.columns([1, 1])
   with col_cfg1:
     mode_agreg = st.radio(
@@ -175,7 +181,6 @@ def afficher_evolution_resistances(df, key_suffix=""):
         key=f"fck_input_{key_suffix}",
     )
 
-  # 4. Groupement des données
   if mode_agreg == "Par Jour":
     df_classe["Period_Str"] = df_classe["date_prelevement"].dt.strftime(
         "%d/%m/%Y"
@@ -203,10 +208,8 @@ def afficher_evolution_resistances(df, key_suffix=""):
     st.info("Aucune donnée d'écrasement disponible pour cette classe.")
     return
 
-  # 5. Graphique Plotly
   fig = go.Figure()
 
-  # Ligne Cible (fck)
   fig.add_trace(
       go.Scatter(
           x=df_grouped["X_Axis"],
@@ -217,14 +220,13 @@ def afficher_evolution_resistances(df, key_suffix=""):
       )
   )
 
-  # Courbe 28 Jours
   if df_grouped["RC_28J"].notna().any():
     fig.add_trace(
         go.Scatter(
             x=df_grouped["X_Axis"],
             y=df_grouped["RC_28J"],
             mode="lines+markers+text",
-            name="RC 28J (Moyenne)",
+            name="RC 28J",
             text=df_grouped["RC_28J"].apply(
                 lambda v: f"{v:.1f}" if pd.notna(v) else ""
             ),
@@ -235,14 +237,13 @@ def afficher_evolution_resistances(df, key_suffix=""):
         )
     )
 
-  # Courbe 7 Jours
   if df_grouped["RC_7J"].notna().any():
     fig.add_trace(
         go.Scatter(
             x=df_grouped["X_Axis"],
             y=df_grouped["RC_7J"],
             mode="lines+markers+text",
-            name="RC 7J (Moyenne)",
+            name="RC 7J",
             text=df_grouped["RC_7J"].apply(
                 lambda v: f"{v:.1f}" if pd.notna(v) else ""
             ),
@@ -817,7 +818,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
   row_idx += 3
   ws.merge_cells(f"A{row_idx}:{last_col_letter}{row_idx}")
-  ws[f"A{row_idx}"] = "📋 MOYENNE DES ÉCRASEMENTS PAR ÉCHÉANCE"
+  ws[f"A{row_idx}"] = "📋 DÉTAIL DES ÉCRASEMENTS PAR ÉCHÉANCE"
   ws[f"A{row_idx}"].font = font_section
   row_idx += 1
 
@@ -1048,7 +1049,7 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 # =========================================================
-# 2. CHARGEMENT & TRAITEMENT SUPABASE
+# 2. CHARGEMENT & TRAITEMENT SUPABASE (VALEURS INDIVIDUELLES)
 # =========================================================
 
 
@@ -1190,10 +1191,16 @@ def load_and_process_controle_data(supabase):
     valid_dates = group_df["date_dt"].dropna()
     row_dict["date_dt"] = valid_dates.min() if not valid_dates.empty else pd.NaT
 
+    # MISE À JOUR : Préservation des valeurs individuelles au lieu d'une moyenne
     for ech in ["3 jours", "7 jours", "28 jours"]:
       vals = group_df[group_df["echeance_clean"] == ech]["fc_mpa"].dropna()
       if not vals.empty:
-        row_dict[f"fc_mpa_{ech}"] = round(vals.mean(), 1)
+        if len(vals) == 1:
+          row_dict[f"fc_mpa_{ech}"] = round(vals.iloc[0], 1)
+        else:
+          row_dict[f"fc_mpa_{ech}"] = " - ".join(
+              [f"{round(v, 1):.1f}" for v in vals]
+          )
       else:
         row_dict[f"fc_mpa_{ech}"] = None
 
@@ -1224,9 +1231,9 @@ def load_and_process_controle_data(supabase):
       "ouvrage": "Ouvrage",
       "affaissement_mm": "Affaissement (mm)",
       "temp_beton_C": "Temp. Béton (°C)",
-      "fc_mpa_3 jours": "Moy. Fc (MPa) [3 Jours]",
-      "fc_mpa_7 jours": "Moy. Fc (MPa) [7 Jours]",
-      "fc_mpa_28 jours": "Moy. Fc (MPa) [28 Jours]",
+      "fc_mpa_3 jours": "Fc (MPa) [3 Jours]",
+      "fc_mpa_7 jours": "Fc (MPa) [7 Jours]",
+      "fc_mpa_28 jours": "Fc (MPa) [28 Jours]",
   }
 
   df_pivoted = df_pivoted.rename(columns=rename_map)
@@ -1241,38 +1248,58 @@ def format_controle_dataframe(df_filtered):
 
 
 # =========================================================
-# CALCULS STATISTIQUES PANDAS
+# CALCULS STATISTIQUES PANDAS (ADAPTÉS AUX VALEURS INDIVIDUELLES)
 # =========================================================
 
 
 def compute_statistics_df(df_display):
-  cols_target = [
-      "Affaissement (mm)",
-      "Temp. Béton (°C)",
-      "Moy. Fc (MPa) [7 Jours]",
-      "Moy. Fc (MPa) [28 Jours]",
+  possible_cols = [
+      ("Affaissement (mm)", ["Affaissement (mm)"]),
+      ("Temp. Béton (°C)", ["Temp. Béton (°C)"]),
+      ("Fc (MPa) [7 Jours]", ["Fc (MPa) [7 Jours]", "Moy. Fc (MPa) [7 Jours]"]),
+      (
+          "Fc (MPa) [28 Jours]",
+          ["Fc (MPa) [28 Jours]", "Moy. Fc (MPa) [28 Jours]"],
+      ),
   ]
 
   stats_data = {"Indicateur": ["MIN", "MOY", "MAX", "σ", "CV %"]}
 
-  for col in cols_target:
-    if col in df_display.columns:
-      s = pd.to_numeric(df_display[col], errors="coerce").dropna()
+  for label_col, candidates in possible_cols:
+    actual_col = next((c for c in candidates if c in df_display.columns), None)
+
+    if actual_col:
+      raw_vals = df_display[actual_col].dropna()
+      numeric_vals = []
+      for val in raw_vals:
+        if isinstance(val, (int, float)):
+          if not np.isnan(val):
+            numeric_vals.append(float(val))
+        else:
+          found = re.findall(r"[-+]?\d*\.\d+|\d+", str(val).replace(",", "."))
+          for f in found:
+            try:
+              numeric_vals.append(float(f))
+            except ValueError:
+              pass
+
+      s = pd.Series(numeric_vals)
+
       if not s.empty:
         v_min = round(s.min(), 1)
         v_moy = round(s.mean(), 1)
         v_max = round(s.max(), 1)
 
-        if col == "Moy. Fc (MPa) [28 Jours]":
+        if "28 Jours" in label_col:
           v_std = round(s.std(ddof=1), 2) if len(s) > 1 else 0.0
           v_cv = round((v_std / v_moy) * 100, 1) if v_moy > 0 else 0.0
-          stats_data[col] = [v_min, v_moy, v_max, v_std, f"{v_cv} %"]
+          stats_data[label_col] = [v_min, v_moy, v_max, v_std, f"{v_cv} %"]
         else:
-          stats_data[col] = [v_min, v_moy, v_max, "-", "-"]
+          stats_data[label_col] = [v_min, v_moy, v_max, "-", "-"]
       else:
-        stats_data[col] = ["-", "-", "-", "-", "-"]
+        stats_data[label_col] = ["-", "-", "-", "-", "-"]
     else:
-      stats_data[col] = ["-", "-", "-", "-", "-"]
+      stats_data[label_col] = ["-", "-", "-", "-", "-"]
 
   return pd.DataFrame(stats_data)
 
@@ -1596,7 +1623,9 @@ def show(supabase):
         st.error(f"Erreur de chargement : {e}")
 
   with main_tab_controle:
-    st.subheader("Bilan du Contrôle Béton (Moyennes par Prélèvement)")
+    st.subheader(
+        "Bilan du Contrôle Béton (Valeurs Individuelles par Échéance)"
+    )
     tab_j_c, tab_m_c = st.tabs(["📅 Bilan Journalier", "📅 Bilan Mensuel"])
 
     try:
