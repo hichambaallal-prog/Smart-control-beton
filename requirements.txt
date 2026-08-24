@@ -6,3 +6,4 @@ pillow
 bcrypt
 plotly
 fpdf2
+matplotlib
