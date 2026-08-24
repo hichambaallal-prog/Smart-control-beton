@@ -501,7 +501,6 @@ def _format_ep_row(ep, date_ref=None):
 
     return {
         "ID": ep.get("id"),
-        "N° Réception": ep.get("num_reception") or ep.get("n_reception") or "-",
         "Référence / Repère": rep_complet,
         "N° BL": extraire_num_bl(ep),
         "Ouvrage": ep.get("ouvrage", "-"),
@@ -866,7 +865,7 @@ def show(supabase):
                 dt_e = datetime.strptime(str(ep.get("date_ecrasement"))[:10], "%Y-%m-%d").date() if ep.get("date_ecrasement") else today_date
                 priorite = f"⚠️ En Retard ({(today_date - dt_e).days} jour(s))" if dt_e < today_date else "🔥 Prévu Aujourd'hui"
                 rows_retard.append({
-                    "Priorité": priorite, "N° Réception": row["N° Réception"], "Date Écrasement Prévue": row["Date Écrasement Prévue"],
+                    "Priorité": priorite, "Date Écrasement Prévue": row["Date Écrasement Prévue"],
                     "Référence / Repère": row["Référence / Repère"], "N° BL": row["N° BL"], "Ouvrage": row["Ouvrage"],
                     "Classe Béton": row["Classe Béton"], "Date Coulée": row["Date Coulée"], "Échéance Visée": row["Échéance Visée"], "Âge Actuel Réel": row["Âge Théorique"]
                 })
