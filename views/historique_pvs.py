@@ -922,10 +922,10 @@ def show(supabase):
 
             df_all.rename(columns=renommage_colonnes, inplace=True)
 
+            # Suppression des colonnes indésirables de la liste de tri
             colonnes_ordre = [
                 "id",
                 "betonnage_id",
-                "ref_controle",
                 "repere_eprouvette",
                 "num_bl",
                 "ouvrage",
@@ -935,17 +935,29 @@ def show(supabase):
                 "temp_beton_C",
                 "echeance",
                 "date_ecrasement",
-                "forme",
-                "section",
-                "force_kn",
                 "fc_mpa",
                 "technicien",
-                "observations"
             ]
 
             cols_existantes = [col for col in colonnes_ordre if col in df_all.columns]
             cols_restantes = [col for col in df_all.columns if col not in cols_existantes]
             df_final = df_all[cols_existantes + cols_restantes]
+
+            # ==========================================
+            # MASQUER LES COLONNES DEMANDEES
+            # ==========================================
+            colonnes_a_exclure = [
+                "forme", 
+                "section", 
+                "force_kn", 
+                "observations", 
+                "masse", 
+                "ref_controle", 
+                "refernce_controle", 
+                "num_reception"
+            ]
+            colonnes_a_garder = [col for col in df_final.columns if col not in colonnes_a_exclure]
+            df_final = df_final[colonnes_a_garder]
 
             # ==========================================
             # FILTRES DE RECHERCHE POUR LE TABLEAU GLOBAL
@@ -959,8 +971,10 @@ def show(supabase):
                 search_date_tab = st.text_input("📅 Recherche par Date de coulée", placeholder="Ex: 2026-08-24")
 
             # Application des filtres si les champs ne sont pas vides
-            if search_ref_tab:
-                df_final = df_final[df_final["ref_controle"].astype(str).str.contains(search_ref_tab, case=False, na=False)]
+            if search_ref_tab and "ref_controle" in df_all.columns: 
+                # Note : la recherche se fait sur df_all car ref_controle est maintenant masqué dans df_final
+                masque_recherche_ref = df_all["ref_controle"].astype(str).str.contains(search_ref_tab, case=False, na=False)
+                df_final = df_final[masque_recherche_ref]
                 
             if search_date_tab:
                 df_final = df_final[df_final["date_coulee"].astype(str).str.contains(search_date_tab, case=False, na=False)]
