@@ -7,15 +7,11 @@ from openpyxl.worksheet.page import PageMargins
 import pandas as pd
 import streamlit as st
 
-
 # ==============================================================================
 # 1. GESTION DES UTILISATEURS ET CONNEXION SUPABASE
 # ==============================================================================
 def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
-    """
-    Vérifie le nom d'utilisateur, le mot de passe et récupère le champ 'can_edit'
-    depuis la table 'users' de Supabase.
-    """
+    """Vérifie l'utilisateur et initialise le session_state."""
     try:
         res = (
             supabase.table("users")
@@ -24,61 +20,43 @@ def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
             .eq("password", mot_de_passe)
             .execute()
         )
-
         if res.data:
-            user_info = res.data[0]
-            st.session_state["user_logged"] = True
-            st.session_state["user"] = user_info
-            st.session_state["username"] = user_info.get("username")
-            st.session_state["role"] = user_info.get("role")
-            st.session_state["user_role"] = user_info.get("role")
-            st.session_state["can_edit"] = bool(user_info.get("can_edit", False))
+            u = res.data[0]
+            st.session_state.update({
+                "user_logged": True,
+                "user": u,
+                "username": u.get("username"),
+                "role": u.get("role"),
+                "user_role": u.get("role"),
+                "can_edit": bool(u.get("can_edit", False)),
+            })
             return True
-        else:
-            st.error("Nom d'utilisateur ou mot de passe incorrect.")
-            return False
+        st.error("Nom d'utilisateur ou mot de passe incorrect.")
     except Exception as e:
         st.error(f"Erreur lors de la connexion : {e}")
-        return False
+    return False
 
 
 # =========================================================
 # FONCTION UTILITAIRE : VÉRIFICATION DES DOUBLONS DU N° DE RÉCEPTION
 # =========================================================
 def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=None):
-    """
-    Vérifie dans la table 'suivi_betonnage' si le num_reception existe déjà.
-    Retourne True si le numéro est en doublon, sinon False.
-    """
+    """Vérifie si le num_reception existe déjà dans suivi_betonnage."""
     if not num_reception or str(num_reception).strip() in ["", "-", "None", "NaN", "N/A"]:
         return False
-        
     num_clean = str(num_reception).strip()
     try:
-        # Recherche par num_reception
-        res1 = (
+        res = (
             supabase.table("suivi_betonnage")
             .select("id, num_reception")
             .eq("num_reception", num_clean)
             .execute()
         )
-        # Recherche par num_reception si applicable
-        res2 = (
-            supabase.table("suivi_betonnage")
-            .select("id, num_reception")
-            .eq("num_reception", num_clean)
-            .execute()
-        )
-        
-        matches = (res1.data or []) + (res2.data or [])
-        
-        for m in matches:
-            # S'il existe un enregistrement ayant le même numéro mais un ID différent
+        for m in (res.data or []):
             if current_beton_id is None or int(m.get("id")) != int(current_beton_id):
                 return True
     except Exception as e:
         st.warning(f"Note lors de la vérification des doublons : {e}")
-        
     return False
 
 
@@ -87,59 +65,25 @@ def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=Non
 # =========================================================
 def extraire_num_bl(*sources):
     """Inspecte récursivement les sources pour extraire le N° de Bon de Livraison (BL)."""
-    clefs_possibles = [
-        "num_bl",
-        "bl",
-        "num_bon_livraison",
-        "n_bl",
-        "bon_livraison",
-        "num_bl_p",
-        "n_bon",
-        "bon_de_livraison",
-        "code_bl",
-    ]
-
-    for source in sources:
-        if isinstance(source, dict):
-            for key in clefs_possibles:
-                val = source.get(key)
-                if val is not None:
-                    val_str = str(val).strip()
-                    if val_str and val_str.upper() not in [
-                        "N/A",
-                        "NONE",
-                        "NAN",
-                        "-",
-                        "",
-                    ]:
-                        return val_str
-
-            for key, val in source.items():
-                if "bl" in key.lower() or "bon" in key.lower():
-                    if val is not None:
-                        val_str = str(val).strip()
-                        if val_str and val_str.upper() not in [
-                            "N/A",
-                            "NONE",
-                            "NAN",
-                            "-",
-                            "",
-                        ]:
-                            return val_str
-
-        elif isinstance(source, str):
-            match = re.search(r"BL\s*:\s*([^\|]+)", source, re.IGNORECASE)
+    keys = ["num_bl", "bl", "num_bon_livraison", "n_bl", "bon_livraison", "num_bl_p", "n_bon", "bon_de_livraison", "code_bl"]
+    invalid = {"N/A", "NONE", "NAN", "-", ""}
+    for src in sources:
+        if isinstance(src, dict):
+            for k in keys:
+                val = str(src.get(k) or "").strip()
+                if val and val.upper() not in invalid:
+                    return val
+            for k, v in src.items():
+                if "bl" in k.lower() or "bon" in k.lower():
+                    val = str(v or "").strip()
+                    if val and val.upper() not in invalid:
+                        return val
+        elif isinstance(src, str):
+            match = re.search(r"BL\s*:\s*([^\|]+)", src, re.IGNORECASE)
             if match:
-                val_str = match.group(1).strip()
-                if val_str and val_str.upper() not in [
-                    "N/A",
-                    "NONE",
-                    "NAN",
-                    "-",
-                    "",
-                ]:
-                    return val_str
-
+                val = match.group(1).strip()
+                if val and val.upper() not in invalid:
+                    return val
     return "-"
 
 
@@ -157,10 +101,7 @@ def generer_pv_excel(export_data, infos_header):
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
-
-    ws.page_margins = PageMargins(
-        left=0.3, right=0.3, top=0.4, bottom=0.4, header=0.2, footer=0.2
-    )
+    ws.page_margins = PageMargins(left=0.3, right=0.3, top=0.4, bottom=0.4, header=0.2, footer=0.2)
 
     font_bold = Font(name="Calibri", size=9, bold=True)
     font_bold_white = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
@@ -168,73 +109,63 @@ def generer_pv_excel(export_data, infos_header):
     font_regular = Font(name="Calibri", size=8.5)
     font_small = Font(name="Calibri", size=8)
 
-    fill_header_dark = PatternFill(
-        start_color="1F4E78", end_color="1F4E78", fill_type="solid"
-    )
-    fill_header_table = PatternFill(
-        start_color="D9E1F2", end_color="D9E1F2", fill_type="solid"
-    )
-    fill_section_label = PatternFill(
-        start_color="F2F2F2", end_color="F2F2F2", fill_type="solid"
-    )
+    fill_dark = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    fill_table = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    fill_label = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
 
     align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
     align_left = Alignment(horizontal="left", vertical="center", wrap_text=True)
     align_right = Alignment(horizontal="right", vertical="center", wrap_text=True)
     align_top_center = Alignment(horizontal="center", vertical="top", wrap_text=True)
 
-    thin_side = Side(border_style="thin", color="000000")
-    border_cell = Border(
-        left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
-    )
+    border_cell = Border(left=Side(style="thin", color="000000"), right=Side(style="thin", color="000000"),
+                         top=Side(style="thin", color="000000"), bottom=Side(style="thin", color="000000"))
 
     default_bl = extraire_num_bl(infos_header)
 
     def remplacer_na(valeur, fallback=None):
         val_str = str(valeur).strip() if valeur is not None else ""
-        if val_str.upper() in ["N/A", "NONE", "NAN", "", "-"]:
-            return fallback if fallback is not None else default_bl
-        return valeur
+        return fallback if fallback is not None else default_bl if val_str.upper() in ["N/A", "NONE", "NAN", "", "-"] else valeur
+
+    def format_cell(cell, font=font_regular, align=align_center, fill=None, border=border_cell):
+        if font: cell.font = font
+        if align: cell.alignment = align
+        if fill: cell.fill = fill
+        if border: cell.border = border
 
     # ENTÊTE
     ws.merge_cells("A1:D1")
     ws["A1"] = "LPEE / CTR CSB"
-    ws["A1"].font = font_bold_white
-    ws["A1"].alignment = align_center
+    format_cell(ws["A1"], font_bold_white, align_center)
 
     ws.merge_cells("A2:D3")
     ws["A2"] = "Laboratoire de Contrôle Externe"
-    ws["A2"].font = font_bold_white
-    ws["A2"].alignment = align_center
+    format_cell(ws["A2"], font_bold_white, align_center)
 
     for r in range(1, 4):
         for c in range(1, 5):
-            ws.cell(row=r, column=c).fill = fill_header_dark
+            ws.cell(row=r, column=c).fill = fill_dark
 
     ws["E1"] = "RE N° :"
-    ws["E1"].font = font_bold
-    
-    # ----------- MODIFICATIONS COLONNES F, G et H -----------
+    format_cell(ws["E1"], font_bold, align_left)
     ws.merge_cells("F1:G1")
     ws["F1"] = remplacer_na(infos_header.get("re_num"), "25/260/LGV/ B/")
-    ws["F1"].font = font_regular
+    format_cell(ws["F1"], font_regular, align_left)
     
     ws["H1"] = "BETON"
-    ws["H1"].font = font_bold
-    ws["H1"].alignment = align_center
-    # --------------------------------------------------------
+    format_cell(ws["H1"], font_bold, align_center)
 
     ws["E2"] = "DOSSIER :"
-    ws["E2"].font = font_bold
+    format_cell(ws["E2"], font_bold, align_left)
     ws.merge_cells("F2:H2")
     ws["F2"] = remplacer_na(infos_header.get("dossier"), "2025-260-05985-2025-0247")
-    ws["F2"].font = font_regular
+    format_cell(ws["F2"], font_regular, align_left)
 
     ws["E3"] = "CLIENT :"
-    ws["E3"].font = font_bold
+    format_cell(ws["E3"], font_bold, align_left)
     ws.merge_cells("F3:H3")
     ws["F3"] = remplacer_na(infos_header.get("client"), "TGCC")
-    ws["F3"].font = font_bold
+    format_cell(ws["F3"], font_bold, align_left)
 
     for r in range(1, 4):
         for c in range(1, 9):
@@ -243,393 +174,246 @@ def generer_pv_excel(export_data, infos_header):
     # TITRE
     ws.merge_cells("A4:H4")
     ws["A4"] = "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
-    ws["A4"].font = font_title_white
-    ws["A4"].alignment = align_center
+    format_cell(ws["A4"], font_title_white, align_center, fill_dark)
     for c in range(1, 9):
-        ws.cell(row=4, column=c).fill = fill_header_dark
+        ws.cell(row=4, column=c).fill = fill_dark
         ws.cell(row=4, column=c).border = border_cell
 
     ws.merge_cells("A5:D5")
     ws["A5"] = "[X] COMPRESSION NF EN 12390-3 (2019)"
-    ws["A5"].font = font_bold
-    ws["A5"].alignment = align_center
+    format_cell(ws["A5"], font_bold, align_center)
 
     ws.merge_cells("E5:H5")
     ws["E5"] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
-    ws["E5"].font = font_bold
-    ws["E5"].alignment = align_center
+    format_cell(ws["E5"], font_bold, align_center)
 
-    for c in range(1, 9):
-        ws.cell(row=5, column=c).border = border_cell
+    for c in range(1, 9): ws.cell(row=5, column=c).border = border_cell
 
     ws.merge_cells("A6:F6")
     ws["A6"] = "Presse : Marque: Controls"
-    ws["A6"].font = font_bold
-    ws["A6"].alignment = align_right
+    format_cell(ws["A6"], font_bold, align_right)
 
     ws.merge_cells("G6:H6")
     ws["G6"] = "Classe : A"
-    ws["G6"].font = font_bold
-    ws["G6"].alignment = align_center
+    format_cell(ws["G6"], font_bold, align_center)
 
-    for c in range(1, 9):
-        ws.cell(row=6, column=c).border = border_cell
+    for c in range(1, 9): ws.cell(row=6, column=c).border = border_cell
 
     # FICHE TECHNIQUE
     ws["A7"] = "Date de\nprélèvement"
-    ws["A7"].font = font_bold
-    ws["A7"].alignment = align_center
+    format_cell(ws["A7"], font_bold, align_center)
     ws["B7"] = str(remplacer_na(infos_header.get("date_coulee"), "-"))
-    ws["B7"].font = font_bold
-    ws["B7"].alignment = align_center
+    format_cell(ws["B7"], font_bold, align_center)
 
     ws.merge_cells("C7:D7")
     ws["C7"] = "Lieu de\nprélèvement"
-    ws["C7"].font = font_bold
-    ws["C7"].alignment = align_center
+    format_cell(ws["C7"], font_bold, align_center)
 
     ws.merge_cells("E7:H7")
-    ws["E7"] = remplacer_na(
-        infos_header.get("lieu_prelevement", infos_header.get("ouvrage")), "-"
-    )
-    ws["E7"].font = font_regular
-    ws["E7"].alignment = align_center
+    ws["E7"] = remplacer_na(infos_header.get("lieu_prelevement", infos_header.get("ouvrage")), "-")
+    format_cell(ws["E7"], font_regular, align_center)
 
     ws["A8"] = "Chantier"
-    ws["A8"].font = font_bold
-    ws["A8"].alignment = align_center
+    format_cell(ws["A8"], font_bold, align_center)
 
     ws.merge_cells("B8:D8")
-    ws["B8"] = remplacer_na(
-        infos_header.get("chantier"),
-        "Augmentation de la capacité ferroviaire entre Kenitra et Marrakech et au niveau du hub de Casablanca\nTravaux d'exécution de terrassement, ouvrages d'art et rétablissement de communication entre PK 5+450 et PK 10+000-GARE CASA SUD",
-    )
-    ws["B8"].font = font_small
-    ws["B8"].alignment = align_center
+    ws["B8"] = remplacer_na(infos_header.get("chantier"), "Augmentation de la capacité ferroviaire entre Kenitra et Marrakech et au niveau du hub de Casablanca\nTravaux d'exécution de terrassement, ouvrages d'art et rétablissement de communication entre PK 5+450 et PK 10+000-GARE CASA SUD")
+    format_cell(ws["B8"], font_small, align_center)
 
     ws.merge_cells("E8:F8")
     ws["E8"] = "Type de béton"
-    ws["E8"].font = font_bold
-    ws["E8"].alignment = align_center
+    format_cell(ws["E8"], font_bold, align_center)
 
     ws.merge_cells("G8:H8")
     classe_beton_val = str(remplacer_na(infos_header.get("classe_beton"), "C35/45")).upper()
     ws["G8"] = classe_beton_val
-    ws["G8"].font = font_bold
-    ws["G8"].alignment = align_center
+    format_cell(ws["G8"], font_bold, align_center)
 
-    centrale_saisie = remplacer_na(infos_header.get("centrale"), "Centrale à Béton")
     ws.merge_cells("A9:B9")
-    ws["A9"] = centrale_saisie
-    ws["A9"].font = font_bold
-    ws["A9"].alignment = align_center
+    ws["A9"] = remplacer_na(infos_header.get("centrale"), "Centrale à Béton")
+    format_cell(ws["A9"], font_bold, align_center)
 
     ws["C9"] = "- Dimensions"
-    ws["C9"].font = font_regular
+    format_cell(ws["C9"], font_regular, align_left)
 
     ws.merge_cells("D9:H9")
     ws["D9"] = remplacer_na(infos_header.get("forme"), "Cylindrique 150x300")
-    ws["D9"].font = font_bold
-    ws["D9"].alignment = align_center
+    format_cell(ws["D9"], font_bold, align_center)
 
     ws.merge_cells("A10:B10")
     ws["A10"] = "Affaissement au cône d'abrams NF EN 12350-2"
-    ws["A10"].font = font_small
-    ws["A10"].alignment = align_center
+    format_cell(ws["A10"], font_small, align_center)
 
     ws["C10"] = str(remplacer_na(infos_header.get("affaissement"), "-"))
-    ws["C10"].font = font_bold
-    ws["C10"].alignment = align_center
+    format_cell(ws["C10"], font_bold, align_center)
 
     ws["D10"] = "- Mode confection"
-    ws["D10"].font = font_regular
-    ws["D10"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    format_cell(ws["D10"], font_regular, align_left)
 
     ws.merge_cells("E10:H10")
     ws["E10"] = "Par vibration NF EN 12390-2 (2019)"
-    ws["E10"].font = font_bold
-    ws["E10"].alignment = align_center
+    format_cell(ws["E10"], font_bold, align_center)
 
     ws.merge_cells("A11:B11")
     ws["A11"] = "Température °C"
-    ws["A11"].font = font_regular
-    ws["A11"].alignment = align_center
+    format_cell(ws["A11"], font_regular, align_center)
 
     ws["C11"] = str(remplacer_na(infos_header.get("temperature"), "-"))
-    ws["C11"].font = font_bold
-    ws["C11"].alignment = align_center
+    format_cell(ws["C11"], font_bold, align_center)
 
     ws["D11"] = "- Mode conservation"
-    ws["D11"].font = font_regular
-    ws["D11"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    format_cell(ws["D11"], font_regular, align_left)
 
     ws.merge_cells("E11:H11")
     ws["E11"] = "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C"
-    ws["E11"].font = font_bold
-    ws["E11"].alignment = align_center
+    format_cell(ws["E11"], font_bold, align_center)
 
-    tech_prelevement = remplacer_na(
-        infos_header.get("technicien_prelevement") 
-        or infos_header.get("preleve_par") 
-        or infos_header.get("technicien"), 
-        "Technicien LPEE"
-    )
+    tech_prelevement = remplacer_na(infos_header.get("technicien_prelevement") or infos_header.get("preleve_par") or infos_header.get("technicien"), "Technicien LPEE")
     ws.merge_cells("A12:C12")
     ws["A12"] = f"prélèvement effectué par {tech_prelevement}"
-    ws["A12"].font = font_small
-    ws["A12"].alignment = align_center
+    format_cell(ws["A12"], font_small, align_center)
 
     ws.merge_cells("D12:E12")
     ws["D12"] = "N° de bon de livraison"
-    ws["D12"].font = font_regular
-    ws["D12"].alignment = align_center
+    format_cell(ws["D12"], font_regular, align_center)
 
     ws.merge_cells("F12:H12")
     ws["F12"] = default_bl
-    ws["F12"].font = font_bold
-    ws["F12"].alignment = align_center
+    format_cell(ws["F12"], font_bold, align_center)
 
-    labels_coords = ["A7", "C7", "A8", "E8", "A9", "A10", "A11", "A12", "D12"]
+    labels_coords = {"A7", "C7", "A8", "E8", "A9", "A10", "A11", "A12", "D12"}
     for r in range(7, 13):
         for c in range(1, 9):
-            ws.cell(row=r, column=c).border = border_cell
-            if ws.cell(row=r, column=c).coordinate in labels_coords:
-                ws.cell(row=r, column=c).fill = fill_section_label
+            cell = ws.cell(row=r, column=c)
+            cell.border = border_cell
+            if cell.coordinate in labels_coords:
+                cell.fill = fill_label
 
     # TABLEAU DES RÉSULTATS
     ws.merge_cells("A13:A14")
     ws["A13"] = "Réf,"
-    ws["A13"].font = font_bold
-    ws["A13"].alignment = align_center
-
     ws.merge_cells("B13:C13")
     ws["B13"] = "Date"
-    ws["B13"].font = font_bold
-    ws["B13"].alignment = align_center
-
-    ws["B14"] = "Fabri"
-    ws["B14"].font = font_regular
-    ws["B14"].alignment = align_center
-
-    ws["C14"] = "Essai"
-    ws["C14"].font = font_regular
-    ws["C14"].alignment = align_center
-
+    ws["B14"], ws["C14"] = "Fabri", "Essai"
     ws.merge_cells("D13:D14")
     ws["D13"] = "Age (jours)"
-    ws["D13"].font = font_bold
-    ws["D13"].alignment = align_center
-
     ws.merge_cells("E13:E14")
     ws["E13"] = "Charge rupture(KN)"
-    ws["E13"].font = font_bold
-    ws["E13"].alignment = align_center
-
     ws.merge_cells("F13:H13")
     ws["F13"] = "Résistance (MPa)"
-    ws["F13"].font = font_bold
-    ws["F13"].alignment = align_center
-
-    ws["F14"] = "Compression"
-    ws["F14"].font = font_regular
-    ws["F14"].alignment = align_center
-
-    ws.merge_cells("G14:G14")
-    ws["G14"] = "Traction"
-    ws["G14"].font = font_regular
-    ws["G14"].alignment = align_center
-
-    ws.merge_cells("H14:H14")
-    ws["H14"] = "Moyenne"
-    ws["H14"].font = font_regular
-    ws["H14"].alignment = align_center
+    ws["F14"], ws["G14"], ws["H14"] = "Compression", "Traction", "Moyenne"
 
     for r in range(13, 15):
         for c in range(1, 9):
-            ws.cell(row=r, column=c).fill = fill_header_table
-            ws.cell(row=r, column=c).border = border_cell
+            format_cell(ws.cell(row=r, column=c), font=font_bold if r == 13 or c == 1 else font_regular, align=align_center, fill=fill_table)
 
     row_start = 15
     nb_total = len(export_data)
-
     groupes_lots = {}
-    a_des_28j_ecrases = False
-    cellule_moyenne_28j = None
+    a_des_28j_ecrases, cellule_moyenne_28j = False, None
 
     for idx, item in enumerate(export_data):
         curr_row = row_start + idx
-
-        ref_complete = str(item.get("repere_eprouvette", "B/01"))
-        ws.cell(row=curr_row, column=1, value=ref_complete)
-
-        ws.cell(
-            row=curr_row,
-            column=2,
-            value=str(remplacer_na(infos_header.get("date_coulee"), "-")),
-        )
-
+        f_kn_val = float(item.get("force_kn", 0.0)) if str(item.get("force_kn", 0.0)).replace('.', '', 1).isdigit() else 0.0
+        is_en_cours = str(item.get("statut", "")).lower() == "en cours" or f_kn_val == 0.0
         dt_essai = item.get("date_essai")
 
-        try:
-            f_kn_val = float(item.get("force_kn", 0.0))
-        except (ValueError, TypeError):
-            f_kn_val = 0.0
-
-        is_en_cours = str(item.get("statut", "")).lower() == "en cours" or f_kn_val == 0.0
-
-        if is_en_cours:
-            ws.cell(row=curr_row, column=3, value=str(dt_essai) if dt_essai and dt_essai != "-" else "En cours")
-        else:
-            ws.cell(row=curr_row, column=3, value=str(remplacer_na(dt_essai, "-")))
+        ws.cell(row=curr_row, column=1, value=str(item.get("repere_eprouvette", "B/01")))
+        ws.cell(row=curr_row, column=2, value=str(remplacer_na(infos_header.get("date_coulee"), "-")))
+        ws.cell(row=curr_row, column=3, value=str(dt_essai) if (is_en_cours and dt_essai and dt_essai != "-") else ("En cours" if is_en_cours else str(remplacer_na(dt_essai, "-"))))
 
         try:
             age_val = int(str(item.get("age", 7)).replace("j", "").replace("jours", "").strip())
         except (ValueError, TypeError):
             age_val = item.get("age", 7)
-
         ws.cell(row=curr_row, column=4, value=age_val)
 
         if is_en_cours:
             ws.cell(row=curr_row, column=5, value="En cours")
             ws.cell(row=curr_row, column=6, value="En cours")
         else:
-            ws.cell(row=curr_row, column=5, value=f_kn_val)
-            ws.cell(row=curr_row, column=5).number_format = "0.0"
-
-            fc_mpa = float(item.get("fc_mpa", 0.0))
-            ws.cell(row=curr_row, column=6, value=fc_mpa)
-            ws.cell(row=curr_row, column=6).number_format = "0.0"
+            ws.cell(row=curr_row, column=5, value=f_kn_val).number_format = "0.0"
+            ws.cell(row=curr_row, column=6, value=float(item.get("fc_mpa", 0.0))).number_format = "0.0"
 
         ws.cell(row=curr_row, column=7, value="-")
 
         for c in range(1, 9):
-            ws.cell(row=curr_row, column=c).font = font_regular
-            ws.cell(row=curr_row, column=c).border = border_cell
-            ws.cell(row=curr_row, column=c).alignment = align_center
+            format_cell(ws.cell(row=curr_row, column=c), font=font_regular, align=align_center)
 
         cle_lot = f"{item.get('age')}_{item.get('date_essai')}"
         if cle_lot not in groupes_lots:
             groupes_lots[cle_lot] = {"lignes": [], "en_cours": is_en_cours, "age": age_val}
-        else:
-            if is_en_cours:
-                groupes_lots[cle_lot]["en_cours"] = True
-
+        elif is_en_cours:
+            groupes_lots[cle_lot]["en_cours"] = True
         groupes_lots[cle_lot]["lignes"].append(curr_row)
 
     for cle_lot, data_lot in groupes_lots.items():
         lignes = data_lot["lignes"]
-        start_r = min(lignes)
-        end_r = max(lignes)
-        age_lot = data_lot["age"]
+        start_r, end_r = min(lignes), max(lignes)
+        cell_h = ws[f"H{start_r}"]
 
         if data_lot["en_cours"]:
-            if start_r != end_r:
-                ws.merge_cells(f"H{start_r}:H{end_r}")
-            ws[f"H{start_r}"] = "En cours"
-            ws[f"H{start_r}"].alignment = align_center
-            ws[f"H{start_r}"].font = font_bold
+            if start_r != end_r: ws.merge_cells(f"H{start_r}:H{end_r}")
+            cell_h.value = "En cours"
         else:
             if start_r == end_r:
-                ws[f"H{start_r}"] = f"=ROUND(F{start_r}, 1)"
+                cell_h.value = f"=ROUND(F{start_r}, 1)"
             else:
                 ws.merge_cells(f"H{start_r}:H{end_r}")
-                ws[f"H{start_r}"] = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
-
-            ws[f"H{start_r}"].number_format = "0.0"
-            ws[f"H{start_r}"].alignment = align_center
-            ws[f"H{start_r}"].font = font_bold
-
+                cell_h.value = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
+            cell_h.number_format = "0.0"
             try:
-                if int(str(age_lot).replace("j", "").replace("jours", "").strip()) >= 28:
-                    a_des_28j_ecrases = True
-                    cellule_moyenne_28j = f"H{start_r}"
-            except (ValueError, TypeError):
-                pass
+                if int(str(data_lot["age"]).replace("j", "").replace("jours", "").strip()) >= 28:
+                    a_des_28j_ecrases, cellule_moyenne_28j = True, f"H{start_r}"
+            except (ValueError, TypeError): pass
+
+        format_cell(cell_h, font=font_bold, align=align_center)
 
     next_row = row_start + nb_total
-
-    ws.cell(row=next_row, column=1, value="Commentaire :").font = font_bold
-    ws.cell(row=next_row, column=1).alignment = align_left
-    ws.cell(row=next_row, column=1).fill = fill_section_label
+    ws.cell(row=next_row, column=1, value="Commentaire :")
+    format_cell(ws.cell(row=next_row, column=1), font=font_bold, align=align_left, fill=fill_label)
 
     ws.merge_cells(f"B{next_row}:H{next_row}")
-
     obs_defaut = infos_header.get("observations") or "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
 
     seuil_min = 35.0
-    if "C25/30" in classe_beton_val:
-        seuil_min = 25.0
-    elif "C30/37" in classe_beton_val:
-        seuil_min = 30.0
-    elif "C35/45" in classe_beton_val:
-        seuil_min = 35.0
-    elif "C40/50" in classe_beton_val:
-        seuil_min = 40.0
+    for classe, seuil in [("C25/30", 25.0), ("C30/37", 30.0), ("C35/45", 35.0), ("C40/50", 40.0)]:
+        if classe in classe_beton_val:
+            seuil_min = seuil
+            break
 
     if not a_des_28j_ecrases or not cellule_moyenne_28j:
         formule_commentaires = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
     else:
-        moyenne_cell = cellule_moyenne_28j
-        formule_commentaires = (
-            f'=IF(OR(ISBLANK({moyenne_cell}), {moyenne_cell}="En cours"), '
-            f'"PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT.", '
-            f'IF({moyenne_cell}>={seuil_min}, "{obs_defaut}", "PERFORMANCES MECANIQUES NON CONFORMES"))'
-        )
+        m_cell = cellule_moyenne_28j
+        formule_commentaires = f'=IF(OR(ISBLANK({m_cell}), {m_cell}="En cours"), "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT.", IF({m_cell}>={seuil_min}, "{obs_defaut}", "PERFORMANCES MECANIQUES NON CONFORMES"))'
 
-    ws.cell(row=next_row, column=2, value=formule_commentaires).font = font_bold
-    ws.cell(row=next_row, column=2).alignment = align_left
-
-    for c in range(1, 9):
-        ws.cell(row=next_row, column=c).border = border_cell
+    format_cell(ws.cell(row=next_row, column=2, value=formule_commentaires), font=font_bold, align=align_left)
+    for c in range(1, 9): ws.cell(row=next_row, column=c).border = border_cell
 
     r_sig_titre = next_row + 2
-    r_sig_debut = r_sig_titre + 1
-    r_sig_fin = r_sig_debut + 3
+    r_sig_debut, r_sig_fin = r_sig_titre + 1, r_sig_titre + 4
 
     ws.merge_cells(start_row=r_sig_titre, start_column=2, end_row=r_sig_titre, end_column=4)
-    ws.cell(row=r_sig_titre, column=2, value="Visa Responsable d'essai").font = font_bold
-    ws.cell(row=r_sig_titre, column=2).alignment = align_center
+    format_cell(ws.cell(row=r_sig_titre, column=2, value="Visa Responsable d'essai"), font=font_bold, align=align_center)
 
     ws.merge_cells(start_row=r_sig_debut, start_column=2, end_row=r_sig_fin, end_column=4)
-    ws.cell(row=r_sig_debut, column=2, value="O.IKKEN").font = font_bold
-    ws.cell(row=r_sig_debut, column=2).alignment = align_top_center
+    format_cell(ws.cell(row=r_sig_debut, column=2, value="O.IKKEN"), font=font_bold, align=align_top_center)
 
     ws.merge_cells(start_row=r_sig_titre, start_column=6, end_row=r_sig_titre, end_column=8)
-    ws.cell(row=r_sig_titre, column=6, value="Visa Chef du laboratoire").font = font_bold
-    ws.cell(row=r_sig_titre, column=6).alignment = align_center
+    format_cell(ws.cell(row=r_sig_titre, column=6, value="Visa Chef du laboratoire"), font=font_bold, align=align_center)
 
     ws.merge_cells(start_row=r_sig_debut, start_column=6, end_row=r_sig_fin, end_column=8)
-    ws.cell(row=r_sig_debut, column=6, value="H.BAALLAL").font = font_bold
-    ws.cell(row=r_sig_debut, column=6).alignment = align_top_center
+    format_cell(ws.cell(row=r_sig_debut, column=6, value="H.BAALLAL"), font=font_bold, align=align_top_center)
 
+    row_heights = {7: 32, 8: 48, 10: 23, 11: 23, 9: 15, 12: 15, 13: 15, 14: 15}
     for r in range(1, r_sig_fin + 1):
-        if r == 7:
-            ws.row_dimensions[r].height = 32
-        elif r == 8:
-            ws.row_dimensions[r].height = 48
-        elif r in [10, 11]:
-            ws.row_dimensions[r].height = 23
-        elif 15 <= r < (15 + nb_total):
-            ws.row_dimensions[r].height = 28
-        elif r in [9, 12, 13, 14]:
-            ws.row_dimensions[r].height = 15
-        elif r < 15:
-            ws.row_dimensions[r].height = 16
-        else:
-            ws.row_dimensions[r].height = 28
+        if r in row_heights: ws.row_dimensions[r].height = row_heights[r]
+        elif 15 <= r < (15 + nb_total) or r > 14: ws.row_dimensions[r].height = 28
+        else: ws.row_dimensions[r].height = 16
 
-    col_widths = {
-        "A": 16,
-        "B": 12,
-        "C": 12,
-        "D": 10,
-        "E": 18,
-        "F": 14,
-        "G": 12,
-        "H": 12,
-    }
-    for col_letter, width in col_widths.items():
-        ws.column_dimensions[col_letter].width = width
+    col_widths = {"A": 16, "B": 12, "C": 12, "D": 10, "E": 18, "F": 14, "G": 12, "H": 12}
+    for col, width in col_widths.items(): ws.column_dimensions[col].width = width
 
     output = io.BytesIO()
     wb.save(output)
@@ -638,93 +422,85 @@ def generer_pv_excel(export_data, infos_header):
 
 
 # =========================================================
-# FONCTION UTILITAIRE : EXPORT EXCEL DU PLANNING DE LA DATE/SEMAINE
+# FONCTIONS AUXILIAIRES DE SUPABASE & PARSING
 # =========================================================
 def exporter_dataframe_excel(df, date_chaine):
-    """Génère un fichier Excel à partir du DataFrame de la liste du planning."""
+    """Génère un fichier Excel à partir d'un DataFrame."""
     buffer = io.BytesIO()
-    nom_feuille = f"Planning_{date_chaine}"[:31]  # Limitation max 31 caractères pour Excel
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=nom_feuille)
-
+        df.to_excel(writer, index=False, sheet_name=f"Planning_{date_chaine}"[:31])
     buffer.seek(0)
     return buffer
 
 
-# =========================================================
-# FONCTIONS AUXILIAIRES DE SUPABASE
-# =========================================================
 def obtenir_historique_betonnage(supabase, betonnage_id):
-    """Récupère l'intégralité des éprouvettes pour un même béton (betonnage_id)."""
-    if not betonnage_id:
-        return []
+    if not betonnage_id: return []
     try:
-        res = (
-            supabase.table("suivi_controle_beton")
-            .select("*")
-            .eq("betonnage_id", betonnage_id)
-            .order("id", desc=False)
-            .execute()
-        )
-        return res.data if res.data else []
+        res = supabase.table("suivi_controle_beton").select("*").eq("betonnage_id", betonnage_id).order("id", desc=False).execute()
+        return res.data or []
     except Exception as e:
-        st.warning(
-            f"Note : Historique du bétonnage #{betonnage_id} non disponible : {e}"
-        )
+        st.warning(f"Note : Historique du bétonnage #{betonnage_id} non disponible : {e}")
         return []
 
 
 def obtenir_infos_betonnage_parent(supabase, betonnage_id):
-    """Récupère les détails saisis initialement au niveau de la table suivi_betonnage."""
-    if not betonnage_id:
-        return {}
+    if not betonnage_id: return {}
     try:
-        res = (
-            supabase.table("suivi_betonnage")
-            .select("*")
-            .eq("id", betonnage_id)
-            .execute()
-        )
-        if res.data:
-            return res.data[0]
+        res = supabase.table("suivi_betonnage").select("*").eq("id", betonnage_id).execute()
+        if res.data: return res.data[0]
     except Exception as e:
-        st.warning(
-            f"Note : Impossible de charger la fiche parent de bétonnage #{betonnage_id} : {e}"
-        )
+        st.warning(f"Note : Impossible de charger la fiche parent #{betonnage_id} : {e}")
     return {}
 
 
 def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
-    """Détermine la référence de contrôle avec priorité donnée au N° de Réception."""
     session_key = f"ref_controle_beton_{betonnage_id}"
-    if session_key in st.session_state and st.session_state[session_key]:
-        return st.session_state[session_key]
+    if st.session_state.get(session_key): return st.session_state[session_key]
 
-    # --- Priorité au Numéro de Réception (Phase 0) ---
-    num_reception = None
-    if info_betonnage:
-        num_reception = info_betonnage.get("num_reception") or info_betonnage.get("num_reception")
-    
-    if num_reception and str(num_reception).strip() not in ["", "-", "None", "NaN", "N/A"]:
-        val_defaut = str(num_reception).strip()
-        st.session_state[session_key] = val_defaut
-        return val_defaut
-    # ----------------------------------------------------------------
+    num_rec = (info_betonnage or {}).get("num_reception")
+    if num_rec and str(num_rec).strip() not in ["", "-", "None", "NaN", "N/A"]:
+        st.session_state[session_key] = str(num_rec).strip()
+        return str(num_rec).strip()
 
-    ref_parent = info_betonnage.get("ref_controle") if info_betonnage else None
-    if ref_parent and str(ref_parent).strip():
-        st.session_state[session_key] = str(ref_parent).strip()
-        return str(ref_parent).strip()
+    for candidate in [(info_betonnage or {}).get("ref_controle"), (sample_ep or {}).get("ref_controle")]:
+        if candidate and str(candidate).strip():
+            st.session_state[session_key] = str(candidate).strip()
+            return str(candidate).strip()
 
-    ref_ep = sample_ep.get("ref_controle") if sample_ep else None
-    if ref_ep and str(ref_ep).strip():
-        st.session_state[session_key] = str(ref_ep).strip()
-        return str(ref_ep).strip()
-
-    ouvrage = info_betonnage.get('ouvrage', 'N/A') if info_betonnage else 'N/A'
-    defaut = f"REF-{betonnage_id}-{ouvrage}"
+    defaut = f"REF-{betonnage_id}-{(info_betonnage or {}).get('ouvrage', 'N/A')}"
     st.session_state[session_key] = defaut
     return defaut
+
+
+def _format_ep_row(ep, date_ref=None):
+    """Helper pour parser les données d'éprouvettes (Retard, Jour, Semaine)."""
+    dt_coul, dt_ecras = ep.get("date_coulee"), ep.get("date_ecrasement")
+    age_calc = "-"
+    if dt_coul and dt_ecras:
+        try:
+            d_c, d_e = datetime.strptime(str(dt_coul)[:10], "%Y-%m-%d").date(), datetime.strptime(str(dt_ecras)[:10], "%Y-%m-%d").date()
+            age_calc = f"{(d_e - d_c).days} jours" if not date_ref else f"{(date_ref - d_c).days} j (Aujourd'hui)"
+        except Exception:
+            age_calc = str(ep.get("echeance", "-"))
+
+    ref_p = str(ep.get("ref_controle") or "").strip()
+    rep_s = str(ep.get("repere_eprouvette", "")).strip()
+    rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
+    f_kn = float(ep.get("force_kn") or 0.0)
+
+    return {
+        "ID": ep.get("id"),
+        "N° Réception": ep.get("num_reception") or ep.get("n_reception") or "-",
+        "Référence / Repère": rep_complet,
+        "N° BL": extraire_num_bl(ep),
+        "Ouvrage": ep.get("ouvrage", "-"),
+        "Classe Béton": ep.get("classe_beton", "-"),
+        "Date Coulée": dt_coul,
+        "Date Écrasement Prévue": dt_ecras,
+        "Échéance Visée": ep.get("echeance", "-"),
+        "Âge Théorique": age_calc,
+        "Statut": "✅ Écrasée" if f_kn > 0 else "⏳ En attente"
+    }
 
 
 # =========================================================
@@ -734,38 +510,20 @@ def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
     user_info = st.session_state.get("user", {})
-    role_utilisateur = str(
-        st.session_state.get("user_role")
-        or st.session_state.get("role")
-        or user_info.get("role", "")
-    ).lower()
-
+    role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
     can_edit = st.session_state.get("can_edit", False) or bool(user_info.get("can_edit", False))
 
-    roles_autorises = ["laboratoire", "labo", "admin", "responsable_labo", "qualite"]
-
-    if role_utilisateur not in roles_autorises and not st.session_state.get("is_admin", False) and not can_edit:
+    if role_user not in ["laboratoire", "labo", "admin", "responsable_labo", "qualite"] and not st.session_state.get("is_admin", False) and not can_edit:
         st.error("⛔ **Accès Restreint**")
-        st.warning(
-            "Ce module est réservé exclusivement au personnel du **Laboratoire de Contrôle**."
-        )
+        st.warning("Ce module est réservé exclusivement au personnel du **Laboratoire de Contrôle**.")
         return
 
-    est_compte_admin = (
-        role_utilisateur == "admin"
-        or st.session_state.get("is_admin") is True
-    )
-
-    est_autorise_edition = est_compte_admin or can_edit
-
     mode_admin = False
-
-    if est_autorise_edition:
+    if role_user == "admin" or st.session_state.get("is_admin") or can_edit:
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔒 Mode Administration / Édition")
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
-        if mode_admin:
-            st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
+        if mode_admin: st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
     tab_reception, tab_prog, tab_saisie = st.tabs([
         "📋 Phase 0 : Réception & Validation",
@@ -775,19 +533,9 @@ def show(supabase):
 
     betonnages_preleves = []
     try:
-        res_beton = (
-            supabase.table("suivi_betonnage")
-            .select("*")
-            .order("id", desc=True)
-            .execute()
-        )
-        if res_beton.data:
-            betonnages_preleves = [
-                item
-                for item in res_beton.data
-                if item.get("prelevement")
-                and str(item.get("prelevement")).upper().startswith("OUI")
-            ]
+        res_b = supabase.table("suivi_betonnage").select("*").order("id", desc=True).execute()
+        if res_b.data:
+            betonnages_preleves = [b for b in res_b.data if b.get("prelevement") and str(b.get("prelevement")).upper().startswith("OUI")]
     except Exception as e:
         st.error(f"❌ Erreur lors du chargement des bétonnages : {e}")
 
@@ -803,47 +551,24 @@ def show(supabase):
         else:
             rows_reception = []
             for item in betonnages_preleves:
-                num_rec_exist = item.get("num_reception") or item.get("num_reception") or ""
-                date_liv = item.get("date_coulee") or item.get("date_livraison") or "-"
-
-                classe_b = item.get("classe_beton") or item.get("classe") or "-"
-                ouvrage_b = item.get("ouvrage") or "-"
-
                 aff_val = item.get("affaissement") or item.get("slump") or "-"
-                affaissement_b = f"{aff_val} mm" if str(aff_val) != "-" and "mm" not in str(aff_val) else str(aff_val)
-
                 temp_val = item.get("temperature") or item.get("temp_beton") or "-"
-                temp_b = f"{temp_val} °C" if str(temp_val) != "-" and "°C" not in str(temp_val) else str(temp_val)
-
-                raw_nb_ep = item.get("nb_eprouvettes") or item.get("nombre_eprouvettes")
-                try:
-                    nb_ep_b = int(raw_nb_ep) if raw_nb_ep is not None else 12
-                except (ValueError, TypeError):
-                    nb_ep_b = 12
-
                 rows_reception.append({
                     "_id_beton": item.get("id"),
-                    "1-Numero de reception": str(num_rec_exist),
-                    "2-Date de livraison": str(date_liv),
-                    "3-Nb d'éprouvettes": nb_ep_b,
-                    "4-Classe de béton": classe_b,
-                    "5-Ouvrage": ouvrage_b,
-                    "6-Affaissement": affaissement_b,
-                    "7-Temperature de béton frais": temp_b,
+                    "1-Numero de reception": str(item.get("num_reception") or ""),
+                    "2-Date de livraison": str(item.get("date_coulee") or item.get("date_livraison") or "-"),
+                    "3-Nb d'éprouvettes": int(item.get("nb_eprouvettes") or 12),
+                    "4-Classe de béton": item.get("classe_beton") or item.get("classe") or "-",
+                    "5-Ouvrage": item.get("ouvrage") or "-",
+                    "6-Affaissement": f"{aff_val} mm" if str(aff_val) != "-" and "mm" not in str(aff_val) else str(aff_val),
+                    "7-Temperature de béton frais": f"{temp_val} °C" if str(temp_val) != "-" and "°C" not in str(temp_val) else str(temp_val),
                 })
 
-            df_reception = pd.DataFrame(rows_reception)
-
-            # Tableau éditable permettant la saisie du N° de Réception
             df_edited = st.data_editor(
-                df_reception,
+                pd.DataFrame(rows_reception),
                 column_config={
-                    "_id_beton": None, # Masqué
-                    "1-Numero de reception": st.column_config.TextColumn(
-                        "1-Numero de reception",
-                        help="Saisissez le N° de Réception ici (laisser vide sinon)",
-                        required=False,
-                    ),
+                    "_id_beton": None,
+                    "1-Numero de reception": st.column_config.TextColumn("1-Numero de reception", help="Saisissez le N° de Réception ici", required=False),
                     "2-Date de livraison": st.column_config.TextColumn("2-Date de livraison", disabled=True),
                     "3-Nb d'éprouvettes": st.column_config.NumberColumn("7-Nb d'éprouvettes", disabled=True),
                     "4-Classe de béton": st.column_config.TextColumn("3-Classe de béton", disabled=True),
@@ -851,403 +576,216 @@ def show(supabase):
                     "6-Affaissement": st.column_config.TextColumn("5-Affaissement", disabled=True),
                     "7-Temperature de béton frais": st.column_config.TextColumn("6-Temperature de béton frais", disabled=True),
                 },
-                use_container_width=True,
-                hide_index=True,
-                key="editor_reception_phase0",
+                use_container_width=True, hide_index=True, key="editor_reception_phase0",
             )
 
             col_rec1, col_rec2 = st.columns(2)
             with col_rec1:
                 if st.button("💾 Enregistrer les N° de Réception", type="primary", use_container_width=True):
-                    succes_rec = 0
-                    bloque_doublon = False
-
-                    # 1. Étape de validation préalable de tous les numéros saisis (détection doublons)
-                    nouveaux_numeros = {}
-                    for _, row_rec in df_edited.iterrows():
-                        beton_id_val = int(row_rec["_id_beton"])
-                        n_rec_val = str(row_rec["1-Numero de reception"]).strip()
-
-                        if n_rec_val and n_rec_val not in ["-", ""]:
-                            # Vérification doublons internes à la saisie actuelle
-                            if n_rec_val in nouveaux_numeros.values():
-                                st.error(f"❌ **Saisie Bloquée** : Le N° de réception `{n_rec_val}` est saisi en double dans la table ci-dessus !")
+                    succes_rec, bloque_doublon, nouveaux_numeros = 0, False, {}
+                    for _, row in df_edited.iterrows():
+                        b_id, n_rec = int(row["_id_beton"]), str(row["1-Numero de reception"]).strip()
+                        if n_rec and n_rec not in ["-", ""]:
+                            if n_rec in nouveaux_numeros.values():
+                                st.error(f"❌ **Saisie Bloquée** : Le N° de réception `{n_rec}` est saisi en double !")
                                 bloque_doublon = True
                                 break
-                            
-                            # Vérification doublons existants en Base de données
-                            if verifier_doublon_num_reception(supabase, n_rec_val, current_beton_id=beton_id_val):
-                                st.error(f"❌ **Enregistrement Bloqué** : Le N° de réception `{n_rec_val}` existe déjà dans la base de données pour une autre fiche !")
+                            if verifier_doublon_num_reception(supabase, n_rec, current_beton_id=b_id):
+                                st.error(f"❌ **Enregistrement Bloqué** : Le N° de réception `{n_rec}` existe déjà dans la base !")
                                 bloque_doublon = True
                                 break
+                            nouveaux_numeros[b_id] = n_rec
 
-                            nouveaux_numeros[beton_id_val] = n_rec_val
-
-                    # 2. Si aucun doublon n'est détecté, procéder à l'enregistrement
                     if not bloque_doublon:
-                        for b_id_save, n_rec_save in nouveaux_numeros.items():
+                        for b_id, n_rec in nouveaux_numeros.items():
                             try:
-                                supabase.table("suivi_betonnage").update(
-                                    {"num_reception": n_rec_save}
-                                ).eq("id", b_id_save).execute()
+                                supabase.table("suivi_betonnage").update({"num_reception": n_rec}).eq("id", b_id).execute()
                                 succes_rec += 1
                             except Exception:
                                 try:
-                                    supabase.table("suivi_betonnage").update(
-                                        {"n_reception": n_rec_save}
-                                ).eq("id", b_id_save).execute()
+                                    supabase.table("suivi_betonnage").update({"n_reception": n_rec}).eq("id", b_id).execute()
                                     succes_rec += 1
-                                except Exception as err_u2:
-                                    st.error(f"Erreur d'enregistrement pour la fiche #{b_id_save} : {err_u2}")
-
+                                except Exception as err:
+                                    st.error(f"Erreur d'enregistrement pour #{b_id} : {err}")
                         if succes_rec > 0:
-                            st.success(f"✅ {succes_rec} N° de Réception enregistré(s) avec succès !")
+                            st.success(f"✅ {succes_rec} N° de Réception enregistré(s) !")
                             st.rerun()
 
             with col_rec2:
-                df_visibles = df_edited[
-                    df_edited["1-Numero de reception"].str.strip().ne("") & 
-                    df_edited["1-Numero de reception"].str.strip().ne("-")
-                ]
-                excel_reception = exporter_dataframe_excel(df_visibles.drop(columns=["_id_beton"]), "Phase_0")
+                df_visibles = df_edited[df_edited["1-Numero de reception"].str.strip().ne("") & df_edited["1-Numero de reception"].str.strip().ne("-")]
                 st.download_button(
                     label="📊 Télécharger la liste des réceptions en Excel",
-                    data=excel_reception,
+                    data=exporter_dataframe_excel(df_visibles.drop(columns=["_id_beton"]), "Phase_0"),
                     file_name=f"Reception_Beton_Phase_0_{date.today()}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="btn_download_reception_excel",
+                    use_container_width=True, key="btn_download_reception_excel",
                 )
 
     # =========================================================
-    # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES (AJOUT & MODIFICATION)
+    # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
     # =========================================================
     with tab_prog:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
-        # ---------------------------------------------------------
-        # BLOC 1 : MODIFICATION / AJUSTEMENT (Restreint aux utilisateurs avec can_edit)
-        # ---------------------------------------------------------
         if can_edit:
             with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
-                st.markdown("##### ⚙️ Éditer les échéances déjà programmées")
                 try:
-                    res_progs_exist = (
-                        supabase.table("suivi_controle_beton")
-                        .select("*")
-                        .order("id", desc=True)
-                        .execute()
-                    )
-                    eprouvettes_enregistrees = res_progs_exist.data if res_progs_exist.data else []
-                except Exception as e_fetch_prog:
+                    res_p = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
+                    eprouvettes_enregistrees = res_p.data or []
+                except Exception as e:
                     eprouvettes_enregistrees = []
-                    st.error(f"Erreur lors du chargement des programmations : {e_fetch_prog}")
+                    st.error(f"Erreur lors du chargement des programmations : {e}")
 
-                if not eprouvettes_enregistrees:
-                    st.info("ℹ️ Aucune programmation existante à modifier.")
-                else:
-                    df_prog_mod = pd.DataFrame(eprouvettes_enregistrees)
-                    
-                    cols_ed = [
-                        "id",
-                        "betonnage_id",
-                        "ref_controle",
-                        "repere_eprouvette",
-                        "echeance",
-                        "date_ecrasement",
-                        "date_coulee",
-                        "ouvrage",
-                        "classe_beton",
-                    ]
-                    cols_presentes = [c for c in df_prog_mod.columns if c in cols_ed]
-                    df_edit_prog = df_prog_mod[cols_presentes].copy()
+                if eprouvettes_enregistrees:
+                    df_edit_prog = pd.DataFrame(eprouvettes_enregistrees)
+                    cols_ed = [c for c in ["id", "betonnage_id", "ref_controle", "repere_eprouvette", "echeance", "date_ecrasement", "date_coulee", "ouvrage", "classe_beton"] if c in df_edit_prog.columns]
 
                     df_prog_modifiee = st.data_editor(
-                        df_edit_prog,
+                        df_edit_prog[cols_ed],
                         column_config={
                             "id": st.column_config.NumberColumn("ID", disabled=True),
                             "betonnage_id": None,
                             "ref_controle": st.column_config.TextColumn("Réf. Contrôle (N° Réception)"),
-                            "repere_eprouvette": st.column_config.TextColumn("Repère Eprouvette"),
-                            "echeance": st.column_config.SelectboxColumn(
-                                "Échéance",
-                                options=["3 jours", "7 jours", "28 jours", "90 jours"],
-                            ),
-                            "date_ecrasement": st.column_config.TextColumn("Date Écrasement (AAAA-MM-JJ)"),
+                            "echeance": st.column_config.SelectboxColumn("Échéance", options=["3 jours", "7 jours", "28 jours", "90 jours"]),
                             "date_coulee": st.column_config.TextColumn("Date Coulée", disabled=True),
                             "ouvrage": st.column_config.TextColumn("Ouvrage", disabled=True),
                             "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
                         },
-                        use_container_width=True,
-                        hide_index=True,
-                        key="editor_modification_phase1",
+                        use_container_width=True, hide_index=True, key="editor_modification_phase1",
                     )
 
                     if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", use_container_width=True, key="btn_save_mod_prog"):
-                        nb_succes_mod = 0
-                        bloque_mod_doublon = False
-
+                        bloque_mod = False
                         for _, r_m in df_prog_modifiee.iterrows():
-                            ep_id_mod = int(r_m["id"])
-                            b_id_mod = r_m.get("betonnage_id")
-                            ref_ctrl_mod = str(r_m.get("ref_controle", "")).strip()
-
-                            # Vérification des doublons sur la modification du N° Réception / Réf Contrôle
-                            if ref_ctrl_mod and verifier_doublon_num_reception(supabase, ref_ctrl_mod, current_beton_id=b_id_mod):
-                                st.error(f"❌ **Modification Bloquée** : La Réf. Contrôle / N° Réception `{ref_ctrl_mod}` existe déjà sur une autre fiche !")
-                                bloque_mod_doublon = True
+                            ref_ctrl = str(r_m.get("ref_controle", "")).strip()
+                            if ref_ctrl and verifier_doublon_num_reception(supabase, ref_ctrl, current_beton_id=r_m.get("betonnage_id")):
+                                st.error(f"❌ **Modification Bloquée** : La Réf `{ref_ctrl}` existe déjà !")
+                                bloque_mod = True
                                 break
 
-                        if not bloque_mod_doublon:
+                        if not bloque_mod:
+                            nb_succes = 0
                             for _, r_m in df_prog_modifiee.iterrows():
-                                ep_id_mod = int(r_m["id"])
-                                b_id_mod = r_m.get("betonnage_id")
-                                ref_ctrl_mod = str(r_m.get("ref_controle", "")).strip()
-
-                                pay_mod = {
-                                    "ref_controle": ref_ctrl_mod,
+                                ep_id, b_id = int(r_m["id"]), r_m.get("betonnage_id")
+                                ref_ctrl = str(r_m.get("ref_controle", "")).strip()
+                                pay = {
+                                    "ref_controle": ref_ctrl,
                                     "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
                                     "echeance": str(r_m.get("echeance", "")).strip(),
                                     "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
                                 }
                                 try:
-                                    supabase.table("suivi_controle_beton").update(pay_mod).eq("id", ep_id_mod).execute()
-                                    if b_id_mod:
-                                        try:
-                                            supabase.table("suivi_betonnage").update({"num_reception": ref_ctrl_mod}).eq("id", b_id_mod).execute()
-                                        except Exception:
-                                            pass
-                                    nb_succes_mod += 1
-                                except Exception as err_mod:
-                                    st.error(f"Erreur de modification pour l'éprouvette #{ep_id_mod} : {err_mod}")
-
-                            if nb_succes_mod > 0:
-                                st.success(f"✅ {nb_succes_mod} programmation(s) mise(s) à jour avec succès !")
+                                    supabase.table("suivi_controle_beton").update(pay).eq("id", ep_id).execute()
+                                    if b_id:
+                                        try: supabase.table("suivi_betonnage").update({"num_reception": ref_ctrl}).eq("id", b_id).execute()
+                                        except Exception: pass
+                                    nb_succes += 1
+                                except Exception as err:
+                                    st.error(f"Erreur pour #{ep_id} : {err}")
+                            if nb_succes > 0:
+                                st.success(f"✅ {nb_succes} programmation(s) mise(s) à jour !")
                                 st.rerun()
         else:
-            st.info("🔒 **Accès restreint :** La modification/ajustement des programmations existantes est réservée aux utilisateurs disposant du droit de modification (`can_edit`).")
+            st.info("🔒 **Accès restreint :** La modification nécessite le droit `can_edit`.")
 
         st.divider()
-
-        # ---------------------------------------------------------
-        # BLOC 2 : AJOUTER UNE NOUVELLE PROGRAMMATION
-        # ---------------------------------------------------------
         st.subheader("➕ Ajouter une Nouvelle Programmation")
 
         prog_counts = {}
         try:
-            res_deja_all = (
-                supabase.table("suivi_controle_beton")
-                .select("betonnage_id")
-                .execute()
-            )
-            if res_deja_all.data:
-                for row in res_deja_all.data:
-                    b_id_val = row.get("betonnage_id")
-                    if b_id_val:
-                        prog_counts[b_id_val] = prog_counts.get(b_id_val, 0) + 1
+            res_deja = supabase.table("suivi_controle_beton").select("betonnage_id").execute()
+            for r in (res_deja.data or []):
+                b_id_v = r.get("betonnage_id")
+                if b_id_v: prog_counts[b_id_v] = prog_counts.get(b_id_v, 0) + 1
         except Exception as e:
             st.warning(f"Note lors du contrôle des quotas : {e}")
 
-        betonnages_non_programmes = []
-        fiches_sans_num_reception = []
-
+        betonnages_non_programmes, fiches_sans_num_reception = [], []
         for b in betonnages_preleves:
-            num_rec_raw = b.get("num_reception") if b.get("num_reception") is not None else b.get("n_reception")
-            num_rec_val = str(num_rec_raw).strip() if num_rec_raw is not None else ""
-
-            if not num_rec_val or num_rec_val.upper() in ["-", "NONE", "NAN", "N/A", "NULL"]:
+            num_rec = str(b.get("num_reception") or b.get("n_reception") or "").strip()
+            if not num_rec or num_rec.upper() in ["-", "NONE", "NAN", "N/A", "NULL"]:
                 fiches_sans_num_reception.append(b)
                 continue
-
-            b_id = b.get("id")
-            raw_nb_ep = b.get("nb_eprouvettes") or b.get("nombre_eprouvettes")
-            try:
-                total_prevu = int(raw_nb_ep) if raw_nb_ep is not None else 12
-            except (ValueError, TypeError):
-                total_prevu = 12
-
-            deja_prog = prog_counts.get(b_id, 0)
-            if (total_prevu - deja_prog) > 0 or mode_admin:
+            total_prevu = int(b.get("nb_eprouvettes") or 12)
+            if (total_prevu - prog_counts.get(b.get("id"), 0)) > 0 or mode_admin:
                 betonnages_non_programmes.append(b)
 
         if fiches_sans_num_reception:
-            st.warning(
-                f"⚠️ **{len(fiches_sans_num_reception)} fiche(s) de bétonnage** ne peuvent pas être programmées car leur **N° de Réception** n'est pas renseigné. Veuillez aller dans l'onglet **`📋 Phase 0 : Réception & Validation`** pour le saisir."
-            )
+            st.warning(f"⚠️ **{len(fiches_sans_num_reception)} fiche(s)** manquent de **N° de Réception**. Allez dans l'onglet Phase 0 pour le saisir.")
 
-        if not betonnages_non_programmes:
-            st.info("ℹ️ Aucun bétonnage en attente de programmation (ou tous les bétonnages prélevés manquent de N° Réception).")
-        else:
+        if betonnages_non_programmes:
             options_beton = {
-                (
-                    f"N° Réception: {b.get('num_reception') or b.get('n_reception')} | "
-                    f"Classe: {b.get('classe_beton', b.get('classe', 'N/A'))} | "
-                    f"Date: {b.get('date_coulee', b.get('date_livraison', 'N/A'))} | "
-                    f"Ouvrage: {b.get('ouvrage', 'N/A')} | "
-                    f"BL: {extraire_num_bl(b)}"
-                ): b
+                f"N° Réception: {b.get('num_reception') or b.get('n_reception')} | Classe: {b.get('classe_beton', 'N/A')} | Date: {b.get('date_coulee', 'N/A')} | Ouvrage: {b.get('ouvrage', 'N/A')} | BL: {extraire_num_bl(b)}": b
                 for b in betonnages_non_programmes
             }
-
-            choix_label_p = st.selectbox(
-                "Sélectionner la fiche de bétonnage :",
-                list(options_beton.keys()),
-                key="prog_beton_select",
-            )
+            choix_label_p = st.selectbox("Sélectionner la fiche de bétonnage :", list(options_beton.keys()), key="prog_beton_select")
             beton_p = options_beton[choix_label_p]
-
             b_id = beton_p.get("id")
+
             num_reception_p = beton_p.get("num_reception") or beton_p.get("n_reception")
             num_bl_p = extraire_num_bl(beton_p, choix_label_p)
-
-            ouvrage_p = str(beton_p.get("ouvrage") or "-")
-            classe_beton_p = str(
-                beton_p.get("classe_beton") or beton_p.get("classe") or "-"
-            )
-
-            raw_nb_ep = beton_p.get("nb_eprouvettes") or beton_p.get("nombre_eprouvettes")
-            try:
-                total_eprouvettes_prevues = int(raw_nb_ep) if raw_nb_ep is not None else 12
-            except (ValueError, TypeError):
-                total_eprouvettes_prevues = 12
-
+            ouvrage_p, classe_beton_p = str(beton_p.get("ouvrage") or "-"), str(beton_p.get("classe_beton") or "-")
+            total_eprouvettes_prevues = int(beton_p.get("nb_eprouvettes") or 12)
             eprouvettes_deja_prog = prog_counts.get(b_id, 0)
             solde_disponible = max(0, total_eprouvettes_prevues - eprouvettes_deja_prog)
 
-            affaissement_raw = str(beton_p.get("affaissement") or beton_p.get("slump") or "-")
-            temp_beton_p = str(beton_p.get("temperature") or beton_p.get("temp_beton") or "-")
-            affaissement_p = f"{affaissement_raw} mm" if affaissement_raw != "-" else "-"
-
-            date_coulee_raw = beton_p.get("date_coulee") or beton_p.get("date_livraison") or str(date.today())
-            try:
-                date_coulee_p = datetime.strptime(str(date_coulee_raw), "%Y-%m-%d").date()
-            except Exception:
-                date_coulee_p = date.today()
-
-            # Remplissage automatique de la Référence de Contrôle
-            ref_controle_init = determiner_ref_controle(supabase, b_id, beton_p, {})
+            date_coulee_raw = beton_p.get("date_coulee") or str(date.today())
+            try: date_coulee_p = datetime.strptime(str(date_coulee_raw), "%Y-%m-%d").date()
+            except Exception: date_coulee_p = date.today()
 
             st.markdown("---")
-            
-            st.info(
-                f"📌 **N° Réception : {num_reception_p}** | Total prévu : **{total_eprouvettes_prevues}** | Déjà programmée(s) : **{eprouvettes_deja_prog}** | Reste disponible : **{solde_disponible}**"
-            )
+            st.info(f"📌 **N° Réception : {num_reception_p}** | Total prévu : **{total_eprouvettes_prevues}** | Déjà programmée(s) : **{eprouvettes_deja_prog}** | Reste : **{solde_disponible}**")
 
-            # Champ Référence de Contrôle : FERMÉ (lecture seule) et rempli avec le N° de réception s'il existe
-            ref_value = num_reception_p if num_reception_p and str(num_reception_p).strip() not in ["", "-", "None", "NaN", "N/A"] else ref_controle_init
-            ref_controle_p = st.text_input(
-                "🏷️ Référence de Contrôle (Préfixe du repère)",
-                value=ref_value,
-                disabled=True,
-                key=f"p_ref_ctrl_{b_id}",
-            )
+            ref_value = num_reception_p if num_reception_p and str(num_reception_p).strip() not in ["", "-", "None", "NaN", "N/A"] else determiner_ref_controle(supabase, b_id, beton_p, {})
+            ref_controle_p = st.text_input("🏷️ Référence de Contrôle", value=ref_value, disabled=True, key=f"p_ref_ctrl_{b_id}")
             st.session_state[f"ref_controle_beton_{b_id}"] = ref_controle_p
 
             st.markdown("---")
-            col_p1, col_p2, col_p3 = st.columns(3)
-            with col_p1:
-                st.text_input("N° Bon de Livraison (BL)", value=num_bl_p, disabled=True, key=f"p_bl_{b_id}")
-            with col_p2:
-                st.text_input("Ouvrage / Élément", value=ouvrage_p, disabled=True, key=f"p_ouv_{b_id}")
-            with col_p3:
-                st.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
+            col1, col2, col3 = st.columns(3)
+            col1.text_input("N° Bon de Livraison (BL)", value=num_bl_p, disabled=True, key=f"p_bl_{b_id}")
+            col2.text_input("Ouvrage / Élément", value=ouvrage_p, disabled=True, key=f"p_ouv_{b_id}")
+            col3.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
 
-            col_p4, col_p5 = st.columns(2)
-            with col_p4:
-                st.text_input("Affaissement / Slump (mm)", value=affaissement_p, disabled=True, key=f"p_aff_{b_id}")
-            with col_p5:
-                st.text_input("Température Béton Frais (°C)", value=(f"{temp_beton_p} °C" if temp_beton_p != "-" else "-"), disabled=True, key=f"p_temp_{b_id}")
+            echeance_p = st.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], index=2, key=f"p_echeance_{b_id}")
+            nb_j = {"3 jours": 3, "7 jours": 7, "28 jours": 28, "90 jours": 90}.get(echeance_p, 28)
+            echeance_key = echeance_p.replace(" ", "_")
 
-            st.markdown("---")
-            col_e1, col_e2, col_e3, col_e4 = st.columns(4)
-            with col_e1:
-                echeance_p = st.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], index=2, key=f"p_echeance_{b_id}")
-
-            jours_dict = {"3 jours": 3, "7 jours": 7, "28 jours": 28, "90 jours": 90}
-            nb_j = jours_dict.get(echeance_p, 28)
-            date_prevue_auto = date_coulee_p + timedelta(days=nb_j)
-            echeance_key_clean = echeance_p.replace(" ", "_")
-
-            with col_e2:
-                st.date_input("Date de Coulée", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
-            with col_e3:
-                date_ecrasement_prevue = st.date_input("Date d'Écrasement Prévue", value=date_prevue_auto, key=f"p_date_ecras_{b_id}_{echeance_key_clean}")
-
+            col_e1, col_e2, col_e3 = st.columns(3)
+            col_e1.date_input("Date de Coulée", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
+            date_ecrasement_prevue = col_e2.date_input("Date d'Écrasement Prévue", value=date_coulee_p + timedelta(days=nb_j), key=f"p_date_ecras_{b_id}_{echeance_key}")
+            
             max_allowed = solde_disponible if not mode_admin else 50
-            min_val = 1 if max_allowed > 0 else 0
-            val_defaut = min(2, max_allowed) if max_allowed > 0 else 0
+            nb_eprouvettes_p = col_e3.number_input("Nombre d'éprouvettes", min_value=(1 if max_allowed > 0 else 0), max_value=max_allowed, value=min(2, max_allowed), key=f"p_nb_ep_{b_id}_{echeance_key}")
 
-            with col_e4:
-                if max_allowed == 0 and not mode_admin:
-                    st.warning("⚠️ Quota atteint.")
-                    nb_eprouvettes_p = 0
-                else:
-                    nb_eprouvettes_p = st.number_input(
-                        "Nombre d'éprouvettes à programmer",
-                        min_value=min_val,
-                        max_value=max_allowed,
-                        value=val_defaut,
-                        step=1,
-                        key=f"p_nb_ep_{b_id}_{echeance_key_clean}",
-                    )
-
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                forme_p = st.selectbox(
-                    "Type / Forme d'éprouvette",
-                    ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"],
-                    key=f"p_forme_{b_id}",
-                )
-
+            forme_p = st.selectbox("Type / Forme d'éprouvette", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
             sect_def = 176.71 if "150x300" in forme_p else (201.06 if "160x320" in forme_p else 78.54)
-
-            with col_f2:
-                forme_key_clean = forme_p.replace(" ", "_").replace("x", "_")
-                st.number_input("Section Théorique (cm²)", value=sect_def, format="%.2f", disabled=True, key=f"p_section_{b_id}_{forme_key_clean}")
 
             if int(nb_eprouvettes_p) > 0:
                 st.markdown("##### 🏷️ Repères codés des éprouvettes")
                 reperes_p = []
                 cols_rep = st.columns(min(int(nb_eprouvettes_p), 6))
                 for i in range(int(nb_eprouvettes_p)):
-                    col_idx = i % 6
-                    with cols_rep[col_idx]:
-                        num_ep = eprouvettes_deja_prog + i + 1
-                        rep_defaut = f"/{num_ep}"
-                        rep_val = st.text_input(f"Repère #{num_ep}", value=rep_defaut, key=f"prog_rep_{b_id}_{echeance_key_clean}_{i}")
+                    with cols_rep[i % 6]:
+                        rep_val = st.text_input(f"Repère #{eprouvettes_deja_prog + i + 1}", value=f"/{eprouvettes_deja_prog + i + 1}", key=f"prog_rep_{b_id}_{echeance_key}_{i}")
                         reperes_p.append(rep_val)
 
                 if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}"):
-                    try:
-                        supabase.table("suivi_betonnage").update({"ref_controle": ref_controle_p}).eq("id", b_id).execute()
-                    except Exception:
-                        pass
+                    try: supabase.table("suivi_betonnage").update({"ref_controle": ref_controle_p}).eq("id", b_id).execute()
+                    except Exception: pass
 
                     succes_cnt = 0
                     for rep in reperes_p:
-                        payload_prog = {
-                            "betonnage_id": b_id,
-                            "num_bl": num_bl_p,
-                            "ouvrage": ouvrage_p,
-                            "classe_beton": classe_beton_p,
-                            "date_coulee": str(date_coulee_p),
-                            "echeance": echeance_p,
-                            "date_ecrasement": str(date_ecrasement_prevue),
-                            "ref_controle": ref_controle_p,
-                            "repere_eprouvette": rep,
-                            "forme": forme_p,
-                            "section": float(sect_def),
+                        pay = {
+                            "betonnage_id": b_id, "num_bl": num_bl_p, "ouvrage": ouvrage_p, "classe_beton": classe_beton_p,
+                            "date_coulee": str(date_coulee_p), "echeance": echeance_p, "date_ecrasement": str(date_ecrasement_prevue),
+                            "ref_controle": ref_controle_p, "repere_eprouvette": rep, "forme": forme_p, "section": float(sect_def)
                         }
                         try:
-                            res = supabase.table("suivi_controle_beton").insert(payload_prog).execute()
-                            if res.data:
-                                succes_cnt += 1
-                        except Exception as err:
-                            st.error(f"Erreur lors de la programmation de {rep} : {err}")
+                            if supabase.table("suivi_controle_beton").insert(pay).execute().data: succes_cnt += 1
+                        except Exception as err: st.error(f"Erreur pour {rep} : {err}")
 
                     if succes_cnt > 0:
-                        st.success(f"✅ {succes_cnt} éprouvette(s) programmée(s) pour le {date_ecrasement_prevue} ({echeance_p}) !")
+                        st.success(f"✅ {succes_cnt} éprouvette(s) programmée(s) !")
                         st.rerun()
 
     # =========================================================
@@ -1259,231 +797,66 @@ def show(supabase):
         today_date = date.today()
         today_str = str(today_date)
 
-        col_f1, col_f2 = st.columns([1, 2])
-        with col_f1:
-            date_filtre = st.date_input("📅 Choisir une date à consulter", value=today_date, key="filtre_date_planning")
-            date_filtre_str = str(date_filtre)
-
-        # --- CALCUL DE LA SEMAINE EN COURS (Lundi à Dimanche) ---
+        date_filtre = st.date_input("📅 Choisir une date à consulter", value=today_date, key="filtre_date_planning")
+        date_filtre_str = str(date_filtre)
         debut_semaine = date_filtre - timedelta(days=date_filtre.weekday())
         fin_semaine = debut_semaine + timedelta(days=6)
-        debut_semaine_str = str(debut_semaine)
-        fin_semaine_str = str(fin_semaine)
 
+        # Retards
         try:
-            res_retards = (
-                supabase.table("suivi_controle_beton")
-                .select("*")
-                .lte("date_ecrasement", today_str)
-                .or_("force_kn.is.null,force_kn.eq.0")
-                .order("date_ecrasement", desc=False)
-                .execute()
-            )
-            retards_list = res_retards.data if res_retards.data else []
-        except Exception as err_retard:
+            res_retards = supabase.table("suivi_controle_beton").select("*").lte("date_ecrasement", today_str).or_("force_kn.is.null,force_kn.eq.0").order("date_ecrasement", desc=False).execute()
+            retards_list = res_retards.data or []
+        except Exception as e:
             retards_list = []
-            st.warning(f"Note lors de la recherche des échéances dépassées : {err_retard}")
+            st.warning(f"Note retards : {e}")
 
         if retards_list:
-            nb_retards = len(retards_list)
-            st.error(f"🚨 **ATTENTION : {nb_retards} éprouvette(s) non écrasée(s) ont atteint ou dépassé leur date d'échéance !**")
-
+            st.error(f"🚨 **ATTENTION : {len(retards_list)} éprouvette(s) non écrasée(s) ont atteint ou dépassé leur date d'échéance !**")
             rows_retard = []
             for ep in retards_list:
-                dt_coul_str = ep.get("date_coulee")
-                dt_ecras_str = ep.get("date_ecrasement")
-                age_actuel = "-"
-
-                if dt_coul_str:
-                    try:
-                        d_coul = datetime.strptime(str(dt_coul_str)[:10], "%Y-%m-%d").date()
-                        age_actuel = f"{(today_date - d_coul).days} j (Aujourd'hui)"
-                    except Exception:
-                        age_actuel = str(ep.get("echeance", "-"))
-
-                ref_p = str(ep.get("ref_controle") or "").strip()
-                rep_s = str(ep.get("repere_eprouvette", "")).strip()
-                rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
-
-                dt_ecras_obj = datetime.strptime(str(dt_ecras_str)[:10], "%Y-%m-%d").date() if dt_ecras_str else today_date
-                if dt_ecras_obj < today_date:
-                    statut_urgence = f"⚠️ En Retard ({(today_date - dt_ecras_obj).days} jour(s))"
-                else:
-                    statut_urgence = "🔥 Prévu Aujourd'hui"
-
+                row = _format_ep_row(ep, date_ref=today_date)
+                dt_e = datetime.strptime(str(ep.get("date_ecrasement"))[:10], "%Y-%m-%d").date() if ep.get("date_ecrasement") else today_date
+                priorite = f"⚠️ En Retard ({(today_date - dt_e).days} jour(s))" if dt_e < today_date else "🔥 Prévu Aujourd'hui"
                 rows_retard.append({
-                    "Priorité": statut_urgence,
-                    "N° Réception": ep.get("num_reception") or ep.get("n_reception") or "-",
-                    "Date Écrasement Prévue": dt_ecras_str,
-                    "Référence / Repère": rep_complet,
-                    "N° BL": extraire_num_bl(ep),
-                    "Ouvrage": ep.get("ouvrage", "-"),
-                    "Classe Béton": ep.get("classe_beton", "-"),
-                    "Date Coulée": dt_coul_str,
-                    "Échéance Visée": ep.get("echeance", "-"),
-                    "Âge Actuel Réel": age_actuel,
+                    "Priorité": priorite, "N° Réception": row["N° Réception"], "Date Écrasement Prévue": row["Date Écrasement Prévue"],
+                    "Référence / Repère": row["Référence / Repère"], "N° BL": row["N° BL"], "Ouvrage": row["Ouvrage"],
+                    "Classe Béton": row["Classe Béton"], "Date Coulée": row["Date Coulée"], "Échéance Visée": row["Échéance Visée"], "Âge Actuel Réel": row["Âge Théorique"]
                 })
-
-            df_retard = pd.DataFrame(rows_retard)
-            st.dataframe(df_retard, use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows_retard), use_container_width=True, hide_index=True)
             st.markdown("---")
 
+        # Jour et Semaine
         try:
-            res_date_sel = (
-                supabase.table("suivi_controle_beton")
-                .select("*")
-                .eq("date_ecrasement", date_filtre_str)
-                .order("id", desc=False)
-                .execute()
-            )
-            eprouvettes_date_sel = res_date_sel.data if res_date_sel.data else []
-        except Exception as err_sel:
-            eprouvettes_date_sel = []
-            st.warning(f"Note lors du chargement de la date {date_filtre_str} : {err_sel}")
+            eprouvettes_date_sel = supabase.table("suivi_controle_beton").select("*").eq("date_ecrasement", date_filtre_str).order("id", desc=False).execute().data or []
+            eprouvettes_semaine = supabase.table("suivi_controle_beton").select("*").gte("date_ecrasement", str(debut_semaine)).lte("date_ecrasement", str(fin_semaine)).order("date_ecrasement", desc=False).execute().data or []
+        except Exception as e:
+            eprouvettes_date_sel, eprouvettes_semaine = [], []
+            st.warning(f"Note chargement planning : {e}")
 
-        # --- RÉCUPÉRATION DES ÉPROUVETTES DE LA SEMAINE ---
-        try:
-            res_semaine = (
-                supabase.table("suivi_controle_beton")
-                .select("*")
-                .gte("date_ecrasement", debut_semaine_str)
-                .lte("date_ecrasement", fin_semaine_str)
-                .order("date_ecrasement", desc=False)
-                .execute()
-            )
-            eprouvettes_semaine = res_semaine.data if res_semaine.data else []
-        except Exception as err_sem:
-            eprouvettes_semaine = []
-            st.warning(f"Note lors du chargement du planning de la semaine ({debut_semaine_str} au {fin_semaine_str}) : {err_sem}")
-
-        rows_semaine = []
-        for ep in eprouvettes_semaine:
-            dt_coul_str = ep.get("date_coulee")
-            dt_ecras_str = ep.get("date_ecrasement")
-            age_calc = "-"
-
-            if dt_coul_str and dt_ecras_str:
-                try:
-                    d_coul = datetime.strptime(str(dt_coul_str)[:10], "%Y-%m-%d").date()
-                    d_ecras = datetime.strptime(str(dt_ecras_str)[:10], "%Y-%m-%d").date()
-                    age_calc = f"{(d_ecras - d_coul).days} jours"
-                except Exception:
-                    age_calc = str(ep.get("echeance", "-"))
-
-            ref_p = str(ep.get("ref_controle") or "").strip()
-            rep_s = str(ep.get("repere_eprouvette", "")).strip()
-            rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
-
-            f_kn_val = float(ep.get("force_kn") or 0.0)
-            statut_val = "✅ Écrasée" if f_kn_val > 0 else "⏳ En attente"
-
-            rows_semaine.append({
-                "ID": ep.get("id"),
-                "N° Réception": ep.get("num_reception") or ep.get("n_reception") or "-",
-                "Référence / Repère": rep_complet,
-                "N° BL": extraire_num_bl(ep),
-                "Ouvrage": ep.get("ouvrage", "-"),
-                "Classe Béton": ep.get("classe_beton", "-"),
-                "Date Coulée": dt_coul_str,
-                "Date Écrasement Prévue": dt_ecras_str,
-                "Échéance Visée": ep.get("echeance", "-"),
-                "Âge Théorique": age_calc,
-                "Statut": statut_val
-            })
-
-        df_semaine = pd.DataFrame(rows_semaine)
+        df_sel = pd.DataFrame([_format_ep_row(ep) for ep in eprouvettes_date_sel])
+        df_semaine = pd.DataFrame([_format_ep_row(ep) for ep in eprouvettes_semaine])
 
         with st.expander(f"📆 Éprouvettes programmées spécifiquement pour le : {date_filtre_str} ({len(eprouvettes_date_sel)} éprouvette(s))", expanded=True):
-            if eprouvettes_date_sel:
-                rows_sel = []
-                for ep in eprouvettes_date_sel:
-                    dt_coul_str = ep.get("date_coulee")
-                    dt_ecras_str = ep.get("date_ecrasement")
-                    age_calc = "-"
-
-                    if dt_coul_str and dt_ecras_str:
-                        try:
-                            d_coul = datetime.strptime(str(dt_coul_str)[:10], "%Y-%m-%d").date()
-                            d_ecras = datetime.strptime(str(dt_ecras_str)[:10], "%Y-%m-%d").date()
-                            age_calc = f"{(d_ecras - d_coul).days} jours"
-                        except Exception:
-                            age_calc = str(ep.get("echeance", "-"))
-
-                    ref_p = str(ep.get("ref_controle") or "").strip()
-                    rep_s = str(ep.get("repere_eprouvette", "")).strip()
-                    rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
-
-                    f_kn_val = float(ep.get("force_kn") or 0.0)
-                    statut_val = "✅ Écrasée" if f_kn_val > 0 else "⏳ En attente"
-
-                    rows_sel.append({
-                        "ID": ep.get("id"),
-                        "N° Réception": ep.get("num_reception") or ep.get("n_reception") or "-",
-                        "Référence / Repère": rep_complet,
-                        "N° BL": extraire_num_bl(ep),
-                        "Ouvrage": ep.get("ouvrage", "-"),
-                        "Classe Béton": ep.get("classe_beton", "-"),
-                        "Date Coulée": dt_coul_str,
-                        "Échéance Visée": ep.get("echeance", "-"),
-                        "Âge Théorique": age_calc,
-                        "Statut": statut_val
-                    })
-
-                df_sel = pd.DataFrame(rows_sel)
-                st.dataframe(df_sel, use_container_width=True, hide_index=True)
-            else:
-                st.info(f"ℹ️ Aucune éprouvette programmée spécifiquement pour la date du {date_filtre_str}.")
+            if not df_sel.empty: st.dataframe(df_sel, use_container_width=True, hide_index=True)
+            else: st.info(f"ℹ️ Aucune éprouvette programmée pour le {date_filtre_str}.")
 
             st.markdown("---")
-            # --- BOUTONS D'EXPORTATION EXCEL (JOUR ET SEMAINE) ---
             col_exp1, col_exp2 = st.columns(2)
-
             with col_exp1:
-                if eprouvettes_date_sel:
-                    excel_planning_date = exporter_dataframe_excel(df_sel, date_filtre_str)
-                    st.download_button(
-                        label=f"📊 Télécharger la liste du jour ({date_filtre_str})",
-                        data=excel_planning_date,
-                        file_name=f"Planning_Ecrasement_{date_filtre_str}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="btn_download_planning_excel",
-                    )
-
+                if not df_sel.empty:
+                    st.download_button(f"📊 Télécharger la liste du jour ({date_filtre_str})", exporter_dataframe_excel(df_sel, date_filtre_str), file_name=f"Planning_Ecrasement_{date_filtre_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="btn_download_planning_excel")
             with col_exp2:
                 if not df_semaine.empty:
-                    excel_planning_semaine = exporter_dataframe_excel(df_semaine, f"Sem_{debut_semaine_str}")
-                    st.download_button(
-                        label=f"📅 Télécharger la liste de la semaine ({debut_semaine_str} au {fin_semaine_str})",
-                        data=excel_planning_semaine,
-                        file_name=f"Planning_Semaine_{debut_semaine_str}_au_{fin_semaine_str}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="btn_download_planning_semaine_excel",
-                    )
-                else:
-                    st.info("ℹ️ Aucune éprouvette programmée pour cette semaine.")
+                    st.download_button(f"📅 Télécharger la liste de la semaine ({debut_semaine} au {fin_semaine})", exporter_dataframe_excel(df_semaine, f"Sem_{debut_semaine}"), file_name=f"Planning_Semaine_{debut_semaine}_au_{fin_semaine}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="btn_download_planning_semaine_excel")
 
         st.markdown("---")
 
-        eprouvettes_en_attente = []
         try:
-            res_att = (
-                supabase.table("suivi_controle_beton")
-                .select("*")
-                .order("id", desc=False)
-                .execute()
-            )
-            if res_att.data:
-                if mode_admin:
-                    eprouvettes_en_attente = res_att.data
-                else:
-                    eprouvettes_en_attente = [
-                        e for e in res_att.data
-                        if e.get("force_kn") is None or float(e.get("force_kn") or 0) == 0
-                    ]
+            res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=False).execute()
+            eprouvettes_en_attente = res_att.data if mode_admin else [e for e in (res_att.data or []) if e.get("force_kn") is None or float(e.get("force_kn") or 0) == 0]
         except Exception as e:
-            st.error(f"Erreur de chargement des essais en attente : {e}")
+            eprouvettes_en_attente = []
+            st.error(f"Erreur de chargement des essais : {e}")
 
         if not eprouvettes_en_attente:
             st.info("👍 Aucune éprouvette en attente de saisie.")
@@ -1491,72 +864,35 @@ def show(supabase):
             groupes_lots = {}
             for ep in eprouvettes_en_attente:
                 b_id_ep = ep.get("betonnage_id")
-                ech_ep = ep.get("echeance", "28 jours")
-                ouv_ep = ep.get("ouvrage", "-")
-                dt_ecras = ep.get("date_ecrasement", "-")
-                classe_ep = ep.get("classe_beton", "-")
-
                 info_b_temp = obtenir_infos_betonnage_parent(supabase, b_id_ep)
                 ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
-                if not classe_ep or classe_ep == "-":
-                    classe_ep = (info_b_temp.get("classe_beton") or info_b_temp.get("classe") or "-") if info_b_temp else "-"
+                classe_ep = ep.get("classe_beton") or (info_b_temp.get("classe_beton") if info_b_temp else "-")
+                cle_groupe = f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ep.get('ouvrage', '-')} | Échéance : {ep.get('echeance', '28 jours')} (Date Prévue : {ep.get('date_ecrasement', '-')}) | Lot ID #{b_id_ep}"
+                groupes_lots.setdefault(cle_groupe, []).append(ep)
 
-                cle_groupe = (
-                    f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ouv_ep}"
-                    f" | Échéance : {ech_ep} (Date Prévue : {dt_ecras}) | Lot ID #{b_id_ep}"
-                )
-
-                if cle_groupe not in groupes_lots:
-                    groupes_lots[cle_groupe] = []
-                groupes_lots[cle_groupe].append(ep)
-
-            choix_lot = st.selectbox(
-                "📦 Sélectionner le lot d'éprouvettes à écraser / modifier :",
-                list(groupes_lots.keys()),
-                key="select_lot_saisie",
-            )
+            choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes à écraser / modifier :", list(groupes_lots.keys()), key="select_lot_saisie")
             lot_selected = groupes_lots[choix_lot]
-
             sample = lot_selected[0]
             betonnage_id = sample.get("betonnage_id")
 
             info_betonnage = obtenir_infos_betonnage_parent(supabase, betonnage_id)
             historique_complet = obtenir_historique_betonnage(supabase, betonnage_id)
-
             exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
-            
-            # Récupération automatique du N° de Réception
-            num_reception_affiche = sample.get("num_reception") or sample.get("n_reception") or (
-                info_betonnage.get("num_reception") or info_betonnage.get("n_reception") if info_betonnage else "-"
-            )
+            num_reception_affiche = sample.get("num_reception") or sample.get("n_reception") or ((info_betonnage or {}).get("num_reception") or "-")
 
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
             col_l1.metric("N° Réception", str(num_reception_affiche))
             col_l2.metric("N° Bon Livraison", exact_bl_phase1)
-            col_l3.metric("Ouvrage", str((info_betonnage.get("ouvrage") if info_betonnage else None) or sample.get("ouvrage") or "-"))
+            col_l3.metric("Ouvrage", str(((info_betonnage or {}).get("ouvrage")) or sample.get("ouvrage") or "-"))
             col_l4.metric("Échéance Visée", str(sample.get("echeance", "-")))
 
             st.markdown("---")
-
             col_g1, col_g2 = st.columns(2)
-            with col_g1:
-                tech_global = st.text_input(
-                    "Technicien / Opérateur",
-                    value=sample.get("technicien", (info_betonnage.get("technicien_prelevement") if info_betonnage else None) or "Technicien LPEE"),
-                    key="tech_global",
-                )
-            with col_g2:
-                obs_globale = st.text_input(
-                    "Commentaire / Observation",
-                    value=sample.get("observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"),
-                    key="obs_global",
-                )
+            tech_global = col_g1.text_input("Technicien / Opérateur", value=sample.get("technicien", (info_betonnage or {}).get("technicien_prelevement") or "Technicien LPEE"), key="tech_global")
+            obs_globale = col_g2.text_input("Commentaire / Observation", value=sample.get("observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"), key="obs_global")
 
             st.markdown("##### 📝 Saisie / Modification des forces d'écrasement")
-
-            # Auto-remplissage dynamique de la Référence de Contrôle
             ref_controle_courante = determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample)
-
             lot_key = f"df_lot_{choix_lot}"
 
             if lot_key not in st.session_state or mode_admin:
@@ -1565,46 +901,25 @@ def show(supabase):
                     sec = float(ep.get("section") or 176.71)
                     f_kn = float(ep.get("force_kn") or 0.0)
                     fc = round((f_kn * 10.0) / sec, 1) if sec > 0 and f_kn > 0 else 0.0
-
-                    ref_ep_ligne = str(ep.get("ref_controle") or ref_controle_courante).strip()
-
                     rows_list.append({
-                        "ID": ep["id"],
-                        "🏷️ Référence de Contrôle": ref_ep_ligne,
-                        "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"),
-                        "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
-                        "_section": sec,
-                        "Force (kN)": f_kn,
-                        "Résistance Fc (MPa)": fc,
-                        "Moyenne Resistance Fc (MPa)": 0.0,
+                        "ID": ep["id"], "🏷️ Référence de Contrôle": str(ep.get("ref_controle") or ref_controle_courante).strip(),
+                        "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"), "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
+                        "_section": sec, "Force (kN)": f_kn, "Résistance Fc (MPa)": fc, "Moyenne Resistance Fc (MPa)": 0.0,
                     })
                 df_init = pd.DataFrame(rows_list)
-
                 valides_init = df_init[df_init["Résistance Fc (MPa)"] > 0]
-                moy_init = round(valides_init["Résistance Fc (MPa)"].mean(), 1) if not valides_init.empty else 0.0
-                df_init["Moyenne Resistance Fc (MPa)"] = moy_init
-
+                df_init["Moyenne Resistance Fc (MPa)"] = round(valides_init["Résistance Fc (MPa)"].mean(), 1) if not valides_init.empty else 0.0
                 st.session_state[lot_key] = df_init
 
             def update_fc():
                 editor_state = st.session_state.get("data_editor_ecrasement", {})
-                changes = editor_state.get("edited_rows", {})
-
-                for row_idx, updated_cols in changes.items():
+                for row_idx, updated_cols in editor_state.get("edited_rows", {}).items():
                     if "Force (kN)" in updated_cols:
-                        raw_force = updated_cols["Force (kN)"]
-                        try:
-                            new_force = float(raw_force) if raw_force is not None else 0.0
-                        except (ValueError, TypeError):
-                            new_force = 0.0
-
+                        try: new_force = float(updated_cols["Force (kN)"])
+                        except (ValueError, TypeError): new_force = 0.0
                         sec = float(st.session_state[lot_key].at[row_idx, "_section"])
                         st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
-
-                        if sec > 0 and new_force > 0:
-                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1)
-                        else:
-                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = 0.0
+                        st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1) if sec > 0 and new_force > 0 else 0.0
 
                     if "🏷️ Référence de Contrôle" in updated_cols:
                         nouvelle_ref = str(updated_cols["🏷️ Référence de Contrôle"] or "").strip()
@@ -1612,128 +927,59 @@ def show(supabase):
                         st.session_state[f"ref_controle_beton_{betonnage_id}"] = nouvelle_ref
 
                 df_cur = st.session_state[lot_key]
-                forces_valides = df_cur[df_cur["Résistance Fc (MPa)"].astype(float) > 0]
-                fc_moy = (
-                    round(forces_valides["Résistance Fc (MPa)"].astype(float).mean(), 1)
-                    if not forces_valides.empty
-                    else 0.0
-                )
-                st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = fc_moy
+                valides = df_cur[df_cur["Résistance Fc (MPa)"].astype(float) > 0]
+                st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = round(valides["Résistance Fc (MPa)"].astype(float).mean(), 1) if not valides.empty else 0.0
 
-            # Le tableau éditable avec remplissage auto de la Référence de Contrôle
             st.data_editor(
                 st.session_state[lot_key],
                 column_config={
                     "ID": st.column_config.NumberColumn("ID", disabled=True),
-                    "🏷️ Référence de Contrôle": st.column_config.TextColumn(
-                        "🏷️ Référence de Contrôle (Préfixe)",
-                        help="Préfixe du repère rempli automatiquement pour ce lot",
-                    ),
                     "Repère": st.column_config.TextColumn("Repère", disabled=not mode_admin),
                     "Forme d'éprouvette": st.column_config.TextColumn("Forme d'éprouvette", disabled=True),
                     "_section": None,
-                    "Force (kN)": st.column_config.NumberColumn(
-                        "⚡ Force (kN)",
-                        help="Saisissez la force lue sur la presse",
-                        min_value=0.0,
-                        max_value=3000.0,
-                        step=0.1,
-                        format="%.1f",
-                    ),
+                    "Force (kN)": st.column_config.NumberColumn("⚡ Force (kN)", min_value=0.0, max_value=3000.0, step=0.1, format="%.1f"),
                     "Résistance Fc (MPa)": st.column_config.NumberColumn("💥 Résistance Fc (MPa)", disabled=True, format="%.1f"),
                     "Moyenne Resistance Fc (MPa)": st.column_config.NumberColumn("📊 Moyenne Resistance Fc (MPa)", disabled=True, format="%.1f"),
                 },
-                use_container_width=True,
-                hide_index=True,
-                key="data_editor_ecrasement",
-                on_change=update_fc,
+                use_container_width=True, hide_index=True, key="data_editor_ecrasement", on_change=update_fc,
             )
 
             df_actuel = st.session_state[lot_key]
-
-            export_data = []
             dict_actuel = {int(row["ID"]): row for _, row in df_actuel.iterrows()}
+            export_data = []
 
-            items_source = historique_complet if historique_complet else lot_selected
-
-            for ep_h in items_source:
-                ep_id = ep_h["id"]
-                sec_h = float(ep_h.get("section") or 176.71)
-
+            for ep_h in (historique_complet or lot_selected):
+                ep_id, sec_h = ep_h["id"], float(ep_h.get("section") or 176.71)
                 if ep_id in dict_actuel:
-                    row_saisie = dict_actuel[ep_id]
-                    f_kn = float(row_saisie["Force (kN)"])
-                    fc_mpa = float(row_saisie["Résistance Fc (MPa)"])
-                    ref_p = str(row_saisie["🏷️ Référence de Contrôle"]).strip()
-                    rep_s = str(row_saisie["Repère"]).strip()
-                    statut = "En cours" if f_kn == 0 else "Réalisé"
+                    r_s = dict_actuel[ep_id]
+                    f_kn, fc_mpa = float(r_s["Force (kN)"]), float(r_s["Résistance Fc (MPa)"])
+                    ref_p, rep_s = str(r_s["🏷️ Référence de Contrôle"]).strip(), str(r_s["Repère"]).strip()
                 else:
                     f_kn = float(ep_h.get("force_kn") or 0.0)
                     fc_mpa = float(ep_h.get("fc_mpa") or (round((f_kn * 10.0) / sec_h, 1) if f_kn > 0 else 0.0))
-                    ref_p = str(ep_h.get("ref_controle") or ref_controle_courante).strip()
-                    rep_s = str(ep_h.get("repere_eprouvette", f"/{ep_id}")).strip()
-                    statut = "En cours" if f_kn == 0 else "Réalisé"
-
-                rep_c = f"{ref_p}{rep_s}" if ref_p else rep_s
+                    ref_p, rep_s = str(ep_h.get("ref_controle") or ref_controle_courante).strip(), str(ep_h.get("repere_eprouvette", f"/{ep_id}")).strip()
 
                 export_data.append({
-                    "repere_eprouvette": rep_c,
-                    "forme": ep_h.get("forme", "Cylindrique 150x300"),
-                    "section": sec_h,
-                    "force_kn": f_kn,
-                    "fc_mpa": fc_mpa,
-                    "date_essai": ep_h.get("date_ecrasement", "-"),
-                    "age": str(ep_h.get("echeance", "28")).replace(" jours", "").replace("j", ""),
-                    "statut": statut,
+                    "repere_eprouvette": f"{ref_p}{rep_s}" if ref_p else rep_s,
+                    "forme": ep_h.get("forme", "Cylindrique 150x300"), "section": sec_h, "force_kn": f_kn, "fc_mpa": fc_mpa,
+                    "date_essai": ep_h.get("date_ecrasement", "-"), "age": str(ep_h.get("echeance", "28")).replace(" jours", "").replace("j", ""),
+                    "statut": "En cours" if f_kn == 0 else "Réalisé",
                 })
 
-            num_bl_valeur = exact_bl_phase1
-            affaissement_saisi = (info_betonnage.get("affaissement") or info_betonnage.get("slump")) if info_betonnage else None
-            temp_saisie = (info_betonnage.get("temperature") or info_betonnage.get("temp_beton")) if info_betonnage else None
-            ouvrage_saisi = (info_betonnage.get("ouvrage") if info_betonnage else None) or sample.get("ouvrage")
-            date_coulee_saisie = (info_betonnage.get("date_coulee") if info_betonnage else None) or sample.get("date_coulee")
-            centrale_saisie = (info_betonnage.get("centrale") or info_betonnage.get("centrale_beton")) if info_betonnage else sample.get("centrale")
-            tech_prelev = (
-                (info_betonnage.get("technicien_prelevement") or info_betonnage.get("preleve_par") or info_betonnage.get("technicien"))
-                if info_betonnage
-                else tech_global
-            )
-
             infos_header = {
-                "re_num": "25/260/LGV/ B/",
-                "dossier": "2025-260-05985-2025-0247",
-                "client": "TGCC",
-                "num_bl": num_bl_valeur,
-                "ouvrage": ouvrage_saisi,
-                "lieu_prelevement": ouvrage_saisi,
-                "classe_beton": sample.get("classe_beton", "C35/45"),
-                "date_coulee": date_coulee_saisie,
-                "affaissement": affaissement_saisi,
-                "temperature": temp_saisie,
-                "forme": sample.get("forme", "Cylindrique 150x300"),
-                "centrale": centrale_saisie,
-                "observations": obs_globale,
-                "technicien_prelevement": tech_prelev,
+                "re_num": "25/260/LGV/ B/", "dossier": "2025-260-05985-2025-0247", "client": "TGCC",
+                "num_bl": exact_bl_phase1, "ouvrage": (info_betonnage or {}).get("ouvrage") or sample.get("ouvrage"),
+                "lieu_prelevement": (info_betonnage or {}).get("ouvrage") or sample.get("ouvrage"),
+                "classe_beton": sample.get("classe_beton", "C35/45"), "date_coulee": (info_betonnage or {}).get("date_coulee") or sample.get("date_coulee"),
+                "affaissement": (info_betonnage or {}).get("affaissement"), "temperature": (info_betonnage or {}).get("temperature"),
+                "forme": sample.get("forme", "Cylindrique 150x300"), "centrale": (info_betonnage or {}).get("centrale") or sample.get("centrale"),
+                "observations": obs_globale, "technicien_prelevement": (info_betonnage or {}).get("technicien_prelevement") or tech_global,
             }
-
-            excel_file = generer_pv_excel(export_data, infos_header)
-            filename = f"PV_Ecrasement_LPEE_{num_bl_valeur if num_bl_valeur != '-' else 'BL'}.xlsx"
 
             st.markdown("---")
             col_b1, col_b2 = st.columns(2)
-
-            with col_b1:
-                label_btn = "💾 Valider et Mettre à Jour Le Lot" if mode_admin else "💾 Valider et Enregistrer Le Lot"
-                btn_enregistrer = st.button(label_btn, type="primary", use_container_width=True)
-
-            with col_b2:
-                st.download_button(
-                    label="📄 Télécharger le PV (Excel Modèle LPEE)",
-                    data=excel_file,
-                    file_name=filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                )
+            btn_enregistrer = col_b1.button("💾 Valider et Mettre à Jour Le Lot" if mode_admin else "💾 Valider et Enregistrer Le Lot", type="primary", use_container_width=True)
+            col_b2.download_button("📄 Télécharger le PV (Excel Modèle LPEE)", generer_pv_excel(export_data, infos_header), file_name=f"PV_Ecrasement_LPEE_{exact_bl_phase1 if exact_bl_phase1 != '-' else 'BL'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
             if btn_enregistrer:
                 if (df_actuel["Force (kN)"].astype(float) == 0).any() and not mode_admin:
@@ -1741,23 +987,17 @@ def show(supabase):
                 else:
                     succes_lot = 0
                     ref_finale = df_actuel.iloc[0].get("🏷️ Référence de Contrôle")
-
-                    try:
-                        supabase.table("suivi_betonnage").update({"ref_controle": ref_finale}).eq("id", betonnage_id).execute()
-                    except Exception:
-                        pass
+                    try: supabase.table("suivi_betonnage").update({"ref_controle": ref_finale}).eq("id", betonnage_id).execute()
+                    except Exception: pass
 
                     for _, row in df_actuel.iterrows():
-                        update_payload = {
-                            "ref_controle": row.get("🏷️ Référence de Contrôle"),
-                            "repere_eprouvette": row.get("Repère"),
-                            "force_kn": float(row["Force (kN)"]),
-                            "fc_mpa": float(row["Résistance Fc (MPa)"]),
-                            "technicien": tech_global,
-                            "observations": obs_globale,
+                        upd = {
+                            "ref_controle": row.get("🏷️ Référence de Contrôle"), "repere_eprouvette": row.get("Repère"),
+                            "force_kn": float(row["Force (kN)"]), "fc_mpa": float(row["Résistance Fc (MPa)"]),
+                            "technicien": tech_global, "observations": obs_globale,
                         }
                         try:
-                            supabase.table("suivi_controle_beton").update(update_payload).eq("id", int(row["ID"])).execute()
+                            supabase.table("suivi_controle_beton").update(upd).eq("id", int(row["ID"])).execute()
                             succes_lot += 1
                         except Exception as e:
                             st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
@@ -1771,7 +1011,5 @@ def show(supabase):
 # 4. INITIALISATION DU SESSION STATE
 # =========================================================
 if __name__ == "__main__":
-    if "can_edit" not in st.session_state:
-        st.session_state["can_edit"] = False
-    if "user_logged" not in st.session_state:
-        st.session_state["user_logged"] = False
+    if "can_edit" not in st.session_state: st.session_state["can_edit"] = False
+    if "user_logged" not in st.session_state: st.session_state["user_logged"] = False
