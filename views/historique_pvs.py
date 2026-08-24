@@ -767,6 +767,15 @@ def show(supabase):
             if not df_valides.empty:
                 st.markdown("##### 📥 Re-télécharger un Procès-Verbal")
 
+                # =================================================
+                # NOUVEAUTÉ : BARRE DE RECHERCHE POUR LES PVs
+                # =================================================
+                recherche_pv = st.text_input(
+                    "🔍 Rechercher un PV spécifique (par référence, ouvrage, classe...)", 
+                    placeholder="Ex: gare casa sud, B/394...",
+                    key="search_input_pv"
+                )
+
                 groupes_valides = {}
                 for _, row in df_valides.iterrows():
                     b_id_ep = row.get("betonnage_id")
@@ -789,83 +798,91 @@ def show(supabase):
                         groupes_valides[cle_pv] = []
                     groupes_valides[cle_pv].append(row.to_dict())
 
-                choix_pv_hist = st.selectbox(
-                    "Sélectionnez le PV validé à re-télécharger :",
-                    list(groupes_valides.keys()),
-                    key="select_pv_hist",
-                )
+                # Application du filtre de recherche sur les clés
+                liste_cles_pvs = list(groupes_valides.keys())
+                if recherche_pv:
+                    liste_cles_pvs = [cle for cle in liste_cles_pvs if recherche_pv.lower() in cle.lower()]
 
-                lot_hist = groupes_valides[choix_pv_hist]
-                sample_h = lot_hist[0]
-                b_id_h = sample_h.get("betonnage_id")
+                if not liste_cles_pvs:
+                    st.warning("Aucun PV validé ne correspond à votre recherche.")
+                else:
+                    choix_pv_hist = st.selectbox(
+                        "Sélectionnez le PV validé à re-télécharger :",
+                        liste_cles_pvs,
+                        key="select_pv_hist",
+                    )
 
-                info_beton_h = obtenir_infos_betonnage_parent(supabase, b_id_h)
-                tous_essais_hist = obtenir_historique_betonnage(supabase, b_id_h)
+                    lot_hist = groupes_valides[choix_pv_hist]
+                    sample_h = lot_hist[0]
+                    b_id_h = sample_h.get("betonnage_id")
 
-                export_data_h = []
-                items_a_exporter = tous_essais_hist if tous_essais_hist else lot_hist
+                    info_beton_h = obtenir_infos_betonnage_parent(supabase, b_id_h)
+                    tous_essais_hist = obtenir_historique_betonnage(supabase, b_id_h)
 
-                for item in items_a_exporter:
-                    sec = float(item.get("section") or 176.71)
-                    f_kn = float(item.get("force_kn") or 0.0)
-                    fc = float(item.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+                    export_data_h = []
+                    items_a_exporter = tous_essais_hist if tous_essais_hist else lot_hist
 
-                    ref_p = str(item.get("ref_controle") or "").strip()
-                    rep_s = str(item.get("repere_eprouvette", f"/{item['id']}")).strip()
-                    rep_c = f"{ref_p}{rep_s}" if ref_p else rep_s
-                    statut = "En cours" if f_kn == 0 else "Réalisé"
+                    for item in items_a_exporter:
+                        sec = float(item.get("section") or 176.71)
+                        f_kn = float(item.get("force_kn") or 0.0)
+                        fc = float(item.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
 
-                    export_data_h.append({
-                        "repere_eprouvette": rep_c,
-                        "forme": item.get("forme", "Cylindrique 150x300"),
-                        "section": sec,
-                        "force_kn": f_kn,
-                        "fc_mpa": fc,
-                        "date_essai": item.get("date_ecrasement", "-"),
-                        "age": str(item.get("echeance", "28")).replace(" jours", "").replace("j", ""),
-                        "statut": statut,
-                    })
+                        ref_p = str(item.get("ref_controle") or "").strip()
+                        rep_s = str(item.get("repere_eprouvette", f"/{item['id']}")).strip()
+                        rep_c = f"{ref_p}{rep_s}" if ref_p else rep_s
+                        statut = "En cours" if f_kn == 0 else "Réalisé"
 
-                num_bl_h = extraire_num_bl(sample_h, info_beton_h or {}, choix_pv_hist)
-                aff_h = (info_beton_h.get("affaissement") or info_beton_h.get("slump")) if info_beton_h else None
-                temp_h = (info_beton_h.get("temperature") or info_beton_h.get("temp_beton")) if info_beton_h else None
-                ouv_h = (info_beton_h.get("ouvrage") if info_beton_h else None) or sample_h.get("ouvrage")
-                date_coulee_h = (info_beton_h.get("date_coulee") if info_beton_h else None) or sample_h.get("date_coulee")
-                centrale_h = (info_beton_h.get("centrale") or info_beton_h.get("centrale_beton")) if info_beton_h else sample_h.get("centrale")
-                tech_prelev_h = (
-                    (info_beton_h.get("technicien_prelevement") or info_beton_h.get("preleve_par") or info_beton_h.get("technicien"))
-                    if info_beton_h
-                    else sample_h.get("technicien")
-                )
+                        export_data_h.append({
+                            "repere_eprouvette": rep_c,
+                            "forme": item.get("forme", "Cylindrique 150x300"),
+                            "section": sec,
+                            "force_kn": f_kn,
+                            "fc_mpa": fc,
+                            "date_essai": item.get("date_ecrasement", "-"),
+                            "age": str(item.get("echeance", "28")).replace(" jours", "").replace("j", ""),
+                            "statut": statut,
+                        })
 
-                infos_header_h = {
-                    "re_num": "25/260/LGV/ B/",
-                    "dossier": "2025-260-05985-2025-0247",
-                    "client": "TGCC",
-                    "num_bl": num_bl_h,
-                    "ouvrage": ouv_h,
-                    "lieu_prelevement": ouv_h,
-                    "classe_beton": sample_h.get("classe_beton", "C35/45"),
-                    "date_coulee": date_coulee_h,
-                    "affaissement": aff_h,
-                    "temperature": temp_h,
-                    "forme": sample_h.get("forme", "Cylindrique 150x300"),
-                    "centrale": centrale_h,
-                    "observations": sample_h.get("observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"),
-                    "technicien_prelevement": tech_prelev_h,
-                }
+                    num_bl_h = extraire_num_bl(sample_h, info_beton_h or {}, choix_pv_hist)
+                    aff_h = (info_beton_h.get("affaissement") or info_beton_h.get("slump")) if info_beton_h else None
+                    temp_h = (info_beton_h.get("temperature") or info_beton_h.get("temp_beton")) if info_beton_h else None
+                    ouv_h = (info_beton_h.get("ouvrage") if info_beton_h else None) or sample_h.get("ouvrage")
+                    date_coulee_h = (info_beton_h.get("date_coulee") if info_beton_h else None) or sample_h.get("date_coulee")
+                    centrale_h = (info_beton_h.get("centrale") or info_beton_h.get("centrale_beton")) if info_beton_h else sample_h.get("centrale")
+                    tech_prelev_h = (
+                        (info_beton_h.get("technicien_prelevement") or info_beton_h.get("preleve_par") or info_beton_h.get("technicien"))
+                        if info_beton_h
+                        else sample_h.get("technicien")
+                    )
 
-                excel_pv_hist = generer_pv_excel(export_data_h, infos_header_h)
-                file_name_h = f"PV_Ecrasement_RE-EXPORT_{num_bl_h if num_bl_h != '-' else 'BL'}.xlsx"
+                    infos_header_h = {
+                        "re_num": "25/260/LGV/ B/",
+                        "dossier": "2025-260-05985-2025-0247",
+                        "client": "TGCC",
+                        "num_bl": num_bl_h,
+                        "ouvrage": ouv_h,
+                        "lieu_prelevement": ouv_h,
+                        "classe_beton": sample_h.get("classe_beton", "C35/45"),
+                        "date_coulee": date_coulee_h,
+                        "affaissement": aff_h,
+                        "temperature": temp_h,
+                        "forme": sample_h.get("forme", "Cylindrique 150x300"),
+                        "centrale": centrale_h,
+                        "observations": sample_h.get("observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"),
+                        "technicien_prelevement": tech_prelev_h,
+                    }
 
-                st.download_button(
-                    label="📄 Télécharger le PV (Excel Format LPEE)",
-                    data=excel_pv_hist,
-                    file_name=file_name_h,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="btn_download_hist",
-                )
+                    excel_pv_hist = generer_pv_excel(export_data_h, infos_header_h)
+                    file_name_h = f"PV_Ecrasement_RE-EXPORT_{num_bl_h if num_bl_h != '-' else 'BL'}.xlsx"
+
+                    st.download_button(
+                        label="📄 Télécharger le PV (Excel Format LPEE)",
+                        data=excel_pv_hist,
+                        file_name=file_name_h,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="btn_download_hist",
+                    )
 
             st.markdown("---")
             st.markdown("##### 📊 Base de données globale")
@@ -919,7 +936,7 @@ def show(supabase):
             df_final = df_all[cols_existantes + cols_restantes]
 
             # ==========================================
-            # AJOUT DES FILTRES DE RECHERCHE
+            # FILTRES DE RECHERCHE POUR LE TABLEAU
             # ==========================================
             col_search1, col_search2 = st.columns(2)
             
