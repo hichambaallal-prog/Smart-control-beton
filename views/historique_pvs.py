@@ -768,13 +768,22 @@ def show(supabase):
                 st.markdown("##### 📥 Re-télécharger un Procès-Verbal")
 
                 # =================================================
-                # NOUVEAUTÉ : BARRE DE RECHERCHE POUR LES PVs
+                # NOUVEAUTÉ : DOUBLE BARRE DE RECHERCHE POUR LES PVs
                 # =================================================
-                recherche_pv = st.text_input(
-                    "🔍 Rechercher un PV spécifique (par référence, ouvrage, classe...)", 
-                    placeholder="Ex: gare casa sud, B/394...",
-                    key="search_input_pv"
-                )
+                col_rech_pv1, col_rech_pv2 = st.columns(2)
+                
+                with col_rech_pv1:
+                    recherche_pv = st.text_input(
+                        "🔍 Rechercher (réf, ouvrage, classe...)", 
+                        placeholder="Ex: gare casa sud, B/394...",
+                        key="search_input_pv"
+                    )
+                with col_rech_pv2:
+                    recherche_date_pv = st.text_input(
+                        "📅 Rechercher par Date d'écrasement", 
+                        placeholder="Ex: 2026-08-08",
+                        key="search_date_pv"
+                    )
 
                 groupes_valides = {}
                 for _, row in df_valides.iterrows():
@@ -798,10 +807,13 @@ def show(supabase):
                         groupes_valides[cle_pv] = []
                     groupes_valides[cle_pv].append(row.to_dict())
 
-                # Application du filtre de recherche sur les clés
+                # Application des filtres de recherche sur les clés
                 liste_cles_pvs = list(groupes_valides.keys())
+                
                 if recherche_pv:
                     liste_cles_pvs = [cle for cle in liste_cles_pvs if recherche_pv.lower() in cle.lower()]
+                if recherche_date_pv:
+                    liste_cles_pvs = [cle for cle in liste_cles_pvs if recherche_date_pv in cle]
 
                 if not liste_cles_pvs:
                     st.warning("Aucun PV validé ne correspond à votre recherche.")
@@ -936,22 +948,22 @@ def show(supabase):
             df_final = df_all[cols_existantes + cols_restantes]
 
             # ==========================================
-            # FILTRES DE RECHERCHE POUR LE TABLEAU
+            # FILTRES DE RECHERCHE POUR LE TABLEAU GLOBAL
             # ==========================================
-            col_search1, col_search2 = st.columns(2)
+            col_search_tab1, col_search_tab2 = st.columns(2)
             
-            with col_search1:
-                search_ref = st.text_input("🔍 Recherche par Réf. Contrôle", placeholder="Ex: REF-123-GARE CASA SUD")
+            with col_search_tab1:
+                search_ref_tab = st.text_input("🔍 Recherche par Réf. Contrôle", placeholder="Ex: REF-123-GARE CASA SUD")
                 
-            with col_search2:
-                search_date = st.text_input("📅 Recherche par Date de coulée", placeholder="Ex: 2026-08-24")
+            with col_search_tab2:
+                search_date_tab = st.text_input("📅 Recherche par Date de coulée", placeholder="Ex: 2026-08-24")
 
             # Application des filtres si les champs ne sont pas vides
-            if search_ref:
-                df_final = df_final[df_final["ref_controle"].astype(str).str.contains(search_ref, case=False, na=False)]
+            if search_ref_tab:
+                df_final = df_final[df_final["ref_controle"].astype(str).str.contains(search_ref_tab, case=False, na=False)]
                 
-            if search_date:
-                df_final = df_final[df_final["date_coulee"].astype(str).str.contains(search_date, case=False, na=False)]
+            if search_date_tab:
+                df_final = df_final[df_final["date_coulee"].astype(str).str.contains(search_date_tab, case=False, na=False)]
             # ==========================================
 
             st.dataframe(df_final, use_container_width=True, hide_index=True)
