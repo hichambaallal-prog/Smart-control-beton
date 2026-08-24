@@ -5,3 +5,4 @@ openpyxl
 pillow
 bcrypt
 plotly
+fpdf2
