@@ -274,16 +274,27 @@ if "role" not in st.session_state:
 if "can_edit" not in st.session_state:
     st.session_state["can_edit"] = False
 
-# RESTAURATION DE SESSION VIA COOKIE
+# ==========================================
+# RESTAURATION DE SESSION VIA COOKIE (CORRIGÉE)
+# ==========================================
 cookie_manager = stx.CookieManager(key="lpee_cookie_mgr") if COOKIE_SUPPORT else None
 
-if COOKIE_SUPPORT and cookie_manager and st.session_state["user"] is None:
-    saved_session = cookie_manager.get("lpee_user_session")
-    if saved_session and isinstance(saved_session, dict):
-        st.session_state["user"] = saved_session
-        st.session_state["role"] = saved_session.get("role")
-        st.session_state["can_edit"] = saved_session.get("can_edit", False)
-        st.rerun()
+if COOKIE_SUPPORT and cookie_manager:
+    # 1. Attendre l'initialisation du composant JS
+    all_cookies = cookie_manager.get_all()
+
+    # 2. Stopper silencieusement l'exécution si JS n'a pas encore répondu
+    if all_cookies is None:
+        st.stop()
+
+    # 3. Récupération et vérification de la session enregistrée
+    saved_session = all_cookies.get("lpee_user_session")
+    if saved_session and st.session_state["user"] is None:
+        if isinstance(saved_session, dict):
+            st.session_state["user"] = saved_session
+            st.session_state["role"] = saved_session.get("role")
+            st.session_state["can_edit"] = saved_session.get("can_edit", False)
+            st.rerun()
 
 # ==========================================
 # 4. ÉCRAN DE CONNEXION
@@ -298,7 +309,7 @@ if st.session_state["user"] is None:
         if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
             st.info(
                 "🎯 **Scan QR Code détecté !** Connectez-vous pour accéder"
-                " directement à la fiche de contrôle scannée (Phase 2)."
+                " directement à la fiche."
             )
 
         with st.form("login_form", clear_on_submit=False):
@@ -345,7 +356,7 @@ if st.session_state["user"] is None:
                     st.session_state["role"] = logged_user["role"]
                     st.session_state["can_edit"] = logged_user["can_edit"]
 
-                    # Sauvegarde dans le cookie de session (valide 30 jours)
+                    # Sauvegarde dans le cookie de session (30 jours)
                     if COOKIE_SUPPORT and cookie_manager:
                         try:
                             cookie_manager.set(
