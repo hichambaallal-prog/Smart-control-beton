@@ -18,7 +18,12 @@ OPTIONS_ONGLETS = [
     "📅 Phase 1 : Programmation",
     "💥 Phase 2 : Planning Daily & Saisie (Par Lot)",
 ]
-
+# --- DEBUT DU ROUTAGE SCAN QR CODE ---
+if "sample_id" in st.query_params:
+    st.session_state["selected_sample_id"] = st.query_params["sample_id"]
+    # Redirige directement vers la Phase 2 (Saisie / Écrasement)
+    st.session_state["current_page"] = OPTIONS_ONGLETS[2]
+# --- FIN DU ROUTAGE SCAN QR CODE ---
 
 # ==============================================================================
 # 1. GESTION DES UTILISATEURS ET CONNEXION SUPABASE
