@@ -43,6 +43,28 @@ def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
     return False
 
 
+def afficher_ecran_connexion(supabase):
+    """Affiche le formulaire de connexion si l'utilisateur n'est pas authentifié."""
+    st.title("🔐 Connexion au Laboratoire Smart Control Béton")
+    
+    # Message informatif si un QR code est en attente de redirection
+    if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
+        st.info("🎯 **Scan QR Code détecté !** Connectez-vous pour accéder directement à la Phase 2 de la fiche scannée.")
+
+    with st.form("form_connexion", clear_on_submit=False):
+        nom_u = st.text_input("Nom d'utilisateur", key="input_user")
+        mdp = st.text_input("Mot de passe", type="password", key="input_pass")
+        submit = st.form_submit_button("Se connecter", type="primary", use_container_width=True)
+
+        if submit:
+            if connecter_utilisateur(supabase, nom_u, mdp):
+                # Si un scan QR était en attente, forcer la redirection vers Phase 2
+                if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
+                    st.session_state["onglet_actif"] = "💥 Phase 2 : Planning Daily & Saisie (Par Lot)"
+                st.toast("✅ Connexion réussie !", icon="🔓")
+                st.rerun()
+
+
 # =========================================================
 # FONCTION UTILITAIRE : GÉNÉRATION ET GESTION DES QR CODES
 # =========================================================
@@ -550,24 +572,20 @@ def _format_ep_row(ep, date_ref=None):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # Interception des paramètres d'URL (Scan QR Code)
-    query_params = st.query_params
-    scan_rec = query_params.get("rec") or query_params.get("num_reception")
-    scan_b_id = query_params.get("beton_id") or query_params.get("id")
-
     options_onglets = [
         "📋 Phase 0 : Réception & Validation",
         "📅 Phase 1 : Programmation",
         "💥 Phase 2 : Planning Daily & Saisie (Par Lot)",
     ]
 
+    # Recupération sécurisée des variables QR scannées dans l'URL ou en Session
+    scan_rec = st.session_state.get("pending_qr_rec")
+    scan_b_id = st.session_state.get("pending_qr_bid")
+
     # --- ROUTING AUTOMATIQUE SUR SCAN DE QR CODE ---
     if scan_rec or scan_b_id:
-        qr_token = f"{scan_rec}_{scan_b_id}"
-        if st.session_state.get("last_qr_scanned") != qr_token:
-            st.session_state["onglet_actif"] = options_onglets[2]
-            st.session_state["last_qr_scanned"] = qr_token
-            st.toast(f"🎯 QR Code scanné : Redirection automatique vers **Phase 2** ({scan_rec or scan_b_id})", icon="⚡")
+        st.session_state["onglet_actif"] = options_onglets[2]
+        st.toast(f"🎯 Redirection QR Code : **Phase 2** ({scan_rec or scan_b_id})", icon="⚡")
 
     if "onglet_actif" not in st.session_state:
         st.session_state["onglet_actif"] = options_onglets[0]
@@ -588,21 +606,22 @@ def show(supabase):
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
         if mode_admin: st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
-    # NAVIGATION INTERACTIVE DES PHASES (Permet le changement de vue dynamique)
+    # NAVIGATION INTERACTIVE DES PHASES
     try:
         onglet_courant = st.segmented_control(
             "Navigation entre phases :",
             options_onglets,
-            default=st.session_state["onglet_actif"],
+            default=st.session_state.get("onglet_actif", options_onglets[0]),
             key="nav_segmented_phase"
         )
         if onglet_courant:
             st.session_state["onglet_actif"] = onglet_courant
     except AttributeError:
+        index_defaut = options_onglets.index(st.session_state.get("onglet_actif", options_onglets[0]))
         onglet_courant = st.radio(
             "Navigation entre phases :",
             options_onglets,
-            index=options_onglets.index(st.session_state.get("onglet_actif", options_onglets[0])),
+            index=index_defaut,
             horizontal=True,
             key="nav_radio_phase"
         )
@@ -1173,16 +1192,20 @@ def show(supabase):
 
 
 # =========================================================
-# 4. INITIALISATION DU SESSION STATE & EXECUTION
+# 4. INITIALISATION DE L'APPLICATION ET DU POINT D'ENTRÉE
 # =========================================================
 if __name__ == "__main__":
-    if "can_edit" not in st.session_state: 
-        st.session_state["can_edit"] = True
-    if "user_logged" not in st.session_state: 
-        st.session_state["user_logged"] = True
-    if "is_admin" not in st.session_state:
-        st.session_state["is_admin"] = True
+    # 1. Capture immédiate des paramètres QR code dans l'URL pour ne pas les perdre
+    query_params = st.query_params
+    url_rec = query_params.get("rec") or query_params.get("num_reception")
+    url_bid = query_params.get("beton_id") or query_params.get("id")
 
+    if url_rec:
+        st.session_state["pending_qr_rec"] = url_rec
+    if url_bid:
+        st.session_state["pending_qr_bid"] = url_bid
+
+    # 2. Initialisation du client Supabase
     supabase_client = None
     if "supabase" in st.session_state:
         supabase_client = st.session_state["supabase"]
@@ -1196,5 +1219,12 @@ if __name__ == "__main__":
         except Exception as e:
             st.error("💡 Connexion Supabase : Assurez-vous d'avoir configuré SUPABASE_URL et SUPABASE_KEY dans vos secrets Streamlit.")
 
-    if supabase_client:
-        show(supabase_client)
+    # 3. Contrôle de session et authentification
+    if not st.session_state.get("user_logged", False):
+        if supabase_client:
+            afficher_ecran_connexion(supabase_client)
+        else:
+            st.error("Impossible d'afficher l'écran de connexion sans client Supabase actif.")
+    else:
+        if supabase_client:
+            show(supabase_client)
