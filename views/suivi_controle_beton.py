@@ -7,6 +7,7 @@ from openpyxl.worksheet.page import PageMargins
 import pandas as pd
 import streamlit as st
 import qrcode
+
 try:
     from supabase import create_client, Client
 except ImportError:
@@ -54,7 +55,6 @@ def afficher_ecran_connexion(supabase):
     """Affiche le formulaire de connexion si l'utilisateur n'est pas authentifié."""
     st.title("🔐 Connexion au Laboratoire Smart Control Béton")
     
-    # Message informatif si un QR code est en attente de redirection
     if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
         st.info("🎯 **Scan QR Code détecté !** Connectez-vous pour accéder directement à la Phase 2 de la fiche scannée.")
 
@@ -65,8 +65,6 @@ def afficher_ecran_connexion(supabase):
 
         if submit:
             if connecter_utilisateur(supabase, nom_u, mdp):
-                # C'est show() qui se charge, de façon fiable, de rediriger
-                # vers la Phase 2 si un scan QR est en attente (voir plus bas).
                 st.toast("✅ Connexion réussie !", icon="🔓")
                 st.rerun()
 
@@ -471,7 +469,7 @@ def generer_pv_excel(export_data, infos_header):
     format_cell(ws.cell(row=r_sig_titre, column=6, value="Visa Chef du laboratoire"), font=font_bold, align=align_center)
 
     ws.merge_cells(start_row=r_sig_debut, start_column=6, end_row=r_sig_fin, end_column=8)
-    format_cell(ws.cell(row=r_sig_debut, column=2, value="H.BAALLAL"), font=font_bold, align=align_top_center)
+    format_cell(ws.cell(row=r_sig_debut, column=6, value="H.BAALLAL"), font=font_bold, align=align_top_center)
 
     row_heights = {7: 32, 8: 48, 10: 23, 11: 23, 9: 15, 12: 15, 13: 15, 14: 15}
     for r in range(1, r_sig_fin + 1):
@@ -578,13 +576,6 @@ def _format_ep_row(ep, date_ref=None):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # --- Redirection QR : technique fiable par "changement de clé de widget" ---
-    # Pré-remplir st.session_state[key] d'un widget déjà rendu une fois est
-    # fragile (Streamlit peut ignorer la valeur si le widget a déjà un état
-    # côté frontend). La méthode garantie à 100% est de donner au widget une
-    # clé TOTALEMENT NOUVELLE à chaque fois qu'on veut forcer sa valeur :
-    # Streamlit le traite alors comme un widget jamais vu et applique bien le
-    # "default" demandé.
     st.session_state.setdefault("phase_actuelle", OPTIONS_ONGLETS[0])
     st.session_state.setdefault("nav_widget_seed", 0)
 
@@ -592,7 +583,7 @@ def show(supabase):
     forcer_phase2_ce_run = qr_en_attente and not st.session_state.get("qr_nav_applied", False)
     if forcer_phase2_ce_run:
         st.session_state["phase_actuelle"] = OPTIONS_ONGLETS[2]
-        st.session_state["nav_widget_seed"] += 1  # force la recréation du widget
+        st.session_state["nav_widget_seed"] += 1
         st.session_state["qr_nav_applied"] = True
 
     user_info = st.session_state.get("user", {})
@@ -632,13 +623,9 @@ def show(supabase):
     if not onglet_courant:
         onglet_courant = st.session_state.get("phase_actuelle", OPTIONS_ONGLETS[0])
 
-    # Filet de sécurité : sur le run où l'on vient de scanner/se connecter via
-    # QR, on garantit l'affichage du contenu de la Phase 2 quoi qu'il arrive.
     if forcer_phase2_ce_run:
         onglet_courant = OPTIONS_ONGLETS[2]
 
-    # On mémorise le choix courant pour que les prochains forçages (ou un
-    # nouveau rendu du widget) repartent de la bonne valeur.
     st.session_state["phase_actuelle"] = onglet_courant
     st.session_state["onglet_actif"] = onglet_courant
 
@@ -973,7 +960,6 @@ def show(supabase):
     elif onglet_courant == OPTIONS_ONGLETS[2]:
         st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
 
-        # Bannière informative en cas de redirection depuis un scan QR Code
         scan_rec = st.session_state.get("pending_qr_rec")
         scan_b_id = st.session_state.get("pending_qr_bid")
         if scan_rec or scan_b_id:
@@ -1064,7 +1050,6 @@ def show(supabase):
                 cle_groupe = f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ep.get('ouvrage', '-')} | Échéance : {ep.get('echeance', '28 jours')} (Date Prévue : {ep.get('date_ecrasement', '-')}) | Lot ID #{b_id_ep}"
 
                 if cle_groupe not in groupes_lots:
-                    # Auto-sélection du lot scanné via QR code
                     if scan_rec and (str(scan_rec).strip().lower() in ref_ctrl.lower() or str(scan_rec).strip().lower() in num_rec_parent.lower()):
                         index_selectionne = len(groupes_lots)
                     elif scan_b_id and str(scan_b_id).strip() == str(b_id_ep).strip():
@@ -1092,11 +1077,6 @@ def show(supabase):
             col_l3.metric("Ouvrage", str(((info_betonnage or {}).get("ouvrage")) or sample.get("ouvrage") or "-"))
             col_l4.metric("Échéance Visée", str(sample.get("echeance", "-")))
 
-            # --- Saisie rapide de l'éprouvette précise scannée via QR Code ---
-            # Le QR encode le numéro d'éprouvette (ep=1,2,3...) qui correspond
-            # au repère par défaut "/1", "/2", etc. On propose directement le
-            # champ de saisie de CETTE éprouvette, sans avoir à la chercher
-            # dans le tableau complet ci-dessous.
             scan_ep = st.session_state.get("pending_qr_ep")
             eprouvette_ciblee = None
             if scan_ep:
@@ -1129,7 +1109,7 @@ def show(supabase):
                                 "force_kn": force_rapide, "fc_mpa": fc_q,
                             }).eq("id", eprouvette_ciblee["id"]).execute()
                             st.success(f"✅ Enregistré : Éprouvette {eprouvette_ciblee.get('repere_eprouvette')} → {force_rapide} kN / {fc_q} MPa")
-                            st.session_state.pop(f"df_lot_{choix_lot}", None)  # recharger le tableau complet avec la nouvelle valeur
+                            st.session_state.pop(f"df_lot_{choix_lot}", None)
                             st.balloons()
                         except Exception as e:
                             st.error(f"❌ Erreur lors de l'enregistrement : {e}")
@@ -1266,28 +1246,24 @@ def show(supabase):
 # 4. INITIALISATION DE L'APPLICATION ET DU POINT D'ENTRÉE
 # =========================================================
 if __name__ == "__main__":
-    # 1. Capture immédiate des paramètres QR code dans l'URL à l'exécution de l'application
+    st.set_page_config(page_title="Smart Control Béton - LPEE", page_icon="🧪", layout="wide")
+
     query_params = st.query_params
     url_rec = query_params.get("rec") or query_params.get("num_reception")
     url_bid = query_params.get("beton_id") or query_params.get("id")
+    url_ep = query_params.get("ep")
 
     if url_rec or url_bid:
         if url_rec:
             st.session_state["pending_qr_rec"] = str(url_rec).strip()
         if url_bid:
             st.session_state["pending_qr_bid"] = str(url_bid).strip()
+        if url_ep:
+            st.session_state["pending_qr_ep"] = str(url_ep).strip()
 
-        # Redirection à usage unique : on (ré)arme le forçage vers la Phase 2.
-        # qr_nav_applied=False signifie "pas encore appliquée sur cette session".
         st.session_state["qr_nav_applied"] = False
-
-        # On nettoie immédiatement les paramètres de l'URL. Sans ça, à CHAQUE
-        # rerun (clic, saisie, etc.) ce bloc s'exécutait de nouveau et réécrasait
-        # l'état du menu en pleine interaction, ce qui provoquait le retour
-        # intempestif à la page d'accueil (Phase 0) au lieu de rester en Phase 2.
         st.query_params.clear()
 
-    # 2. Initialisation du client Supabase
     supabase_client = None
     if "supabase" in st.session_state:
         supabase_client = st.session_state["supabase"]
@@ -1301,7 +1277,6 @@ if __name__ == "__main__":
         except Exception as e:
             st.error("💡 Connexion Supabase : Assurez-vous d'avoir configuré SUPABASE_URL et SUPABASE_KEY dans vos secrets Streamlit.")
 
-    # 3. Contrôle de session et authentification
     if not st.session_state.get("user_logged", False):
         if supabase_client:
             afficher_ecran_connexion(supabase_client)
