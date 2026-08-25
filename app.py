@@ -291,8 +291,12 @@ if st.session_state["user"] is None:
       )
 
     with st.form("login_form", clear_on_submit=False):
-      username_input = st.text_input("Nom d'utilisateur").strip().upper()
-      password_input = st.text_input("Mot de passe", type="password")
+     username_input = st.text_input(
+    "Nom d'utilisateur", autocomplete="username"
+).strip().upper()
+password_input = st.text_input(
+    "Mot de passe", type="password", autocomplete="current-password"
+)
       submit_btn = st.form_submit_button(
           "Se connecter", use_container_width=True, type="primary"
       )
