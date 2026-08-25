@@ -6,6 +6,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 import pandas as pd
 import streamlit as st
+import qrcode
+
 
 # ==============================================================================
 # 1. GESTION DES UTILISATEURS ET CONNEXION SUPABASE
@@ -35,6 +37,20 @@ def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
     except Exception as e:
         st.error(f"Erreur lors de la connexion : {e}")
     return False
+
+
+# =========================================================
+# FONCTION UTILITAIRE : GÉNÉRATION ET GESTION DES QR CODES
+# =========================================================
+def generer_qr_code(data_url):
+    """Génère un QR Code en mémoire sous forme d'image PNG en octets."""
+    qr = qrcode.QRCode(box_size=8, border=2)
+    qr.add_data(data_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 # =========================================================
@@ -519,6 +535,14 @@ def _format_ep_row(ep, date_ref=None):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
+    # Interception des paramètres d'URL (Scan QR Code)
+    query_params = st.query_params
+    scan_rec = query_params.get("rec") or query_params.get("num_reception")
+    scan_b_id = query_params.get("beton_id") or query_params.get("id")
+
+    if scan_rec or scan_b_id:
+        st.toast(f"📱 QR Code détecté : Réception **{scan_rec or scan_b_id}**", icon="⚡")
+
     user_info = st.session_state.get("user", {})
     role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
     can_edit = st.session_state.get("can_edit", False) or bool(user_info.get("can_edit", False))
@@ -553,11 +577,11 @@ def show(supabase):
     map_betonnages = {b.get("id"): b for b in betonnages_preleves}
 
     # =========================================================
-    # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION
+    # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION + QR CODES
     # =========================================================
     with tab_reception:
         st.subheader("📋 0. Réception & Validation des Bétons")
-        st.info("💡 **Condition requise** : Saisissez manuellement le **N° Réception**. Une fois enregistré, le numéro s'affichera dans le tableau et débloquera la Phase 1.")
+        st.info("💡 **Condition requise** : Saisissez manuellement le **N° Réception**. Une fois enregistré, le numéro débloquera la Phase 1 et permettra la génération d'étiquettes **QR Code** étanches.")
 
         if not betonnages_preleves:
             st.info("ℹ️ Aucun bétonnage prélevé dans la base de données.")
@@ -634,6 +658,42 @@ def show(supabase):
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True, key="btn_download_reception_excel",
                 )
+
+            # --- MODULE ÉTIQUETTES QR CODE ---
+            st.divider()
+            with st.expander("📱 Imprimer les Étiquettes QR Code (Identification & Redirection Directe)", expanded=False):
+                st.write("Générez des QR Codes imprimables pour l'étiquetage des éprouvettes. Le scan redirigera directement vers la fiche d'écrasement.")
+                receptions_validees = [b for b in betonnages_preleves if b.get("num_reception") and str(b.get("num_reception")).strip() not in ["", "-", "None"]]
+
+                if not receptions_validees:
+                    st.info("Aucune réception avec un N° valide disponible pour la génération de QR code.")
+                else:
+                    opt_qr = {f"Réception N° {b.get('num_reception')} | {b.get('ouvrage', '-')} ({extraire_date_coulee(b)})": b for b in receptions_validees}
+                    choix_qr_lab = st.selectbox("Choisir la Réception à étiqueter :", list(opt_qr.keys()), key="select_qr_reception")
+                    b_qr = opt_qr[choix_qr_lab]
+                    rec_num = b_qr.get("num_reception")
+                    nb_ep = int(b_qr.get("nb_eprouvettes") or 12)
+
+                    st.markdown(f"**Étiquettes pour la réception : `{rec_num}` ({nb_ep} éprouvettes)**")
+                    
+                    # URL de base dynamique
+                    base_url = st.query_params.get("baseUrl", "https://share.streamlit.io")
+                    
+                    cols_qr = st.columns(3)
+                    for i in range(1, nb_ep + 1):
+                        qr_payload = f"{base_url}/?rec={rec_num}&beton_id={b_qr.get('id')}&ep={i}"
+                        qr_bytes = generer_qr_code(qr_payload)
+                        with cols_qr[(i - 1) % 3]:
+                            st.caption(f"Éprouvette #{i} / {rec_num}")
+                            st.image(qr_bytes, width=130)
+                            st.download_button(
+                                label=f"📥 QR Épr. #{i}",
+                                data=qr_bytes,
+                                file_name=f"QR_{rec_num.replace('/', '_')}_Ep{i}.png",
+                                mime="image/png",
+                                key=f"btn_qr_{b_qr.get('id')}_{i}",
+                                use_container_width=True
+                            )
 
     # =========================================================
     # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
@@ -909,15 +969,25 @@ def show(supabase):
             st.info("👍 Aucune éprouvette en attente de saisie.")
         else:
             groupes_lots = {}
-            for ep in eprouvettes_en_attente:
+            index_selectionne = 0
+            
+            for idx_key, ep in enumerate(eprouvettes_en_attente):
                 b_id_ep = ep.get("betonnage_id")
                 info_b_temp = obtenir_infos_betonnage_parent(supabase, b_id_ep)
                 ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
                 classe_ep = ep.get("classe_beton") or (info_b_temp.get("classe_beton") if info_b_temp else "-")
                 cle_groupe = f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ep.get('ouvrage', '-')} | Échéance : {ep.get('echeance', '28 jours')} (Date Prévue : {ep.get('date_ecrasement', '-')}) | Lot ID #{b_id_ep}"
+                
+                # Détection automatique du scan QR Code pour la sélection par défaut
+                if scan_rec and (str(scan_rec).strip().lower() in ref_ctrl.lower() or str(scan_b_id) == str(b_id_ep)):
+                    index_selectionne = len(groupes_lots)
+
                 groupes_lots.setdefault(cle_groupe, []).append(ep)
 
-            choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes à écraser / modifier :", list(groupes_lots.keys()), key="select_lot_saisie")
+            options_lots = list(groupes_lots.keys())
+            index_defaut = min(index_selectionne, len(options_lots) - 1)
+
+            choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes à écraser / modifier :", options_lots, index=index_defaut, key="select_lot_saisie")
             lot_selected = groupes_lots[choix_lot]
             sample = lot_selected[0]
             betonnage_id = sample.get("betonnage_id")
