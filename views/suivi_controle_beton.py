@@ -331,7 +331,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["F14"], ws["G14"], ws["H14"] = "Compression", "Traction", "Moyenne"
 
     for r in range(13, 15):
-    for c in range(1, 9):
+        for c in range(1, 9):
             format_cell(ws.cell(row=r, column=c), font=font_bold if r == 13 or c == 1 else font_regular, align=align_center, fill=fill_table)
 
     row_start = 15
@@ -579,7 +579,7 @@ def show(supabase):
     # =========================================================
     # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION + QR CODES
     # =========================================================
-   with tab_reception:
+    with tab_reception:
         st.subheader("📋 0. Réception & Validation des Bétons")
         st.info("💡 **Condition requise** : Saisissez manuellement le **N° Réception**. Une fois enregistré, le numéro débloquera la Phase 1 et permettra la génération d'étiquettes **QR Code** étanches.")
 
