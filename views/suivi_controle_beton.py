@@ -581,14 +581,14 @@ def _format_ep_row(ep, date_ref=None):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # Alignment forcé si un scan QR est en session
-    if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
-        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
-        st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
-        st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
+    # 1. Détection prioritaire du QR Code pour imposer la Phase 2
+    has_qr = bool(st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"))
+    target_phase = OPTIONS_ONGLETS[2] if has_qr else st.session_state.get("onglet_actif", OPTIONS_ONGLETS[0])
 
-    if "nav_segmented_phase" not in st.session_state:
-        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[0]
+    if "nav_segmented_phase" not in st.session_state or has_qr:
+        st.session_state["nav_segmented_phase"] = target_phase
+    if "nav_radio_phase" not in st.session_state or has_qr:
+        st.session_state["nav_radio_phase"] = target_phase
 
     user_info = st.session_state.get("user", {})
     role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
@@ -606,25 +606,23 @@ def show(supabase):
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
         if mode_admin: st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
-    # NAVIGATION INTERACTIVE DES PHASES (Synchronisation stricte des clés)
+    # 2. Navigation interactive des phases
     try:
         onglet_courant = st.segmented_control(
             "Navigation entre phases :",
             OPTIONS_ONGLETS,
             key="nav_segmented_phase"
         )
-        st.session_state["onglet_actif"] = onglet_courant
-    except AttributeError:
+    except (AttributeError, TypeError):
         onglet_courant = st.radio(
             "Navigation entre phases :",
             OPTIONS_ONGLETS,
             horizontal=True,
             key="nav_radio_phase"
         )
-        st.session_state["onglet_actif"] = onglet_courant
 
-    if not onglet_courant:
-        onglet_courant = st.session_state.get("onglet_actif", OPTIONS_ONGLETS[0])
+    st.session_state["onglet_actif"] = onglet_courant or target_phase
+    onglet_courant = st.session_state["onglet_actif"]
 
     betonnages_preleves = []
     try:
