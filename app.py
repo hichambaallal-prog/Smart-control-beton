@@ -69,17 +69,22 @@ if _qr_rec or _qr_bid:
 REMEMBER_SECRET_KEY = os.environ.get(
     "REMEMBER_SECRET_KEY", "lpee_ctr_csb_remember_me_2026_a_changer"
 )
+REMEMBER_SESSION_DUREE = datetime.timedelta(hours=4)
 
 cookie_manager = stx.CookieManager(key="lpee_ctr_csb_cookie_manager")
 
 
-def _generer_jeton_souvenir(username, role, can_edit):
+def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
     """Jeton signé auto-suffisant (indépendant de la base utilisateurs),
     pour fonctionner avec les 3 chemins de connexion possibles (compte
-    nommé, mot de passe maître admin2026, mot de passe maître ctr2026)."""
+    nommé, mot de passe maître admin2026, mot de passe maître ctr2026).
+    L'horodatage de connexion (issued_at_iso) est inclus dans la signature
+    afin de pouvoir vérifier côté serveur que la session ne dépasse pas
+    REMEMBER_SESSION_DUREE, indépendamment de l'expiration du cookie
+    navigateur (qu'un changement d'horloge sur l'appareil pourrait fausser)."""
     import hashlib
     import hmac as hmac_lib
-    payload = f"{username}:{role}:{bool(can_edit)}"
+    payload = f"{username}:{role}:{bool(can_edit)}:{issued_at_iso}"
     return hmac_lib.new(
         REMEMBER_SECRET_KEY.encode(), payload.encode(), hashlib.sha256
     ).hexdigest()
@@ -308,11 +313,21 @@ if st.session_state["user"] is None:
   remembered_user = cookie_manager.get("remember_user")
   remembered_role = cookie_manager.get("remember_role")
   remembered_can_edit = cookie_manager.get("remember_can_edit") == "1"
+  remembered_issued_at = cookie_manager.get("remember_issued_at")
   remembered_token = cookie_manager.get("remember_token")
-  if remembered_user and remembered_role and remembered_token:
-    if _generer_jeton_souvenir(
-        remembered_user, remembered_role, remembered_can_edit
-    ) == remembered_token:
+  if remembered_user and remembered_role and remembered_issued_at and remembered_token:
+    jeton_valide = _generer_jeton_souvenir(
+        remembered_user, remembered_role, remembered_can_edit, remembered_issued_at
+    ) == remembered_token
+    session_expiree = True
+    if jeton_valide:
+      try:
+        issued_at_dt = datetime.datetime.fromisoformat(remembered_issued_at)
+        session_expiree = (datetime.datetime.utcnow() - issued_at_dt) > REMEMBER_SESSION_DUREE
+      except (ValueError, TypeError):
+        session_expiree = True
+
+    if jeton_valide and not session_expiree:
       st.session_state["user"] = {
           "username": remembered_user,
           "role": remembered_role,
@@ -322,6 +337,12 @@ if st.session_state["user"] is None:
       st.session_state["can_edit"] = remembered_can_edit
       st.session_state["users_db"] = load_users()
       st.rerun()
+    else:
+      # Jeton invalide ou session > 4h : on nettoie le cookie périmé pour
+      # éviter de retenter cette vérification à chaque rerun.
+      for _ck in ("remember_user", "remember_role", "remember_can_edit", "remember_issued_at", "remember_token"):
+        if cookie_manager.get(_ck) is not None:
+          cookie_manager.delete(_ck, key=f"auto_expire_delete_{_ck}")
 
 # ==========================================
 # 4. ÉCRAN DE CONNEXION
@@ -343,7 +364,7 @@ if st.session_state["user"] is None:
       username_input = st.text_input("Nom d'utilisateur").strip().upper()
       password_input = st.text_input("Mot de passe", type="password")
       se_souvenir = st.checkbox(
-          "🔒 Rester connecté sur cet appareil (utile pour les scans QR répétés)",
+          "🔒 Rester connecté sur cet appareil pendant 4h (utile pour les scans QR répétés)",
           value=True,
       )
       submit_btn = st.form_submit_button(
@@ -357,11 +378,13 @@ if st.session_state["user"] is None:
         st.session_state["role"] = role
         st.session_state["can_edit"] = can_edit
         if se_souvenir:
-          expiration = datetime.datetime.now() + datetime.timedelta(days=180)
+          issued_at_iso = datetime.datetime.utcnow().isoformat()
+          expiration = datetime.datetime.now() + REMEMBER_SESSION_DUREE
           cookie_manager.set("remember_user", username, key="set_remember_user", expires_at=expiration)
           cookie_manager.set("remember_role", role, key="set_remember_role", expires_at=expiration)
           cookie_manager.set("remember_can_edit", "1" if can_edit else "0", key="set_remember_can_edit", expires_at=expiration)
-          cookie_manager.set("remember_token", _generer_jeton_souvenir(username, role, can_edit), key="set_remember_token", expires_at=expiration)
+          cookie_manager.set("remember_issued_at", issued_at_iso, key="set_remember_issued_at", expires_at=expiration)
+          cookie_manager.set("remember_token", _generer_jeton_souvenir(username, role, can_edit, issued_at_iso), key="set_remember_token", expires_at=expiration)
         st.rerun()
 
       if submit_btn:
@@ -588,7 +611,7 @@ with st.sidebar:
     st.session_state["user"] = None
     st.session_state["role"] = None
     st.session_state["can_edit"] = False
-    for _ck in ("remember_user", "remember_role", "remember_can_edit", "remember_token"):
+    for _ck in ("remember_user", "remember_role", "remember_can_edit", "remember_issued_at", "remember_token"):
       if cookie_manager.get(_ck) is not None:
         cookie_manager.delete(_ck, key=f"delete_{_ck}")
     st.rerun()
