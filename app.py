@@ -611,9 +611,10 @@ with st.sidebar:
     st.session_state["user"] = None
     st.session_state["role"] = None
     st.session_state["can_edit"] = False
-    for _ck in ("remember_user", "remember_role", "remember_can_edit", "remember_issued_at", "remember_token"):
-      if cookie_manager.get(_ck) is not None:
-        cookie_manager.delete(_ck, key=f"delete_{_ck}")
+    # NOTE : le cookie "se souvenir de moi" n'est PAS supprimé ici. Tant que
+    # la fenêtre de 4h (REMEMBER_SESSION_DUREE) n'est pas écoulée, revenir
+    # sur l'application reconnectera automatiquement sans redemander le mot
+    # de passe. Passé les 4h, le cookie expire et le mot de passe est requis.
     st.rerun()
 
 
