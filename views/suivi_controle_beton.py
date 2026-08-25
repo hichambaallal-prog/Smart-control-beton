@@ -7,6 +7,10 @@ from openpyxl.worksheet.page import PageMargins
 import pandas as pd
 import streamlit as st
 import qrcode
+try:
+    from supabase import create_client, Client
+except ImportError:
+    Client = None
 
 
 # ==============================================================================
@@ -341,7 +345,11 @@ def generer_pv_excel(export_data, infos_header):
 
     for idx, item in enumerate(export_data):
         curr_row = row_start + idx
-        f_kn_val = float(item.get("force_kn", 0.0)) if str(item.get("force_kn", 0.0)).replace('.', '', 1).isdigit() else 0.0
+        try:
+            f_kn_val = float(item.get("force_kn", 0.0))
+        except (ValueError, TypeError):
+            f_kn_val = 0.0
+            
         is_en_cours = str(item.get("statut", "")).lower() == "en cours" or f_kn_val == 0.0
         dt_essai = item.get("date_essai")
 
@@ -359,8 +367,12 @@ def generer_pv_excel(export_data, infos_header):
             ws.cell(row=curr_row, column=5, value="En cours")
             ws.cell(row=curr_row, column=6, value="En cours")
         else:
+            try:
+                fc_val = float(item.get("fc_mpa", 0.0))
+            except (ValueError, TypeError):
+                fc_val = 0.0
             ws.cell(row=curr_row, column=5, value=f_kn_val).number_format = "0.0"
-            ws.cell(row=curr_row, column=6, value=float(item.get("fc_mpa", 0.0))).number_format = "0.0"
+            ws.cell(row=curr_row, column=6, value=fc_val).number_format = "0.0"
 
         ws.cell(row=curr_row, column=7, value="-")
 
@@ -513,7 +525,10 @@ def _format_ep_row(ep, date_ref=None):
     ref_p = str(ep.get("ref_controle") or "").strip()
     rep_s = str(ep.get("repere_eprouvette", "")).strip()
     rep_complet = f"{ref_p}{rep_s}" if ref_p else rep_s
-    f_kn = float(ep.get("force_kn") or 0.0)
+    try:
+        f_kn = float(ep.get("force_kn") or 0.0)
+    except (ValueError, TypeError):
+        f_kn = 0.0
 
     return {
         "ID": ep.get("id"),
@@ -606,13 +621,13 @@ def show(supabase):
                 pd.DataFrame(rows_reception),
                 column_config={
                     "_id_beton": None,
-                    "1-Numero de reception": st.column_config.TextColumn("1-Numero de reception", help="Saisissez le N° de Réception ici", required=False),
+                    "1-Numero de reception": st.column_config.TextColumn("1-N° Réception", help="Saisissez le N° de Réception ici", required=False),
                     "2-Date de livraison": st.column_config.TextColumn("2-Date de livraison", disabled=True),
-                    "3-Nb d'éprouvettes": st.column_config.NumberColumn("7-Nb d'éprouvettes", disabled=True),
-                    "4-Classe de béton": st.column_config.TextColumn("3-Classe de béton", disabled=True),
-                    "5-Ouvrage": st.column_config.TextColumn("4-Ouvrage", disabled=True),
-                    "6-Affaissement": st.column_config.TextColumn("5-Affaissement", disabled=True),
-                    "7-Temperature de béton frais": st.column_config.TextColumn("6-Temperature de béton frais", disabled=True),
+                    "3-Nb d'éprouvettes": st.column_config.NumberColumn("3-Nb d'éprouvettes", disabled=True),
+                    "4-Classe de béton": st.column_config.TextColumn("4-Classe de béton", disabled=True),
+                    "5-Ouvrage": st.column_config.TextColumn("5-Ouvrage", disabled=True),
+                    "6-Affaissement": st.column_config.TextColumn("6-Affaissement", disabled=True),
+                    "7-Temperature de béton frais": st.column_config.TextColumn("7-Température béton", disabled=True),
                 },
                 use_container_width=True, hide_index=True, key="editor_reception_phase0",
             )
@@ -1016,7 +1031,10 @@ def show(supabase):
                 rows_list = []
                 for ep in lot_selected:
                     sec = float(ep.get("section") or 176.71)
-                    f_kn = float(ep.get("force_kn") or 0.0)
+                    try:
+                        f_kn = float(ep.get("force_kn") or 0.0)
+                    except (ValueError, TypeError):
+                        f_kn = 0.0
                     fc = round((f_kn * 10.0) / sec, 1) if sec > 0 and f_kn > 0 else 0.0
                     rows_list.append({
                         "ID": ep["id"], "🏷️ Référence de Contrôle": str(ep.get("ref_controle") or ref_controle_courante).strip(),
@@ -1072,7 +1090,10 @@ def show(supabase):
                     f_kn, fc_mpa = float(r_s["Force (kN)"]), float(r_s["Résistance Fc (MPa)"])
                     ref_p, rep_s = str(r_s["🏷️ Référence de Contrôle"]).strip(), str(r_s["Repère"]).strip()
                 else:
-                    f_kn = float(ep_h.get("force_kn") or 0.0)
+                    try:
+                        f_kn = float(ep_h.get("force_kn") or 0.0)
+                    except (ValueError, TypeError):
+                        f_kn = 0.0
                     fc_mpa = float(ep_h.get("fc_mpa") or (round((f_kn * 10.0) / sec_h, 1) if f_kn > 0 else 0.0))
                     ref_p, rep_s = str(ep_h.get("ref_controle") or ref_controle_courante).strip(), str(ep_h.get("repere_eprouvette", f"/{ep_id}")).strip()
 
@@ -1125,8 +1146,29 @@ def show(supabase):
 
 
 # =========================================================
-# 4. INITIALISATION DU SESSION STATE
+# 4. INITIALISATION DU SESSION STATE & EXECUTION
 # =========================================================
 if __name__ == "__main__":
-    if "can_edit" not in st.session_state: st.session_state["can_edit"] = False
-    if "user_logged" not in st.session_state: st.session_state["user_logged"] = False
+    if "can_edit" not in st.session_state: 
+        st.session_state["can_edit"] = True
+    if "user_logged" not in st.session_state: 
+        st.session_state["user_logged"] = True
+    if "is_admin" not in st.session_state:
+        st.session_state["is_admin"] = True
+
+    # Récupération automatique du client Supabase depuis secrets
+    supabase_client = None
+    if "supabase" in st.session_state:
+        supabase_client = st.session_state["supabase"]
+    else:
+        try:
+            url = st.secrets["SUPABASE_URL"]
+            key = st.secrets["SUPABASE_KEY"]
+            if Client:
+                supabase_client = create_client(url, key)
+                st.session_state["supabase"] = supabase_client
+        except Exception as e:
+            st.error("💡 Connexion Supabase : Assurez-vous d'avoir configuré SUPABASE_URL et SUPABASE_KEY dans vos secrets Streamlit.")
+
+    if supabase_client:
+        show(supabase_client)
