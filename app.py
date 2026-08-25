@@ -1,4 +1,4 @@
-aujourd’hui 14:31
+import datetime
 514f8421-af39-425a-87e4-25cc7b640832.py
 Python
 est ce que  quand j'ai scanné un QR  de ne pas demander chaque fois le mot de passe sachant que je suis déjà connecter a la plateforme depuis mon smartphone .chaque fois que j'ai scanné QR demande mot de passe .
