@@ -443,7 +443,7 @@ def generer_pv_excel(export_data, infos_header):
     format_cell(ws.cell(row=r_sig_titre, column=6, value="Visa Chef du laboratoire"), font=font_bold, align=align_center)
 
     ws.merge_cells(start_row=r_sig_debut, start_column=6, end_row=r_sig_fin, end_column=8)
-    format_cell(ws.cell(row=r_sig_debut, column=6, value="H.BAALLAL"), font=font_bold, align=align_top_center)
+    format_cell(ws.cell(row=r_sig_debut, column=2, value="H.BAALLAL"), font=font_bold, align=align_top_center)
 
     row_heights = {7: 32, 8: 48, 10: 23, 11: 23, 9: 15, 12: 15, 13: 15, 14: 15}
     for r in range(1, r_sig_fin + 1):
@@ -555,8 +555,22 @@ def show(supabase):
     scan_rec = query_params.get("rec") or query_params.get("num_reception")
     scan_b_id = query_params.get("beton_id") or query_params.get("id")
 
+    options_onglets = [
+        "📋 Phase 0 : Réception & Validation",
+        "📅 Phase 1 : Programmation",
+        "💥 Phase 2 : Planning Daily & Saisie (Par Lot)",
+    ]
+
+    # --- ROUTING AUTOMATIQUE SUR SCAN DE QR CODE ---
     if scan_rec or scan_b_id:
-        st.toast(f"📱 QR Code détecté : Réception **{scan_rec or scan_b_id}**", icon="⚡")
+        qr_token = f"{scan_rec}_{scan_b_id}"
+        if st.session_state.get("last_qr_scanned") != qr_token:
+            st.session_state["onglet_actif"] = options_onglets[2]
+            st.session_state["last_qr_scanned"] = qr_token
+            st.toast(f"🎯 QR Code scanné : Redirection automatique vers **Phase 2** ({scan_rec or scan_b_id})", icon="⚡")
+
+    if "onglet_actif" not in st.session_state:
+        st.session_state["onglet_actif"] = options_onglets[0]
 
     user_info = st.session_state.get("user", {})
     role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
@@ -574,11 +588,25 @@ def show(supabase):
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
         if mode_admin: st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
-    tab_reception, tab_prog, tab_saisie = st.tabs([
-        "📋 Phase 0 : Réception & Validation",
-        "📅 Phase 1 : Programmation",
-        "💥 Phase 2 : Planning Daily & Saisie (Par Lot)",
-    ])
+    # NAVIGATION INTERACTIVE DES PHASES (Permet le changement de vue dynamique)
+    try:
+        onglet_courant = st.segmented_control(
+            "Navigation entre phases :",
+            options_onglets,
+            default=st.session_state["onglet_actif"],
+            key="nav_segmented_phase"
+        )
+        if onglet_courant:
+            st.session_state["onglet_actif"] = onglet_courant
+    except AttributeError:
+        onglet_courant = st.radio(
+            "Navigation entre phases :",
+            options_onglets,
+            index=options_onglets.index(st.session_state.get("onglet_actif", options_onglets[0])),
+            horizontal=True,
+            key="nav_radio_phase"
+        )
+        st.session_state["onglet_actif"] = onglet_courant
 
     betonnages_preleves = []
     try:
@@ -588,13 +616,12 @@ def show(supabase):
     except Exception as e:
         st.error(f"❌ Erreur lors du chargement des bétonnages : {e}")
 
-    # Indexation par ID pour synchronisation rapide des dates de coulée
     map_betonnages = {b.get("id"): b for b in betonnages_preleves}
 
     # =========================================================
     # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION + QR CODES
     # =========================================================
-    with tab_reception:
+    if onglet_courant == options_onglets[0]:
         st.subheader("📋 0. Réception & Validation des Bétons")
         st.info("💡 **Condition requise** : Saisissez manuellement le **N° Réception**. Une fois enregistré, le numéro débloquera la Phase 1 et permettra la génération d'étiquettes **QR Code** étanches.")
 
@@ -674,7 +701,7 @@ def show(supabase):
                     use_container_width=True, key="btn_download_reception_excel",
                 )
 
-            # --- MODULE ÉTIQUETTES QR CODE (Déplié par défaut) ---
+            # --- MODULE ÉTIQUETTES QR CODE ---
             st.divider()
             st.subheader("📱 Étiquettes QR Code")
             
@@ -713,7 +740,7 @@ def show(supabase):
     # =========================================================
     # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
     # =========================================================
-    with tab_prog:
+    elif onglet_courant == options_onglets[1]:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
         if can_edit:
@@ -726,7 +753,6 @@ def show(supabase):
                     st.error(f"Erreur lors du chargement des programmations : {e}")
 
                 if eprouvettes_enregistrees:
-                    # Synchronisation automatique des dates de coulée incohérentes avec la Phase 0
                     dates_corrigees_count = 0
                     for ep in eprouvettes_enregistrees:
                         parent_beton = map_betonnages.get(ep.get("betonnage_id"))
@@ -734,7 +760,6 @@ def show(supabase):
                             date_coulee_correcte = extraire_date_coulee(parent_beton)
                             if ep.get("date_coulee") != date_coulee_correcte:
                                 ep["date_coulee"] = date_coulee_correcte
-                                # Recalcul automatique de la date d'écrasement en fonction de l'échéance
                                 try:
                                     nb_j = int(str(ep.get("echeance", "28")).replace("jours", "").replace("j", "").strip())
                                     dt_c = datetime.strptime(date_coulee_correcte, "%Y-%m-%d").date()
@@ -743,7 +768,6 @@ def show(supabase):
                                 except Exception:
                                     nouvelle_date_ecrasement = ep.get("date_ecrasement")
 
-                                # Mise à jour dans Supabase
                                 try:
                                     supabase.table("suivi_controle_beton").update({
                                         "date_coulee": date_coulee_correcte,
@@ -850,7 +874,6 @@ def show(supabase):
             eprouvettes_deja_prog = prog_counts.get(b_id, 0)
             solde_disponible = max(0, total_eprouvettes_prevues - eprouvettes_deja_prog)
 
-            # Lecture garantie de la Date Coulée directement depuis la Phase 0
             date_coulee_raw = extraire_date_coulee(beton_p)
             try: date_coulee_p = datetime.strptime(date_coulee_raw, "%Y-%m-%d").date()
             except Exception: date_coulee_p = date.today()
@@ -913,7 +936,7 @@ def show(supabase):
     # =========================================================
     # PHASE 2 : PLANNING & SAISIE DES ÉCRASEMENTS
     # =========================================================
-    with tab_saisie:
+    elif onglet_courant == options_onglets[2]:
         st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
 
         today_date = date.today()
@@ -992,15 +1015,19 @@ def show(supabase):
                 ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
                 classe_ep = ep.get("classe_beton") or (info_b_temp.get("classe_beton") if info_b_temp else "-")
                 cle_groupe = f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ep.get('ouvrage', '-')} | Échéance : {ep.get('echeance', '28 jours')} (Date Prévue : {ep.get('date_ecrasement', '-')}) | Lot ID #{b_id_ep}"
-                
-                # Détection automatique du scan QR Code pour la sélection par défaut
-                if scan_rec and (str(scan_rec).strip().lower() in ref_ctrl.lower() or str(scan_b_id) == str(b_id_ep)):
-                    index_selectionne = len(groupes_lots)
 
-                groupes_lots.setdefault(cle_groupe, []).append(ep)
+                if cle_groupe not in groupes_lots:
+                    # Auto-sélection exacte lors du Scan de QR Code
+                    if scan_rec and str(scan_rec).strip().lower() in ref_ctrl.lower():
+                        index_selectionne = len(groupes_lots)
+                    elif scan_b_id and str(scan_b_id).strip() == str(b_id_ep).strip():
+                        index_selectionne = len(groupes_lots)
+                    groupes_lots[cle_groupe] = []
+
+                groupes_lots[cle_groupe].append(ep)
 
             options_lots = list(groupes_lots.keys())
-            index_defaut = min(index_selectionne, len(options_lots) - 1)
+            index_defaut = min(index_selectionne, len(options_lots) - 1) if options_lots else 0
 
             choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes à écraser / modifier :", options_lots, index=index_defaut, key="select_lot_saisie")
             lot_selected = groupes_lots[choix_lot]
@@ -1156,7 +1183,6 @@ if __name__ == "__main__":
     if "is_admin" not in st.session_state:
         st.session_state["is_admin"] = True
 
-    # Récupération automatique du client Supabase depuis secrets
     supabase_client = None
     if "supabase" in st.session_state:
         supabase_client = st.session_state["supabase"]
