@@ -10,4 +10,3 @@ matplotlib
 qrcode
 Pillow
 extra-streamlit-components
-streamlit-cookies-manager
