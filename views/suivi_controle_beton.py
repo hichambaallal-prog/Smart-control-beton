@@ -12,6 +12,13 @@ try:
 except ImportError:
     Client = None
 
+# Constante des onglets pour éviter toute divergence de chaîne
+OPTIONS_ONGLETS = [
+    "📋 Phase 0 : Réception & Validation",
+    "📅 Phase 1 : Programmation",
+    "💥 Phase 2 : Planning Daily & Saisie (Par Lot)",
+]
+
 
 # ==============================================================================
 # 1. GESTION DES UTILISATEURS ET CONNEXION SUPABASE
@@ -58,9 +65,11 @@ def afficher_ecran_connexion(supabase):
 
         if submit:
             if connecter_utilisateur(supabase, nom_u, mdp):
-                # Si un scan QR était en attente, forcer la redirection vers Phase 2
+                # Forcer la navigation vers la Phase 2 sur les clefs de widgets Streamlit
                 if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
-                    st.session_state["onglet_actif"] = "💥 Phase 2 : Planning Daily & Saisie (Par Lot)"
+                    st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
+                    st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
+                    st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
                 st.toast("✅ Connexion réussie !", icon="🔓")
                 st.rerun()
 
@@ -572,23 +581,14 @@ def _format_ep_row(ep, date_ref=None):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    options_onglets = [
-        "📋 Phase 0 : Réception & Validation",
-        "📅 Phase 1 : Programmation",
-        "💥 Phase 2 : Planning Daily & Saisie (Par Lot)",
-    ]
+    # Alignment forcé si un scan QR est en session
+    if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
+        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
+        st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
+        st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
 
-    # Recupération sécurisée des variables QR scannées dans l'URL ou en Session
-    scan_rec = st.session_state.get("pending_qr_rec")
-    scan_b_id = st.session_state.get("pending_qr_bid")
-
-    # --- ROUTING AUTOMATIQUE SUR SCAN DE QR CODE ---
-    if scan_rec or scan_b_id:
-        st.session_state["onglet_actif"] = options_onglets[2]
-        st.toast(f"🎯 Redirection QR Code : **Phase 2** ({scan_rec or scan_b_id})", icon="⚡")
-
-    if "onglet_actif" not in st.session_state:
-        st.session_state["onglet_actif"] = options_onglets[0]
+    if "nav_segmented_phase" not in st.session_state:
+        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[0]
 
     user_info = st.session_state.get("user", {})
     role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
@@ -606,26 +606,25 @@ def show(supabase):
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
         if mode_admin: st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
-    # NAVIGATION INTERACTIVE DES PHASES
+    # NAVIGATION INTERACTIVE DES PHASES (Synchronisation stricte des clés)
     try:
         onglet_courant = st.segmented_control(
             "Navigation entre phases :",
-            options_onglets,
-            default=st.session_state.get("onglet_actif", options_onglets[0]),
+            OPTIONS_ONGLETS,
             key="nav_segmented_phase"
         )
-        if onglet_courant:
-            st.session_state["onglet_actif"] = onglet_courant
+        st.session_state["onglet_actif"] = onglet_courant
     except AttributeError:
-        index_defaut = options_onglets.index(st.session_state.get("onglet_actif", options_onglets[0]))
         onglet_courant = st.radio(
             "Navigation entre phases :",
-            options_onglets,
-            index=index_defaut,
+            OPTIONS_ONGLETS,
             horizontal=True,
             key="nav_radio_phase"
         )
         st.session_state["onglet_actif"] = onglet_courant
+
+    if not onglet_courant:
+        onglet_courant = st.session_state.get("onglet_actif", OPTIONS_ONGLETS[0])
 
     betonnages_preleves = []
     try:
@@ -640,7 +639,7 @@ def show(supabase):
     # =========================================================
     # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION + QR CODES
     # =========================================================
-    if onglet_courant == options_onglets[0]:
+    if onglet_courant == OPTIONS_ONGLETS[0]:
         st.subheader("📋 0. Réception & Validation des Bétons")
         st.info("💡 **Condition requise** : Saisissez manuellement le **N° Réception**. Une fois enregistré, le numéro débloquera la Phase 1 et permettra la génération d'étiquettes **QR Code** étanches.")
 
@@ -738,7 +737,7 @@ def show(supabase):
 
                     st.markdown(f"**Génération pour `{rec_num}` ({nb_ep} éprouvettes) :**")
                     
-                    base_url = st.query_params.get("baseUrl", "https://smart-control-beton-lt7pusyvxjehm5kphd7hru.streamlit.app")
+                    base_url = "https://smart-control-beton-lt7pusyvxjehm5kphd7hru.streamlit.app"
                     
                     cols_qr = st.columns(3)
                     for i in range(1, nb_ep + 1):
@@ -759,7 +758,7 @@ def show(supabase):
     # =========================================================
     # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
     # =========================================================
-    elif onglet_courant == options_onglets[1]:
+    elif onglet_courant == OPTIONS_ONGLETS[1]:
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
         if can_edit:
@@ -955,8 +954,19 @@ def show(supabase):
     # =========================================================
     # PHASE 2 : PLANNING & SAISIE DES ÉCRASEMENTS
     # =========================================================
-    elif onglet_courant == options_onglets[2]:
+    elif onglet_courant == OPTIONS_ONGLETS[2]:
         st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
+
+        # Bannière informative en cas de redirection depuis un scan QR Code
+        scan_rec = st.session_state.get("pending_qr_rec")
+        scan_b_id = st.session_state.get("pending_qr_bid")
+        if scan_rec or scan_b_id:
+            col_qr_info, col_qr_btn = st.columns([4, 1])
+            col_qr_info.success(f"🎯 **Accès direct QR Code actif** (Réception / ID : `{scan_rec or scan_b_id}`)")
+            if col_qr_btn.button("✖ Revenir au normal", use_container_width=True):
+                st.session_state.pop("pending_qr_rec", None)
+                st.session_state.pop("pending_qr_bid", None)
+                st.rerun()
 
         today_date = date.today()
         today_str = str(today_date)
@@ -1032,12 +1042,13 @@ def show(supabase):
                 b_id_ep = ep.get("betonnage_id")
                 info_b_temp = obtenir_infos_betonnage_parent(supabase, b_id_ep)
                 ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
+                num_rec_parent = str((info_b_temp or {}).get("num_reception") or "").strip()
                 classe_ep = ep.get("classe_beton") or (info_b_temp.get("classe_beton") if info_b_temp else "-")
                 cle_groupe = f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ep.get('ouvrage', '-')} | Échéance : {ep.get('echeance', '28 jours')} (Date Prévue : {ep.get('date_ecrasement', '-')}) | Lot ID #{b_id_ep}"
 
                 if cle_groupe not in groupes_lots:
-                    # Auto-sélection exacte lors du Scan de QR Code
-                    if scan_rec and str(scan_rec).strip().lower() in ref_ctrl.lower():
+                    # Auto-sélection du lot scanné via QR code
+                    if scan_rec and (str(scan_rec).strip().lower() in ref_ctrl.lower() or str(scan_rec).strip().lower() in num_rec_parent.lower()):
                         index_selectionne = len(groupes_lots)
                     elif scan_b_id and str(scan_b_id).strip() == str(b_id_ep).strip():
                         index_selectionne = len(groupes_lots)
@@ -1195,15 +1206,21 @@ def show(supabase):
 # 4. INITIALISATION DE L'APPLICATION ET DU POINT D'ENTRÉE
 # =========================================================
 if __name__ == "__main__":
-    # 1. Capture immédiate des paramètres QR code dans l'URL pour ne pas les perdre
+    # 1. Capture immédiate des paramètres QR code dans l'URL à l'exécution de l'application
     query_params = st.query_params
     url_rec = query_params.get("rec") or query_params.get("num_reception")
     url_bid = query_params.get("beton_id") or query_params.get("id")
 
-    if url_rec:
-        st.session_state["pending_qr_rec"] = url_rec
-    if url_bid:
-        st.session_state["pending_qr_bid"] = url_bid
+    if url_rec or url_bid:
+        if url_rec:
+            st.session_state["pending_qr_rec"] = str(url_rec).strip()
+        if url_bid:
+            st.session_state["pending_qr_bid"] = str(url_bid).strip()
+            
+        # Forcer la Phase 2 directement au niveau des états du menu Streamlit
+        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
+        st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
+        st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
 
     # 2. Initialisation du client Supabase
     supabase_client = None
