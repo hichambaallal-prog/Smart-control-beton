@@ -786,7 +786,7 @@ def show(supabase):
                                     dt_c = datetime.strptime(date_coulee_correcte, "%Y-%m-%d").date()
                                     nouvelle_date_ecrasement = str(dt_c + timedelta(days=nb_j))
                                     ep["date_ecrasement"] = nouvelle_date_ecrasement
-                                except Exception:
+                                mept:
                                     nouvelle_date_ecrasement = ep.get("date_ecrasement")
 
                                 try:
