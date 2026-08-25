@@ -331,7 +331,7 @@ def generer_pv_excel(export_data, infos_header):
     ws["F14"], ws["G14"], ws["H14"] = "Compression", "Traction", "Moyenne"
 
     for r in range(13, 15):
-     for c in range(1, 9):
+    for c in range(1, 9):
             format_cell(ws.cell(row=r, column=c), font=font_bold if r == 13 or c == 1 else font_regular, align=align_center, fill=fill_table)
 
     row_start = 15
