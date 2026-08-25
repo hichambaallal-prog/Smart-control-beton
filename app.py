@@ -5,7 +5,7 @@ from fpdf import FPDF
 from PIL import Image
 import streamlit as st
 import streamlit.components.v1 as components
-from streamlit_cookies_manager import EncryptedCookieManager
+import extra_streamlit_components as stx
 from supabase import Client, create_client
 
 # Importation sécurisée du gestionnaire Hors-Ligne SQLite
@@ -70,14 +70,7 @@ REMEMBER_SECRET_KEY = os.environ.get(
     "REMEMBER_SECRET_KEY", "lpee_ctr_csb_remember_me_2026_a_changer"
 )
 
-cookies = EncryptedCookieManager(
-    prefix="lpee_ctr_csb/",
-    password=os.environ.get("COOKIES_PASSWORD", "lpee_ctr_csb_cookie_pwd_2026"),
-)
-if not cookies.ready():
-    # Le composant a besoin d'un premier aller-retour navigateur pour
-    # récupérer les cookies existants ; on attend ce round-trip.
-    st.stop()
+cookie_manager = stx.CookieManager(key="lpee_ctr_csb_cookie_manager")
 
 
 def _generer_jeton_souvenir(username, role, can_edit):
@@ -312,10 +305,10 @@ if "can_edit" not in st.session_state:
 # 3bis. AUTO-CONNEXION VIA COOKIE "SE SOUVENIR DE MOI"
 # ==========================================
 if st.session_state["user"] is None:
-  remembered_user = cookies.get("remember_user")
-  remembered_role = cookies.get("remember_role")
-  remembered_can_edit = cookies.get("remember_can_edit") == "1"
-  remembered_token = cookies.get("remember_token")
+  remembered_user = cookie_manager.get("remember_user")
+  remembered_role = cookie_manager.get("remember_role")
+  remembered_can_edit = cookie_manager.get("remember_can_edit") == "1"
+  remembered_token = cookie_manager.get("remember_token")
   if remembered_user and remembered_role and remembered_token:
     if _generer_jeton_souvenir(
         remembered_user, remembered_role, remembered_can_edit
@@ -364,11 +357,11 @@ if st.session_state["user"] is None:
         st.session_state["role"] = role
         st.session_state["can_edit"] = can_edit
         if se_souvenir:
-          cookies["remember_user"] = username
-          cookies["remember_role"] = role
-          cookies["remember_can_edit"] = "1" if can_edit else "0"
-          cookies["remember_token"] = _generer_jeton_souvenir(username, role, can_edit)
-          cookies.save()
+          expiration = datetime.datetime.now() + datetime.timedelta(days=180)
+          cookie_manager.set("remember_user", username, key="set_remember_user", expires_at=expiration)
+          cookie_manager.set("remember_role", role, key="set_remember_role", expires_at=expiration)
+          cookie_manager.set("remember_can_edit", "1" if can_edit else "0", key="set_remember_can_edit", expires_at=expiration)
+          cookie_manager.set("remember_token", _generer_jeton_souvenir(username, role, can_edit), key="set_remember_token", expires_at=expiration)
         st.rerun()
 
       if submit_btn:
@@ -596,9 +589,8 @@ with st.sidebar:
     st.session_state["role"] = None
     st.session_state["can_edit"] = False
     for _ck in ("remember_user", "remember_role", "remember_can_edit", "remember_token"):
-      if _ck in cookies:
-        del cookies[_ck]
-    cookies.save()
+      if cookie_manager.get(_ck) is not None:
+        cookie_manager.delete(_ck, key=f"delete_{_ck}")
     st.rerun()
 
 
