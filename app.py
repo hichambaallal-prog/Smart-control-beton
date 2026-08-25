@@ -1,9 +1,11 @@
 import datetime
+import json
 import os
 from fpdf import FPDF
 from PIL import Image
 import streamlit as st
 import streamlit.components.v1 as components
+from streamlit_cookies_manager import EncryptedCookieManager
 from supabase import Client, create_client
 
 # Importation sécurisée du gestionnaire Hors-Ligne SQLite
@@ -56,6 +58,38 @@ if _qr_rec or _qr_bid:
     # / rerun et forcerait la page à chaque interaction (ce qui empêcherait
     # toute navigation manuelle une fois arrivé sur la bonne page).
     st.query_params.clear()
+
+# ==========================================
+# 1ter. GESTIONNAIRE DE COOKIES ("Se souvenir de moi")
+# ==========================================
+# Permet de rester connecté sur le même appareil/navigateur, y compris après
+# un scan QR Code qui ouvre une nouvelle session Streamlit (donc un
+# session_state vide) : sans cookie, il faudrait ressaisir le mot de passe
+# à CHAQUE scan.
+REMEMBER_SECRET_KEY = os.environ.get(
+    "REMEMBER_SECRET_KEY", "lpee_ctr_csb_remember_me_2026_a_changer"
+)
+
+cookies = EncryptedCookieManager(
+    prefix="lpee_ctr_csb/",
+    password=os.environ.get("COOKIES_PASSWORD", "lpee_ctr_csb_cookie_pwd_2026"),
+)
+if not cookies.ready():
+    # Le composant a besoin d'un premier aller-retour navigateur pour
+    # récupérer les cookies existants ; on attend ce round-trip.
+    st.stop()
+
+
+def _generer_jeton_souvenir(username, role, can_edit):
+    """Jeton signé auto-suffisant (indépendant de la base utilisateurs),
+    pour fonctionner avec les 3 chemins de connexion possibles (compte
+    nommé, mot de passe maître admin2026, mot de passe maître ctr2026)."""
+    import hashlib
+    import hmac as hmac_lib
+    payload = f"{username}:{role}:{bool(can_edit)}"
+    return hmac_lib.new(
+        REMEMBER_SECRET_KEY.encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()
 
 # Injection PWA dans le HEAD du document principal
 pwa_code = """
@@ -275,6 +309,28 @@ if "can_edit" not in st.session_state:
   st.session_state["can_edit"] = False
 
 # ==========================================
+# 3bis. AUTO-CONNEXION VIA COOKIE "SE SOUVENIR DE MOI"
+# ==========================================
+if st.session_state["user"] is None:
+  remembered_user = cookies.get("remember_user")
+  remembered_role = cookies.get("remember_role")
+  remembered_can_edit = cookies.get("remember_can_edit") == "1"
+  remembered_token = cookies.get("remember_token")
+  if remembered_user and remembered_role and remembered_token:
+    if _generer_jeton_souvenir(
+        remembered_user, remembered_role, remembered_can_edit
+    ) == remembered_token:
+      st.session_state["user"] = {
+          "username": remembered_user,
+          "role": remembered_role,
+          "can_edit": remembered_can_edit,
+      }
+      st.session_state["role"] = remembered_role
+      st.session_state["can_edit"] = remembered_can_edit
+      st.session_state["users_db"] = load_users()
+      st.rerun()
+
+# ==========================================
 # 4. ÉCRAN DE CONNEXION
 # ==========================================
 if st.session_state["user"] is None:
@@ -291,17 +347,30 @@ if st.session_state["user"] is None:
       )
 
     with st.form("login_form", clear_on_submit=False):
-        username_input = st.text_input(
-            "Nom d'utilisateur", autocomplete="username"
-        ).strip().upper()
-        
-        password_input = st.text_input(
-            "Mot de passe", type="password", autocomplete="current-password"
-        )
-        
-        submit_btn = st.form_submit_button(
-            "Se connecter", use_container_width=True, type="primary"
-        )
+      username_input = st.text_input("Nom d'utilisateur").strip().upper()
+      password_input = st.text_input("Mot de passe", type="password")
+      se_souvenir = st.checkbox(
+          "🔒 Rester connecté sur cet appareil (utile pour les scans QR répétés)",
+          value=True,
+      )
+      submit_btn = st.form_submit_button(
+          "Se connecter", use_container_width=True, type="primary"
+      )
+
+      def _connecter_et_memoriser(username, role, can_edit):
+        st.session_state["user"] = {
+            "username": username, "role": role, "can_edit": can_edit,
+        }
+        st.session_state["role"] = role
+        st.session_state["can_edit"] = can_edit
+        if se_souvenir:
+          cookies["remember_user"] = username
+          cookies["remember_role"] = role
+          cookies["remember_can_edit"] = "1" if can_edit else "0"
+          cookies["remember_token"] = _generer_jeton_souvenir(username, role, can_edit)
+          cookies.save()
+        st.rerun()
+
       if submit_btn:
         fresh_users = load_users()
         st.session_state["users_db"] = fresh_users
@@ -312,34 +381,13 @@ if st.session_state["user"] is None:
         ):
           user_role = fresh_users[username_input]["role"]
           can_edit = fresh_users[username_input]["can_edit"]
-          st.session_state["user"] = {
-              "username": username_input,
-              "role": user_role,
-              "can_edit": can_edit,
-          }
-          st.session_state["role"] = user_role
-          st.session_state["can_edit"] = can_edit
-          st.rerun()
+          _connecter_et_memoriser(username_input, user_role, can_edit)
         elif password_input == "admin2026":
           username = username_input if username_input else "ADMIN"
-          st.session_state["user"] = {
-              "username": username,
-              "role": "admin",
-              "can_edit": True,
-          }
-          st.session_state["role"] = "admin"
-          st.session_state["can_edit"] = True
-          st.rerun()
+          _connecter_et_memoriser(username, "admin", True)
         elif password_input == "ctr2026":
           username = username_input if username_input else "USER"
-          st.session_state["user"] = {
-              "username": username,
-              "role": "user",
-              "can_edit": False,
-          }
-          st.session_state["role"] = "user"
-          st.session_state["can_edit"] = False
-          st.rerun()
+          _connecter_et_memoriser(username, "user", False)
         else:
           st.error("❌ Nom d'utilisateur ou mot de passe incorrect.")
   st.stop()
@@ -547,6 +595,10 @@ with st.sidebar:
     st.session_state["user"] = None
     st.session_state["role"] = None
     st.session_state["can_edit"] = False
+    for _ck in ("remember_user", "remember_role", "remember_can_edit", "remember_token"):
+      if _ck in cookies:
+        del cookies[_ck]
+    cookies.save()
     st.rerun()
 
 
