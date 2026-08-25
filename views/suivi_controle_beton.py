@@ -65,15 +65,8 @@ def afficher_ecran_connexion(supabase):
 
         if submit:
             if connecter_utilisateur(supabase, nom_u, mdp):
-                # Forcer la navigation vers la Phase 2 sur les clefs de widgets Streamlit
-                if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
-                    st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
-                    st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
-                    st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
-                    # NE PAS marquer qr_nav_applied ici : c'est show() qui doit
-                    # rester l'unique responsable de ce flag, sinon son filet de
-                    # sécurité (qui force réellement l'affichage de la Phase 2)
-                    # ne se déclenche jamais au premier rendu après connexion.
+                # C'est show() qui se charge, de façon fiable, de rediriger
+                # vers la Phase 2 si un scan QR est en attente (voir plus bas).
                 st.toast("✅ Connexion réussie !", icon="🔓")
                 st.rerun()
 
@@ -585,21 +578,22 @@ def _format_ep_row(ep, date_ref=None):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # Alignement forcé vers la Phase 2 si un scan QR est en attente.
-    # IMPORTANT : on ne le fait qu'UNE SEULE FOIS (qr_nav_applied) et pas à
-    # chaque rerun, sinon ça entre en conflit avec le widget de navigation
-    # (st.segmented_control) qui se réinitialise alors sur son onglet par
-    # défaut (Phase 0 = page d'accueil) au lieu de garder la Phase 2.
+    # --- Redirection QR : technique fiable par "changement de clé de widget" ---
+    # Pré-remplir st.session_state[key] d'un widget déjà rendu une fois est
+    # fragile (Streamlit peut ignorer la valeur si le widget a déjà un état
+    # côté frontend). La méthode garantie à 100% est de donner au widget une
+    # clé TOTALEMENT NOUVELLE à chaque fois qu'on veut forcer sa valeur :
+    # Streamlit le traite alors comme un widget jamais vu et applique bien le
+    # "default" demandé.
+    st.session_state.setdefault("phase_actuelle", OPTIONS_ONGLETS[0])
+    st.session_state.setdefault("nav_widget_seed", 0)
+
     qr_en_attente = bool(st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"))
     forcer_phase2_ce_run = qr_en_attente and not st.session_state.get("qr_nav_applied", False)
     if forcer_phase2_ce_run:
-        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
-        st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
-        st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
+        st.session_state["phase_actuelle"] = OPTIONS_ONGLETS[2]
+        st.session_state["nav_widget_seed"] += 1  # force la recréation du widget
         st.session_state["qr_nav_applied"] = True
-
-    if "nav_segmented_phase" not in st.session_state:
-        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[0]
 
     user_info = st.session_state.get("user", {})
     role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
@@ -617,30 +611,36 @@ def show(supabase):
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
         if mode_admin: st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
-    # NAVIGATION INTERACTIVE DES PHASES (Synchronisation stricte des clés)
+    # NAVIGATION INTERACTIVE DES PHASES
+    widget_key = f"nav_phase_widget_{st.session_state['nav_widget_seed']}"
     try:
         onglet_courant = st.segmented_control(
             "Navigation entre phases :",
             OPTIONS_ONGLETS,
-            key="nav_segmented_phase"
+            default=st.session_state["phase_actuelle"],
+            key=widget_key,
         )
-        st.session_state["onglet_actif"] = onglet_courant
     except AttributeError:
         onglet_courant = st.radio(
             "Navigation entre phases :",
             OPTIONS_ONGLETS,
+            index=OPTIONS_ONGLETS.index(st.session_state["phase_actuelle"]),
             horizontal=True,
-            key="nav_radio_phase"
+            key=widget_key,
         )
-        st.session_state["onglet_actif"] = onglet_courant
 
     if not onglet_courant:
-        onglet_courant = st.session_state.get("onglet_actif", OPTIONS_ONGLETS[0])
+        onglet_courant = st.session_state.get("phase_actuelle", OPTIONS_ONGLETS[0])
 
     # Filet de sécurité : sur le run où l'on vient de scanner/se connecter via
     # QR, on garantit l'affichage du contenu de la Phase 2 quoi qu'il arrive.
     if forcer_phase2_ce_run:
         onglet_courant = OPTIONS_ONGLETS[2]
+
+    # On mémorise le choix courant pour que les prochains forçages (ou un
+    # nouveau rendu du widget) repartent de la bonne valeur.
+    st.session_state["phase_actuelle"] = onglet_courant
+    st.session_state["onglet_actif"] = onglet_courant
 
     betonnages_preleves = []
     try:
