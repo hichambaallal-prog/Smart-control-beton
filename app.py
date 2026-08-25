@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import time
 from fpdf import FPDF
 from PIL import Image
 import streamlit as st
@@ -72,6 +73,15 @@ REMEMBER_SECRET_KEY = os.environ.get(
 REMEMBER_SESSION_DUREE = datetime.timedelta(hours=4)
 
 cookie_manager = stx.CookieManager(key="lpee_ctr_csb_cookie_manager")
+
+# Sur Safari / iOS notamment, le composant (chargé dans un iframe) peut avoir
+# besoin d'un premier aller-retour avant de renvoyer les cookies réellement
+# présents dans le navigateur. Sans ce court passage forcé, la vérification
+# "se souvenir de moi" ci-dessous risque de s'exécuter avec une liste de
+# cookies encore vide et donc de réafficher l'écran de connexion à tort.
+if "_cookies_bootstrap_ok" not in st.session_state:
+    st.session_state["_cookies_bootstrap_ok"] = True
+    st.rerun()
 
 
 def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
@@ -385,6 +395,10 @@ if st.session_state["user"] is None:
           cookie_manager.set("remember_can_edit", "1" if can_edit else "0", key="set_remember_can_edit", expires_at=expiration)
           cookie_manager.set("remember_issued_at", issued_at_iso, key="set_remember_issued_at", expires_at=expiration)
           cookie_manager.set("remember_token", _generer_jeton_souvenir(username, role, can_edit, issued_at_iso), key="set_remember_token", expires_at=expiration)
+          # Laisser le temps au navigateur (Safari/iOS en particulier) de
+          # réellement écrire les cookies avant que le rerun ci-dessous ne
+          # démonte le composant qui les gère.
+          time.sleep(0.4)
         st.rerun()
 
       if submit_btn:
