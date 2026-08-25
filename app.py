@@ -1,10 +1,5 @@
 import datetime
 import os
-import base64
-import hashlib
-import hmac
-import json
-import time
 from fpdf import FPDF
 from PIL import Image
 import streamlit as st
@@ -36,67 +31,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# 1bis. AUTHENTIFICATION PERSISTANTE (30 jours)
-# ==========================================
-# Après une première connexion réussie, un jeton signé est conservé
-# dans le navigateur. Ainsi, un scan QR dans le même smartphone peut
-# rouvrir la plateforme sans redemander le mot de passe.
-# Le mot de passe n'est JAMAIS stocké dans le QR Code.
-try:
-  AUTH_SECRET = st.secrets.get("AUTH_SECRET", "")
-except Exception:
-  AUTH_SECRET = ""
-
-# En production, définir AUTH_SECRET dans les secrets Streamlit.
-if not AUTH_SECRET:
-  AUTH_SECRET = os.environ.get("AUTH_SECRET", "LPEE-CTR-CSB-CHANGE-ME")
-
-AUTH_TOKEN_TTL = 30 * 24 * 60 * 60  # 30 jours
-AUTH_STORAGE_KEY = "lpee_auth_token"
-
-def _b64encode(data: bytes) -> str:
-  return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
-
-def _b64decode(value: str) -> bytes:
-  return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-
-def create_auth_token(username: str) -> str:
-  payload = {"u": username, "exp": int(time.time()) + AUTH_TOKEN_TTL}
-  raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-  payload_b64 = _b64encode(raw)
-  signature = hmac.new(
-      AUTH_SECRET.encode("utf-8"), payload_b64.encode("utf-8"), hashlib.sha256
-  ).digest()
-  return payload_b64 + "." + _b64encode(signature)
-
-def verify_auth_token(token: str):
-  try:
-    payload_b64, signature_b64 = token.split(".", 1)
-    expected = hmac.new(
-        AUTH_SECRET.encode("utf-8"), payload_b64.encode("utf-8"), hashlib.sha256
-    ).digest()
-    received = _b64decode(signature_b64)
-    if not hmac.compare_digest(expected, received):
-      return None
-    payload = json.loads(_b64decode(payload_b64).decode("utf-8"))
-    if int(payload.get("exp", 0)) < int(time.time()):
-      return None
-    username = str(payload.get("u", "")).strip().upper()
-    return username or None
-  except Exception:
-    return None
-
-# Si le navigateur nous renvoie un jeton mémorisé, on prépare
-# l'ouverture automatique de la session. La validation de l'utilisateur
-# est faite juste après le chargement de la base des utilisateurs.
-_auth_from_url = st.query_params.get("auth_token")
-if _auth_from_url:
-  _auth_username = verify_auth_token(str(_auth_from_url))
-  if _auth_username:
-    st.session_state["pending_auth_username"] = _auth_username
-
-# ==========================================
-# 1ter. CAPTURE DES PARAMÈTRES QR CODE (ex: ?rec=...&beton_id=...)
+# 1bis. CAPTURE DES PARAMÈTRES QR CODE (ex: ?rec=...&beton_id=...)
 # ==========================================
 # C'est ICI qu'il faut lire l'URL, et pas dans views/suivi_controle_beton.py :
 # ce module est importé (pas exécuté directement), donc son bloc
@@ -117,11 +52,10 @@ if _qr_rec or _qr_bid:
     # (Ré)armer la redirection automatique vers la page "Suivi Contrôle Béton"
     st.session_state["qr_page_applied"] = False
 
-    # Nettoyer uniquement les paramètres QR. Le jeton d'authentification
-    # est géré séparément afin de ne pas perdre la session persistante.
-    for _key in ["rec", "num_reception", "beton_id", "id", "ep"]:
-      if _key in st.query_params:
-        del st.query_params[_key]
+    # Nettoyer l'URL : sans ça, ce bloc s'exécuterait à nouveau à CHAQUE clic
+    # / rerun et forcerait la page à chaque interaction (ce qui empêcherait
+    # toute navigation manuelle une fois arrivé sur la bonne page).
+    st.query_params.clear()
 
 # Injection PWA dans le HEAD du document principal
 pwa_code = """
@@ -146,37 +80,6 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js')
         .then((reg) => console.log('Service Worker PWA enregistré !', reg))
         .catch((err) => console.error('Erreur Service Worker PWA :', err));
-}
-
-// Restauration automatique de la session après un scan QR.
-// Le token est stocké uniquement dans localStorage du navigateur.
-try {
-    const STORAGE_KEY = "lpee_auth_token";
-    const url = new URL(window.parent.location.href);
-    if (url.searchParams.get("logout") === "1") {
-        window.localStorage.removeItem(STORAGE_KEY);
-        url.searchParams.delete("logout");
-        window.parent.history.replaceState({}, document.title, url.toString());
-    }
-    const token = window.localStorage.getItem(STORAGE_KEY);
-    const hasToken = url.searchParams.has("auth_token");
-    if (token && !hasToken) {
-        url.searchParams.set("auth_token", token);
-        window.parent.location.replace(url.toString());
-    }
-
-    // Après connexion, le serveur place auth_token dans l'URL.
-    // On le mémorise puis on nettoie l'URL.
-    if (hasToken) {
-        const urlToken = url.searchParams.get("auth_token");
-        if (urlToken) {
-            window.localStorage.setItem(STORAGE_KEY, urlToken);
-            url.searchParams.delete("auth_token");
-            window.parent.history.replaceState({}, document.title, url.toString());
-        }
-    }
-} catch (e) {
-    console.warn("Session persistante indisponible :", e);
 }
 </script>
 """
@@ -360,21 +263,6 @@ def delete_user_db(username):
     return False, str(e)
 
 
-# Restauration de session persistante après scan QR / réouverture du navigateur.
-# L'utilisateur doit toujours exister dans la base actuelle.
-if "pending_auth_username" in st.session_state and st.session_state.get("user") is None:
-  _saved_username = st.session_state.get("pending_auth_username")
-  _saved_user = load_users().get(_saved_username)
-  if _saved_user:
-    st.session_state["user"] = {
-        "username": _saved_username,
-        "role": _saved_user["role"],
-        "can_edit": _saved_user.get("can_edit", False),
-    }
-    st.session_state["role"] = _saved_user["role"]
-    st.session_state["can_edit"] = _saved_user.get("can_edit", False)
-  st.session_state.pop("pending_auth_username", None)
-
 # Initialisation de la mémoire session des utilisateurs
 if "users_db" not in st.session_state:
   st.session_state["users_db"] = load_users()
@@ -426,7 +314,6 @@ if st.session_state["user"] is None:
           }
           st.session_state["role"] = user_role
           st.session_state["can_edit"] = can_edit
-          st.query_params["auth_token"] = create_auth_token(username_input)
           st.rerun()
         elif password_input == "admin2026":
           username = username_input if username_input else "ADMIN"
@@ -437,7 +324,6 @@ if st.session_state["user"] is None:
           }
           st.session_state["role"] = "admin"
           st.session_state["can_edit"] = True
-          st.query_params["auth_token"] = create_auth_token(username)
           st.rerun()
         elif password_input == "ctr2026":
           username = username_input if username_input else "USER"
@@ -448,7 +334,6 @@ if st.session_state["user"] is None:
           }
           st.session_state["role"] = "user"
           st.session_state["can_edit"] = False
-          st.query_params["auth_token"] = create_auth_token(username)
           st.rerun()
         else:
           st.error("❌ Nom d'utilisateur ou mot de passe incorrect.")
@@ -657,7 +542,6 @@ with st.sidebar:
     st.session_state["user"] = None
     st.session_state["role"] = None
     st.session_state["can_edit"] = False
-    st.query_params["logout"] = "1"
     st.rerun()
 
 
