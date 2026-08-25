@@ -579,7 +579,7 @@ def show(supabase):
     # =========================================================
     # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION + QR CODES
     # =========================================================
-    with tab_reception:
+   with tab_reception:
         st.subheader("📋 0. Réception & Validation des Bétons")
         st.info("💡 **Condition requise** : Saisissez manuellement le **N° Réception**. Une fois enregistré, le numéro débloquera la Phase 1 et permettra la génération d'étiquettes **QR Code** étanches.")
 
@@ -659,24 +659,24 @@ def show(supabase):
                     use_container_width=True, key="btn_download_reception_excel",
                 )
 
-            # --- MODULE ÉTIQUETTES QR CODE ---
+            # --- MODULE ÉTIQUETTES QR CODE (Déplié par défaut) ---
             st.divider()
-            with st.expander("📱 Imprimer les Étiquettes QR Code (Identification & Redirection Directe)", expanded=False):
-                st.write("Générez des QR Codes imprimables pour l'étiquetage des éprouvettes. Le scan redirigera directement vers la fiche d'écrasement.")
-                receptions_validees = [b for b in betonnages_preleves if b.get("num_reception") and str(b.get("num_reception")).strip() not in ["", "-", "None"]]
+            st.subheader("📱 Étiquettes QR Code")
+            
+            receptions_validees = [b for b in betonnages_preleves if b.get("num_reception") and str(b.get("num_reception")).strip() not in ["", "-", "None"]]
 
-                if not receptions_validees:
-                    st.info("Aucune réception avec un N° valide disponible pour la génération de QR code.")
-                else:
+            if not receptions_validees:
+                st.warning("⚠️ Renseignez et enregistrez un **N° de Réception** dans le tableau ci-dessus pour générer les QR Codes.")
+            else:
+                with st.expander("🖨️ Afficher & Imprimer les QR Codes des Éprouvettes", expanded=True):
                     opt_qr = {f"Réception N° {b.get('num_reception')} | {b.get('ouvrage', '-')} ({extraire_date_coulee(b)})": b for b in receptions_validees}
                     choix_qr_lab = st.selectbox("Choisir la Réception à étiqueter :", list(opt_qr.keys()), key="select_qr_reception")
                     b_qr = opt_qr[choix_qr_lab]
                     rec_num = b_qr.get("num_reception")
                     nb_ep = int(b_qr.get("nb_eprouvettes") or 12)
 
-                    st.markdown(f"**Étiquettes pour la réception : `{rec_num}` ({nb_ep} éprouvettes)**")
+                    st.markdown(f"**Génération pour `{rec_num}` ({nb_ep} éprouvettes) :**")
                     
-                    # URL de base dynamique
                     base_url = st.query_params.get("baseUrl", "https://share.streamlit.io")
                     
                     cols_qr = st.columns(3)
@@ -685,11 +685,11 @@ def show(supabase):
                         qr_bytes = generer_qr_code(qr_payload)
                         with cols_qr[(i - 1) % 3]:
                             st.caption(f"Éprouvette #{i} / {rec_num}")
-                            st.image(qr_bytes, width=130)
+                            st.image(qr_bytes, width=140)
                             st.download_button(
                                 label=f"📥 QR Épr. #{i}",
                                 data=qr_bytes,
-                                file_name=f"QR_{rec_num.replace('/', '_')}_Ep{i}.png",
+                                file_name=f"QR_{str(rec_num).replace('/', '_')}_Ep{i}.png",
                                 mime="image/png",
                                 key=f"btn_qr_{b_qr.get('id')}_{i}",
                                 use_container_width=True
