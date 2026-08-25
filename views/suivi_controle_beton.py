@@ -681,7 +681,7 @@ def show(supabase):
                     
                     cols_qr = st.columns(3)
                     for i in range(1, nb_ep + 1):
-                        qr_payload = f"{base_url qr_payload = f"{base_url}?rec={rec_num}&beton_id={b_qr.get('id')}&ep={i}"}/?rec={rec_num}&beton_id={b_qr.get('id')}&ep={i}"
+                        qr_payload = f"{base_url}/?rec={rec_num}&beton_id={b_qr.get('id')}&ep={i}"
                         qr_bytes = generer_qr_code(qr_payload)
                         with cols_qr[(i - 1) % 3]:
                             st.caption(f"Éprouvette #{i} / {rec_num}")
