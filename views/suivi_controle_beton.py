@@ -70,6 +70,7 @@ def afficher_ecran_connexion(supabase):
                     st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
                     st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
                     st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
+                    st.session_state["qr_nav_applied"] = True
                 st.toast("✅ Connexion réussie !", icon="🔓")
                 st.rerun()
 
@@ -581,14 +582,21 @@ def _format_ep_row(ep, date_ref=None):
 def show(supabase):
     st.title("🧪 Contrôle & Écrasement du Béton (NF EN 12390)")
 
-    # 1. Détection prioritaire du QR Code pour imposer la Phase 2
-    has_qr = bool(st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"))
-    target_phase = OPTIONS_ONGLETS[2] if has_qr else st.session_state.get("onglet_actif", OPTIONS_ONGLETS[0])
+    # Alignement forcé vers la Phase 2 si un scan QR est en attente.
+    # IMPORTANT : on ne le fait qu'UNE SEULE FOIS (qr_nav_applied) et pas à
+    # chaque rerun, sinon ça entre en conflit avec le widget de navigation
+    # (st.segmented_control) qui se réinitialise alors sur son onglet par
+    # défaut (Phase 0 = page d'accueil) au lieu de garder la Phase 2.
+    qr_en_attente = bool(st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"))
+    forcer_phase2_ce_run = qr_en_attente and not st.session_state.get("qr_nav_applied", False)
+    if forcer_phase2_ce_run:
+        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
+        st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
+        st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
+        st.session_state["qr_nav_applied"] = True
 
-    if "nav_segmented_phase" not in st.session_state or has_qr:
-        st.session_state["nav_segmented_phase"] = target_phase
-    if "nav_radio_phase" not in st.session_state or has_qr:
-        st.session_state["nav_radio_phase"] = target_phase
+    if "nav_segmented_phase" not in st.session_state:
+        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[0]
 
     user_info = st.session_state.get("user", {})
     role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
@@ -606,23 +614,30 @@ def show(supabase):
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
         if mode_admin: st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
-    # 2. Navigation interactive des phases
+    # NAVIGATION INTERACTIVE DES PHASES (Synchronisation stricte des clés)
     try:
         onglet_courant = st.segmented_control(
             "Navigation entre phases :",
             OPTIONS_ONGLETS,
             key="nav_segmented_phase"
         )
-    except (AttributeError, TypeError):
+        st.session_state["onglet_actif"] = onglet_courant
+    except AttributeError:
         onglet_courant = st.radio(
             "Navigation entre phases :",
             OPTIONS_ONGLETS,
             horizontal=True,
             key="nav_radio_phase"
         )
+        st.session_state["onglet_actif"] = onglet_courant
 
-    st.session_state["onglet_actif"] = onglet_courant or target_phase
-    onglet_courant = st.session_state["onglet_actif"]
+    if not onglet_courant:
+        onglet_courant = st.session_state.get("onglet_actif", OPTIONS_ONGLETS[0])
+
+    # Filet de sécurité : sur le run où l'on vient de scanner/se connecter via
+    # QR, on garantit l'affichage du contenu de la Phase 2 quoi qu'il arrive.
+    if forcer_phase2_ce_run:
+        onglet_courant = OPTIONS_ONGLETS[2]
 
     betonnages_preleves = []
     try:
@@ -964,6 +979,7 @@ def show(supabase):
             if col_qr_btn.button("✖ Revenir au normal", use_container_width=True):
                 st.session_state.pop("pending_qr_rec", None)
                 st.session_state.pop("pending_qr_bid", None)
+                st.session_state.pop("qr_nav_applied", None)
                 st.rerun()
 
         today_date = date.today()
@@ -1214,11 +1230,16 @@ if __name__ == "__main__":
             st.session_state["pending_qr_rec"] = str(url_rec).strip()
         if url_bid:
             st.session_state["pending_qr_bid"] = str(url_bid).strip()
-            
-        # Forcer la Phase 2 directement au niveau des états du menu Streamlit
-        st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
-        st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
-        st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
+
+        # Redirection à usage unique : on (ré)arme le forçage vers la Phase 2.
+        # qr_nav_applied=False signifie "pas encore appliquée sur cette session".
+        st.session_state["qr_nav_applied"] = False
+
+        # On nettoie immédiatement les paramètres de l'URL. Sans ça, à CHAQUE
+        # rerun (clic, saisie, etc.) ce bloc s'exécutait de nouveau et réécrasait
+        # l'état du menu en pleine interaction, ce qui provoquait le retour
+        # intempestif à la page d'accueil (Phase 0) au lieu de rester en Phase 2.
+        st.query_params.clear()
 
     # 2. Initialisation du client Supabase
     supabase_client = None
