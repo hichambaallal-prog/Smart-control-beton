@@ -30,6 +30,33 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ==========================================
+# 1bis. CAPTURE DES PARAMÈTRES QR CODE (ex: ?rec=...&beton_id=...)
+# ==========================================
+# C'est ICI qu'il faut lire l'URL, et pas dans views/suivi_controle_beton.py :
+# ce module est importé (pas exécuté directement), donc son bloc
+# "if __name__ == '__main__':" ne s'exécute jamais dans l'app déployée.
+_query_params = st.query_params
+_qr_rec = _query_params.get("rec") or _query_params.get("num_reception")
+_qr_bid = _query_params.get("beton_id") or _query_params.get("id")
+_qr_ep = _query_params.get("ep")
+
+if _qr_rec or _qr_bid:
+    if _qr_rec:
+        st.session_state["pending_qr_rec"] = str(_qr_rec).strip()
+    if _qr_bid:
+        st.session_state["pending_qr_bid"] = str(_qr_bid).strip()
+    if _qr_ep:
+        st.session_state["pending_qr_ep"] = str(_qr_ep).strip()
+
+    # (Ré)armer la redirection automatique vers la page "Suivi Contrôle Béton"
+    st.session_state["qr_page_applied"] = False
+
+    # Nettoyer l'URL : sans ça, ce bloc s'exécuterait à nouveau à CHAQUE clic
+    # / rerun et forcerait la page à chaque interaction (ce qui empêcherait
+    # toute navigation manuelle une fois arrivé sur la bonne page).
+    st.query_params.clear()
+
 # Injection PWA dans le HEAD du document principal
 pwa_code = """
 <script>
@@ -257,6 +284,12 @@ if st.session_state["user"] is None:
     st.title("🔐 Accès Restreint - LPEE")
     st.caption("Veuillez saisir vos identifiants pour accéder à la plateforme.")
 
+    if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
+      st.info(
+          "🎯 **Scan QR Code détecté !** Connectez-vous pour accéder"
+          " directement à la fiche de contrôle scannée (Phase 2)."
+      )
+
     with st.form("login_form", clear_on_submit=False):
       username_input = st.text_input("Nom d'utilisateur").strip().upper()
       password_input = st.text_input("Mot de passe", type="password")
@@ -433,7 +466,42 @@ with st.sidebar:
       st.caption("🟢 Synchronisation : Données à jour.")
 
   st.markdown("---")
-  page = st.radio("Menu Principal", available_pages)
+
+  # --- Redirection automatique vers "Suivi Contrôle Béton" (scan QR) ---
+  st.session_state.setdefault("page_widget_seed", 0)
+  st.session_state.setdefault("selected_page", None)
+
+  qr_en_attente = bool(
+      st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid")
+  )
+  forcer_page_qr = qr_en_attente and not st.session_state.get("qr_page_applied", False)
+  if forcer_page_qr:
+    if "Suivi Contrôle Béton" in available_pages:
+      st.session_state["selected_page"] = "Suivi Contrôle Béton"
+      # Nouvelle clé => Streamlit traite le widget comme neuf et applique
+      # obligatoirement l'index demandé (contrairement à un simple
+      # pré-remplissage de session_state sur une clé déjà utilisée, qui peut
+      # être ignoré si le widget a déjà un état côté navigateur).
+      st.session_state["page_widget_seed"] += 1
+    else:
+      st.warning(
+          "⚠️ Le scan QR pointe vers 'Suivi Contrôle Béton', mais votre rôle"
+          " n'a pas accès à cette page."
+      )
+    st.session_state["qr_page_applied"] = True
+
+  page_par_defaut = st.session_state.get("selected_page")
+  if page_par_defaut not in available_pages:
+    page_par_defaut = available_pages[0]
+  index_par_defaut = available_pages.index(page_par_defaut)
+
+  page = st.radio(
+      "Menu Principal",
+      available_pages,
+      index=index_par_defaut,
+      key=f"menu_radio_{st.session_state['page_widget_seed']}",
+  )
+  st.session_state["selected_page"] = page
   st.markdown("---")
 
   with st.expander("🔑 Changer mon mot de passe"):
