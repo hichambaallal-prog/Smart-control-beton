@@ -1092,6 +1092,49 @@ def show(supabase):
             col_l3.metric("Ouvrage", str(((info_betonnage or {}).get("ouvrage")) or sample.get("ouvrage") or "-"))
             col_l4.metric("Échéance Visée", str(sample.get("echeance", "-")))
 
+            # --- Saisie rapide de l'éprouvette précise scannée via QR Code ---
+            # Le QR encode le numéro d'éprouvette (ep=1,2,3...) qui correspond
+            # au repère par défaut "/1", "/2", etc. On propose directement le
+            # champ de saisie de CETTE éprouvette, sans avoir à la chercher
+            # dans le tableau complet ci-dessous.
+            scan_ep = st.session_state.get("pending_qr_ep")
+            eprouvette_ciblee = None
+            if scan_ep:
+                for ep_c in lot_selected:
+                    rep_c = str(ep_c.get("repere_eprouvette", "")).strip()
+                    if rep_c in (f"/{scan_ep}", str(scan_ep)):
+                        eprouvette_ciblee = ep_c
+                        break
+
+            if eprouvette_ciblee is not None:
+                st.markdown("---")
+                st.success(f"🎯 **Saisie rapide — Éprouvette {eprouvette_ciblee.get('repere_eprouvette', '?')}** (scannée)")
+                col_q1, col_q2, col_q3 = st.columns([1.5, 2, 1.5])
+                with col_q1:
+                    st.metric("Repère", eprouvette_ciblee.get("repere_eprouvette", "-"))
+                with col_q2:
+                    force_rapide = st.number_input(
+                        "⚡ Force (kN) — saisie directe",
+                        min_value=0.0, max_value=3000.0, step=0.1,
+                        value=float(eprouvette_ciblee.get("force_kn") or 0.0),
+                        key=f"force_rapide_{eprouvette_ciblee['id']}",
+                    )
+                with col_q3:
+                    st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+                    if st.button("💾 Enregistrer cette éprouvette", type="primary", use_container_width=True, key=f"btn_save_rapide_{eprouvette_ciblee['id']}"):
+                        sec_q = float(eprouvette_ciblee.get("section") or 176.71)
+                        fc_q = round((force_rapide * 10.0) / sec_q, 1) if sec_q > 0 and force_rapide > 0 else 0.0
+                        try:
+                            supabase.table("suivi_controle_beton").update({
+                                "force_kn": force_rapide, "fc_mpa": fc_q,
+                            }).eq("id", eprouvette_ciblee["id"]).execute()
+                            st.success(f"✅ Enregistré : Éprouvette {eprouvette_ciblee.get('repere_eprouvette')} → {force_rapide} kN / {fc_q} MPa")
+                            st.session_state.pop(f"df_lot_{choix_lot}", None)  # recharger le tableau complet avec la nouvelle valeur
+                            st.balloons()
+                        except Exception as e:
+                            st.error(f"❌ Erreur lors de l'enregistrement : {e}")
+                st.caption("Les autres éprouvettes du lot restent modifiables dans le tableau complet ci-dessous si besoin.")
+
             st.markdown("---")
             col_g1, col_g2 = st.columns(2)
             tech_global = col_g1.text_input("Technicien / Opérateur", value=sample.get("technicien", (info_betonnage or {}).get("technicien_prelevement") or "Technicien LPEE"), key="tech_global")
