@@ -70,7 +70,10 @@ def afficher_ecran_connexion(supabase):
                     st.session_state["nav_segmented_phase"] = OPTIONS_ONGLETS[2]
                     st.session_state["nav_radio_phase"] = OPTIONS_ONGLETS[2]
                     st.session_state["onglet_actif"] = OPTIONS_ONGLETS[2]
-                    st.session_state["qr_nav_applied"] = True
+                    # NE PAS marquer qr_nav_applied ici : c'est show() qui doit
+                    # rester l'unique responsable de ce flag, sinon son filet de
+                    # sécurité (qui force réellement l'affichage de la Phase 2)
+                    # ne se déclenche jamais au premier rendu après connexion.
                 st.toast("✅ Connexion réussie !", icon="🔓")
                 st.rerun()
 
