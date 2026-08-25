@@ -123,7 +123,7 @@ def generate_excel_courbe(
 def generate_pdf_courbe(
     df_grouped, classe_selectionnee, fck_cible, mode_agreg
 ):
-  """Génère un fichier PDF haute définition contant la courbe d'évolution des résistances."""
+  """Génère un fichier PDF haute définition contenant la courbe d'évolution des résistances."""
   fig_pdf, ax = plt.subplots(figsize=(10, 5), dpi=300)
 
   # Ligne de référence Cible
@@ -136,51 +136,51 @@ def generate_pdf_courbe(
       linewidth=2,
   )
 
-  # Courbe RC 28J
-  if df_grouped["RC_28J"].notna().any():
+  # Courbe RC 28J (filtration des NaN pour relier les points)
+  df_28j = df_grouped.dropna(subset=["RC_28J"])
+  if not df_28j.empty:
     ax.plot(
-        df_grouped["X_Axis"],
-        df_grouped["RC_28J"],
+        df_28j["X_Axis"],
+        df_28j["RC_28J"],
         label="RC 28J",
         color="#5DADE2",
         marker="o",
         linewidth=2.5,
     )
-    for i, txt in enumerate(df_grouped["RC_28J"]):
-      if pd.notna(txt):
-        ax.annotate(
-            f"{txt:.1f}",
-            (df_grouped["X_Axis"].iloc[i], txt),
-            textcoords="offset points",
-            xytext=(0, 7),
-            ha="center",
-            fontsize=8,
-            fontweight="bold",
-            color="#2C3E50",
-        )
+    for _, row in df_28j.iterrows():
+      ax.annotate(
+          f"{row['RC_28J']:.1f}",
+          (row["X_Axis"], row["RC_28J"]),
+          textcoords="offset points",
+          xytext=(0, 7),
+          ha="center",
+          fontsize=8,
+          fontweight="bold",
+          color="#2C3E50",
+      )
 
-  # Courbe RC 7J
-  if df_grouped["RC_7J"].notna().any():
+  # Courbe RC 7J (filtration des NaN pour relier les points)
+  df_7j = df_grouped.dropna(subset=["RC_7J"])
+  if not df_7j.empty:
     ax.plot(
-        df_grouped["X_Axis"],
-        df_grouped["RC_7J"],
+        df_7j["X_Axis"],
+        df_7j["RC_7J"],
         label="RC 7J",
         color="#E74C3C",
         marker="o",
         linewidth=2.5,
     )
-    for i, txt in enumerate(df_grouped["RC_7J"]):
-      if pd.notna(txt):
-        ax.annotate(
-            f"{txt:.1f}",
-            (df_grouped["X_Axis"].iloc[i], txt),
-            textcoords="offset points",
-            xytext=(0, -14),
-            ha="center",
-            fontsize=8,
-            fontweight="bold",
-            color="#900C3F",
-        )
+    for _, row in df_7j.iterrows():
+      ax.annotate(
+          f"{row['RC_7J']:.1f}",
+          (row["X_Axis"], row["RC_7J"]),
+          textcoords="offset points",
+          xytext=(0, -14),
+          ha="center",
+          fontsize=8,
+          fontweight="bold",
+          color="#900C3F",
+      )
 
   ax.set_title(
       f"Évolution des Résistances ({mode_agreg}) - Classe {classe_selectionnee}",
@@ -196,7 +196,11 @@ def generate_pdf_courbe(
   ax.legend(
       loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3, frameon=True
   )
-  plt.xticks(rotation=45 if len(df_grouped) > 8 else 0)
+
+  # Alignement de l'axe X pour afficher l'ensemble des dates de la période
+  ax.set_xticks(range(len(df_grouped)))
+  ax.set_xticklabels(df_grouped["X_Axis"], rotation=45 if len(df_grouped) > 8 else 0)
+
   plt.tight_layout()
 
   output = io.BytesIO()
