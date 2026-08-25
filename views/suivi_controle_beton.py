@@ -677,7 +677,7 @@ def show(supabase):
 
                     st.markdown(f"**Génération pour `{rec_num}` ({nb_ep} éprouvettes) :**")
                     
-                    base_url = st.query_params.get("baseUrl", "https://share.streamlit.io")
+                    base_url = st.query_params.get("baseUrl", "https://smart-control-beton-lt7pusyvxjehm5kphd7hru.streamlit.app/Essai_Plaque")
                     
                     cols_qr = st.columns(3)
                     for i in range(1, nb_ep + 1):
