@@ -13,11 +13,12 @@ try:
 except ImportError:
     Client = None
 
-# Constante des onglets pour éviter toute divergence de chaîne
+# Constante des onglets incluant la Phase 3
 OPTIONS_ONGLETS = [
     "📋 Phase 0 : Réception & Validation",
     "📅 Phase 1 : Programmation",
     "💥 Phase 2 : Planning Daily & Saisie (Par Lot)",
+    "🛡️ Phase 3 : Validation Admin (PVs)",
 ]
 
 
@@ -568,6 +569,106 @@ def _format_ep_row(ep, date_ref=None):
         "Âge Théorique": age_calc,
         "Statut": "✅ Écrasée" if f_kn > 0 else "⏳ En attente"
     }
+
+
+# =========================================================
+# MODULE NOUVEAU : PHASE 3 - VALIDATION ADMIN (PVs)
+# =========================================================
+def afficher_module_validation_admin(supabase):
+    """Affiche le module d'approbation administrative et de signature des PVs."""
+    st.subheader("🛡️ 3. Validation Administrateur & Signatures des PVs")
+    st.info("💡 **Espace Responsables** : Vérifiez la conformité des écrasements et validez le statut officiel des Procès-Verbaux (PV).")
+
+    try:
+        res = supabase.table("suivi_controle_beton").select("*").not_.is_("force_kn", "null").gt("force_kn", 0).order("id", desc=True).execute()
+        essais_realises = res.data or []
+    except Exception as e:
+        st.error(f"❌ Erreur de chargement des essais réalisés : {e}")
+        return
+
+    if not essais_realises:
+        st.warning("ℹ️ Aucun essai écrasé n'est actuellement en attente de validation.")
+        return
+
+    # Regroupement par lot (betonnage_id)
+    lots_dict = {}
+    for ep in essais_realises:
+        b_id = ep.get("betonnage_id")
+        if b_id not in lots_dict:
+            lots_dict[b_id] = []
+        lots_dict[b_id].append(ep)
+
+    options_valid = []
+    for b_id, list_ep in lots_dict.items():
+        info_b = obtenir_infos_betonnage_parent(supabase, b_id)
+        ref_ctrl = determiner_ref_controle(supabase, b_id, info_b, list_ep[0])
+        bl_num = extraire_num_bl(list_ep[0], info_b or {})
+        statut_lot = info_b.get("statut_pv", "⏳ En attente de validation")
+        label = f"Réf: {ref_ctrl} | BL: {bl_num} | Ouvrage: {list_ep[0].get('ouvrage', '-')} | Statut: {statut_lot}"
+        options_valid.append((label, b_id, list_ep, info_b))
+
+    choix_label, b_id_sel, ep_sel_list, info_b_sel = st.selectbox(
+        "📦 Choisir le PV / Lot à réviser :",
+        options=options_valid,
+        format_func=lambda x: x[0],
+        key="select_pv_admin"
+    )
+
+    st.markdown("---")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Nombre d'éprouvettes écrasées", len(ep_sel_list))
+    c2.metric("Date de coulée", extraire_date_coulee(info_b_sel))
+    c3.metric("Statut Actuel du PV", info_b_sel.get("statut_pv", "⏳ En attente"))
+
+    # Préparation des données pour affichage tableau
+    rows_val = []
+    for ep in ep_sel_list:
+        sec = float(ep.get("section") or 176.71)
+        f_kn = float(ep.get("force_kn") or 0.0)
+        fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+        rows_val.append({
+            "Repère": ep.get("repere_eprouvette", "-"),
+            "Échéance": ep.get("echeance", "-"),
+            "Date Écrasement": ep.get("date_ecrasement", "-"),
+            "Force (kN)": f_kn,
+            "Résistance (MPa)": fc,
+            "Opérateur": ep.get("technicien", "-")
+        })
+
+    st.dataframe(pd.DataFrame(rows_val), use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    with st.form("form_valider_pv"):
+        st.markdown("##### ✍️ Décision & Signatures Officielles")
+        col_sig1, col_sig2 = st.columns(2)
+        resp_essai = col_sig1.text_input("Visa Responsable d'essai", value=info_b_sel.get("visa_resp", "O.IKKEN"))
+        chef_labo = col_sig2.text_input("Visa Chef du laboratoire", value=info_b_sel.get("visa_chef", "H.BAALLAL"))
+
+        statut_decision = st.radio(
+            "Décision d'approbation :",
+            ["✅ Valider et Signer le PV", "⚠️ Remettre en Révision / Rejeter"],
+            horizontal=True
+        )
+        comm_admin = st.text_area("Observations / Instructions complémentaires", value=info_b_sel.get("observations_admin", "Conforme aux spécifications NF EN 12390."))
+
+        submit_val = st.form_submit_button("💾 Enregistrer la décision de validation", type="primary", use_container_width=True)
+
+        if submit_val:
+            nouveau_statut = "✅ Validé & Signé" if "Valider" in statut_decision else "❌ Rejeté / En Révision"
+            update_payload = {
+                "statut_pv": nouveau_statut,
+                "visa_resp": resp_essai,
+                "visa_chef": chef_labo,
+                "observations_admin": comm_admin,
+                "date_validation": str(date.today())
+            }
+            try:
+                supabase.table("suivi_betonnage").update(update_payload).eq("id", b_id_sel).execute()
+                st.success(f"✅ Le statut du PV a été mis à jour avec succès : **{nouveau_statut}**")
+                st.balloons()
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Erreur lors de la mise à jour du statut : {e}")
 
 
 # =========================================================
@@ -1240,6 +1341,12 @@ def show(supabase):
                     if succes_lot == len(df_actuel):
                         st.balloons()
                         st.success(f"✅ Lot de {succes_lot} éprouvettes mis à jour / validé !")
+
+    # =========================================================
+    # PHASE 3 : VALIDATION ADMIN (PVs)
+    # =========================================================
+    elif onglet_courant == OPTIONS_ONGLETS[3]:
+        afficher_module_validation_admin(supabase)
 
 
 # =========================================================
