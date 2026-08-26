@@ -1,5 +1,6 @@
 import io
 import re
+import unicodedata
 from datetime import date
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -602,7 +603,19 @@ def show(supabase):
         if isinstance(v, bool):
           return v
         if isinstance(v, str):
-          return v.strip().lower() in ["validé", "valide", "true", "1", "ok"]
+          # Insensible aux accents et à l'accord (validé/validée/validés/
+          # validées) : on ne se fie pas à une orthographe exacte, car
+          # c'est une cause fréquente de PV qui "n'apparaissent pas" alors
+          # qu'ils sont bien marqués validés en base.
+          v_norm = (
+              unicodedata.normalize("NFKD", v.strip().lower())
+              .encode("ascii", "ignore")
+              .decode("ascii")
+          )
+          return (
+              v_norm.startswith("valide")
+              or v_norm in ["true", "1", "ok", "oui"]
+          )
         return False
 
       # 2. Statut validé (recherche parent ET ligne d'essai)
@@ -645,6 +658,40 @@ def show(supabase):
           "ℹ️ Aucun Procès-Verbal **validé et signé** n'est disponible pour"
           " le téléchargement."
       )
+      with st.expander(
+          "🔧 Diagnostic : pourquoi aucun PV ne s'affiche ici ?"
+      ):
+        st.caption(
+            "Valeurs brutes lues en base pour les 15 dernières lignes, sur"
+            " les colonnes que le filtre 'validé et signé' vérifie. Si une"
+            " colonne affiche systématiquement `None` alors que vous avez"
+            " bien validé/signé le PV concerné, c'est que le formulaire de"
+            " validation écrit sous un autre nom de colonne — il faudra"
+            " l'ajouter à la liste vérifiée ci-dessus."
+        )
+        cols_diag = [
+            "statut_pv",
+            "validation_admin",
+            "visa_chef",
+            "visa_admin",
+            "visa_responsable",
+        ]
+        diag_rows = []
+        for _, row in df_all.head(15).iterrows():
+          b_id = row.get("betonnage_id")
+          parent = unique_parents.get(b_id) or {}
+          d = {
+              "id": row.get("id"),
+              "betonnage_id": b_id,
+              "force_kn": row.get("force_kn"),
+          }
+          for c in cols_diag:
+            d[f"{c} (ligne)"] = row.get(c)
+            d[f"{c} (parent)"] = parent.get(c)
+          diag_rows.append(d)
+        st.dataframe(
+            pd.DataFrame(diag_rows), use_container_width=True, hide_index=True
+        )
     else:
       c_r1, c_r2 = st.columns(2)
       recherche_pv = c_r1.text_input(
