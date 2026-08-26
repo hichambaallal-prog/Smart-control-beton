@@ -584,6 +584,40 @@ def show(supabase):
         for b_id in unique_b_ids
     }
 
+    # Helper tolérant pour les statuts / booléens
+    def est_valide_val(v):
+      if isinstance(v, bool):
+        return v
+      if isinstance(v, str):
+        # Le statut réel enregistré par le module de validation admin est
+        # "✅ Validé & Signé" (avec emoji en préfixe) ou "❌ Rejeté / En
+        # Révision" : un simple .startswith("valide") échoue toujours car
+        # la chaîne commence par l'emoji, pas par la lettre "v". On
+        # normalise (accents retirés, emoji/caractères non-ascii ignorés)
+        # puis on cherche "valide" n'importe où dans la chaîne, tout en
+        # excluant explicitement les formulations de rejet/négation pour
+        # ne pas confondre "Rejeté" ou "Non validé" avec "Validé".
+        v_norm = (
+            unicodedata.normalize("NFKD", v.strip().lower())
+            .encode("ascii", "ignore")
+            .decode("ascii")
+        ).strip()
+        if v_norm in ["true", "1", "ok", "oui"]:
+          return True
+        if any(mot in v_norm for mot in ["invalide", "non valide", "rejet"]):
+          return False
+        return "valide" in v_norm
+      return False
+
+    # Helper vérification visa non vide
+    def a_signature(v):
+      if v is None:
+        return False
+      if isinstance(v, bool):
+        return v
+      v_str = str(v).strip().lower()
+      return v_str not in ["", "none", "nan", "null", "false", "0"]
+
     # -------------------------------------------------------------------------
     # FILTRE AMÉLIORÉ : PVs ÉCRASÉS, VALIDÉS ET SIGNÉS
     # -------------------------------------------------------------------------
@@ -598,31 +632,6 @@ def show(supabase):
       except (ValueError, TypeError):
         a_force = False
 
-      # Helper tolérant pour les statuts / booléens
-      def est_valide_val(v):
-        if isinstance(v, bool):
-          return v
-        if isinstance(v, str):
-          # Le statut réel enregistré par le module de validation admin est
-          # "✅ Validé & Signé" (avec emoji en préfixe) ou "❌ Rejeté / En
-          # Révision" : un simple .startswith("valide") échoue toujours car
-          # la chaîne commence par l'emoji, pas par la lettre "v". On
-          # normalise (accents retirés, emoji/caractères non-ascii ignorés)
-          # puis on cherche "valide" n'importe où dans la chaîne, tout en
-          # excluant explicitement les formulations de rejet/négation pour
-          # ne pas confondre "Rejeté" ou "Non validé" avec "Validé".
-          v_norm = (
-              unicodedata.normalize("NFKD", v.strip().lower())
-              .encode("ascii", "ignore")
-              .decode("ascii")
-          ).strip()
-          if v_norm in ["true", "1", "ok", "oui"]:
-            return True
-          if any(mot in v_norm for mot in ["invalide", "non valide", "rejet"]):
-            return False
-          return "valide" in v_norm
-        return False
-
       # 2. Statut validé (recherche parent ET ligne d'essai)
       statut_valide = (
           est_valide_val(parent.get("statut_pv"))
@@ -630,15 +639,6 @@ def show(supabase):
           or est_valide_val(row.get("statut_pv"))
           or est_valide_val(row.get("validation_admin"))
       )
-
-      # Helper vérification visa non vide
-      def a_signature(v):
-        if v is None:
-          return False
-        if isinstance(v, bool):
-          return v
-        v_str = str(v).strip().lower()
-        return v_str not in ["", "none", "nan", "null", "false", "0"]
 
       # 3. Visas / Signatures présents (vérifie toutes les colonnes usuelles)
       a_visa = (
@@ -659,6 +659,58 @@ def show(supabase):
     df_valides = df_all[mask_valides].copy()
 
     st.markdown("##### 📥 Re-télécharger un Procès-Verbal")
+
+    # -------------------------------------------------------------------------
+    # DIAGNOSTIC PERMANENT : lots validés côté admin mais absents de la liste
+    # -------------------------------------------------------------------------
+    b_ids_dans_liste = (
+        set(df_valides["betonnage_id"].dropna().unique())
+        if not df_valides.empty
+        else set()
+    )
+    lots_manquants = []
+    for b_id, info_b in unique_parents.items():
+      statut_admin_valide = est_valide_val(
+          info_b.get("statut_pv")
+      ) or est_valide_val(info_b.get("validation_admin"))
+      if statut_admin_valide and b_id not in b_ids_dans_liste:
+        rows_lot = df_all[df_all["betonnage_id"] == b_id]
+        a_au_moins_une_force = (
+            bool((rows_lot["force_kn"].fillna(0).astype(float) > 0).any())
+            if not rows_lot.empty
+            else False
+        )
+        a_un_visa = (
+            a_signature(info_b.get("visa_chef"))
+            or a_signature(info_b.get("visa_resp"))
+            or a_signature(info_b.get("visa_admin"))
+            or a_signature(info_b.get("visa_responsable"))
+        )
+        lots_manquants.append({
+            "Lot ID": b_id,
+            "Statut (admin)": info_b.get("statut_pv"),
+            "Au moins 1 force > 0 ?": "Oui" if a_au_moins_une_force else "Non",
+            "Visa présent ?": "Oui" if a_un_visa else "Non",
+        })
+
+    if lots_manquants:
+      with st.expander(
+          f"🔧 {len(lots_manquants)} PV marqué(s) validé(s) mais absent(s) de"
+          " la liste ci-dessous",
+          expanded=True,
+      ):
+        st.caption(
+            "Un PV validé n'apparaît dans la liste de téléchargement que si"
+            " au moins une éprouvette de ce lot a une **Force (kN) > 0** ET"
+            " qu'un **visa** (chef de labo ou responsable d'essai) est"
+            " renseigné sur la fiche. Ces lots sont marqués validés côté"
+            " admin mais ne remplissent pas encore l'une de ces deux"
+            " conditions :"
+        )
+        st.dataframe(
+            pd.DataFrame(lots_manquants), use_container_width=True,
+            hide_index=True,
+        )
 
     if df_valides.empty:
       st.info(
