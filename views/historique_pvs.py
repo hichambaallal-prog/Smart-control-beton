@@ -152,9 +152,7 @@ def generer_pv_excel(export_data, infos_header):
   ws.merge_cells("A1:D1")
   set_cell("A1", "LPEE / CTR CSB", f_bold_w, fill=fill_dark)
   ws.merge_cells("A2:D3")
-  set_cell(
-      "A2", "Laboratoire de Contrôle Externe", f_bold_w, fill=fill_dark
-  )
+  set_cell("A2", "Laboratoire de Contrôle Externe", f_bold_w, fill=fill_dark)
   for r in range(1, 4):
     for c in range(1, 9):
       ws.cell(row=r, column=c).border = b_cell
@@ -211,9 +209,7 @@ def generer_pv_excel(export_data, infos_header):
   set_cell(
       "E7",
       clean_na(
-          infos_header.get(
-              "lieu_prelevement", infos_header.get("ouvrage")
-          ),
+          infos_header.get("lieu_prelevement", infos_header.get("ouvrage")),
           "-",
       ),
   )
@@ -283,9 +279,7 @@ def generer_pv_excel(export_data, infos_header):
       "Technicien LPEE",
   )
   ws.merge_cells("A12:C12")
-  set_cell(
-      "A12", f"prélèvement effectué par {tech}", f_small, fill=fill_label
-  )
+  set_cell("A12", f"prélèvement effectué par {tech}", f_small, fill=fill_label)
   ws.merge_cells("D12:E12")
   set_cell("D12", "N° de bon de livraison", fill=fill_label)
   ws.merge_cells("F12:H12")
@@ -424,12 +418,16 @@ def generer_pv_excel(export_data, infos_header):
   # Visas
   r_titre = next_r + 2
   r_deb, r_fin = r_titre + 1, r_titre + 4
-  ws.merge_cells(start_row=r_titre, start_column=2, end_row=r_titre, end_column=4)
+  ws.merge_cells(
+      start_row=r_titre, start_column=2, end_row=r_titre, end_column=4
+  )
   set_cell(ws.cell(row=r_titre, column=2), "Visa Responsable d'essai", f_bold)
   ws.merge_cells(start_row=r_deb, start_column=2, end_row=r_fin, end_column=4)
   set_cell(ws.cell(row=r_deb, column=2), "O.IKKEN", f_bold, a_top_center)
 
-  ws.merge_cells(start_row=r_titre, start_column=6, end_row=r_titre, end_column=8)
+  ws.merge_cells(
+      start_row=r_titre, start_column=6, end_row=r_titre, end_column=8
+  )
   set_cell(ws.cell(row=r_titre, column=6), "Visa Chef du laboratoire", f_bold)
   ws.merge_cells(start_row=r_deb, start_column=6, end_row=r_fin, end_column=8)
   set_cell(ws.cell(row=r_deb, column=6), "H.BAALLAL", f_bold, a_top_center)
@@ -510,7 +508,13 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
     return st.session_state[key]
 
   num_rec = (info_betonnage or {}).get("num_reception")
-  if num_rec and str(num_rec).strip().upper() not in ["", "-", "NONE", "NAN", "N/A"]:
+  if num_rec and str(num_rec).strip().upper() not in [
+      "",
+      "-",
+      "NONE",
+      "NAN",
+      "N/A",
+  ]:
     ref = str(num_rec).strip()
   else:
     ref = (
@@ -580,7 +584,7 @@ def show(supabase):
     }
 
     # -------------------------------------------------------------------------
-    # FILTRE STRICT : Uniquement les PVs ÉCRASÉS, VALIDÉS ET SIGNÉS
+    # FILTRE TOLÉRANT : PVs ÉCRASÉS, VALIDÉS ET SIGNÉS
     # -------------------------------------------------------------------------
     def verifier_pv_valide_et_signe(row):
       b_id = row.get("betonnage_id")
@@ -588,22 +592,44 @@ def show(supabase):
 
       # 1. Force appliquée (écrasement effectué)
       f_kn = row.get("force_kn")
-      a_force = pd.notnull(f_kn) and float(f_kn) > 0
+      try:
+        a_force = pd.notnull(f_kn) and float(f_kn) > 0
+      except (ValueError, TypeError):
+        a_force = False
 
-      # 2. Statut validé
+      # Helper validation statut/booléen
+      def est_valide_val(v):
+        if isinstance(v, bool):
+          return v
+        if isinstance(v, str):
+          return v.strip().lower() in ["validé", "valide", "true", "1", "ok"]
+        return False
+
+      # 2. Statut validé (recherche parent et ligne d'essai)
       statut_valide = (
-          parent.get("statut_pv") == "Validé"
-          or parent.get("validation_admin") is True
-          or row.get("statut_pv") == "Validé"
-          or row.get("validation_admin") is True
+          est_valide_val(parent.get("statut_pv"))
+          or est_valide_val(parent.get("validation_admin"))
+          or est_valide_val(row.get("statut_pv"))
+          or est_valide_val(row.get("validation_admin"))
       )
 
+      # Helper signature/visa
+      def a_signature(v):
+        if v is None:
+          return False
+        if isinstance(v, bool):
+          return v
+        v_str = str(v).strip().lower()
+        return v_str not in ["", "none", "nan", "null", "false", "0"]
+
       # 3. Visas / Signatures présents
-      a_visa = bool(
-          parent.get("visa_chef")
-          or parent.get("visa_admin")
-          or row.get("visa_chef")
-          or row.get("visa_admin")
+      a_visa = (
+          a_signature(parent.get("visa_chef"))
+          or a_signature(parent.get("visa_admin"))
+          or a_signature(parent.get("visa_responsable"))
+          or a_signature(row.get("visa_chef"))
+          or a_signature(row.get("visa_admin"))
+          or a_signature(row.get("visa_responsable"))
       )
 
       return a_force and statut_valide and a_visa
@@ -742,7 +768,7 @@ def show(supabase):
             ),
         }
 
-        # Bouton de téléchargement accessible directement car filtré en amont
+        # Bouton de téléchargement accessible directement
         st.download_button(
             label="📄 Télécharger le PV (Excel Format LPEE)",
             data=generer_pv_excel(export_data_h, infos_header_h),
