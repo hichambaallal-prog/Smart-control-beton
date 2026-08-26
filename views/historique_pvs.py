@@ -609,17 +609,8 @@ def show(supabase):
         return "valide" in v_norm
       return False
 
-    # Helper vérification visa non vide
-    def a_signature(v):
-      if v is None:
-        return False
-      if isinstance(v, bool):
-        return v
-      v_str = str(v).strip().lower()
-      return v_str not in ["", "none", "nan", "null", "false", "0"]
-
     # -------------------------------------------------------------------------
-    # FILTRE AMÉLIORÉ : PVs ÉCRASÉS, VALIDÉS ET SIGNÉS
+    # FILTRE AMÉLIORÉ : PVs ÉCRASÉS ET VALIDÉS
     # -------------------------------------------------------------------------
     def verifier_pv_valide_et_signe(row):
       b_id = row.get("betonnage_id")
@@ -640,19 +631,10 @@ def show(supabase):
           or est_valide_val(row.get("validation_admin"))
       )
 
-      # 3. Visas / Signatures présents (vérifie toutes les colonnes usuelles)
-      a_visa = (
-          a_signature(parent.get("visa_chef"))
-          or a_signature(parent.get("visa_admin"))
-          or a_signature(parent.get("visa_responsable"))
-          or a_signature(parent.get("visa_resp"))
-          or a_signature(row.get("visa_chef"))
-          or a_signature(row.get("visa_admin"))
-          or a_signature(row.get("visa_responsable"))
-          or a_signature(row.get("visa_resp"))
-      )
-
-      return a_force and statut_valide and a_visa
+      # Le visa n'est plus une condition bloquante : dès que le PV est
+      # marqué "validé" par l'admin (avec au moins une force > 0), il doit
+      # apparaître dans la liste, que le champ visa ait été rempli ou non.
+      return a_force and statut_valide
 
     # Filtrage des enregistrements
     mask_valides = df_all.apply(verifier_pv_valide_et_signe, axis=1)
@@ -680,17 +662,10 @@ def show(supabase):
             if not rows_lot.empty
             else False
         )
-        a_un_visa = (
-            a_signature(info_b.get("visa_chef"))
-            or a_signature(info_b.get("visa_resp"))
-            or a_signature(info_b.get("visa_admin"))
-            or a_signature(info_b.get("visa_responsable"))
-        )
         lots_manquants.append({
             "Lot ID": b_id,
             "Statut (admin)": info_b.get("statut_pv"),
             "Au moins 1 force > 0 ?": "Oui" if a_au_moins_une_force else "Non",
-            "Visa présent ?": "Oui" if a_un_visa else "Non",
         })
 
     if lots_manquants:
@@ -701,11 +676,10 @@ def show(supabase):
       ):
         st.caption(
             "Un PV validé n'apparaît dans la liste de téléchargement que si"
-            " au moins une éprouvette de ce lot a une **Force (kN) > 0** ET"
-            " qu'un **visa** (chef de labo ou responsable d'essai) est"
-            " renseigné sur la fiche. Ces lots sont marqués validés côté"
-            " admin mais ne remplissent pas encore l'une de ces deux"
-            " conditions :"
+            " au moins une éprouvette de ce lot a une **Force (kN) > 0**"
+            " (le visa n'est plus une condition bloquante). Ces lots sont"
+            " marqués validés côté admin mais aucune éprouvette du lot n'a"
+            " encore de force enregistrée :"
         )
         st.dataframe(
             pd.DataFrame(lots_manquants), use_container_width=True,
@@ -714,7 +688,7 @@ def show(supabase):
 
     if df_valides.empty:
       st.info(
-          "ℹ️ Aucun Procès-Verbal **validé et signé** n'est disponible pour"
+          "ℹ️ Aucun Procès-Verbal **validé** n'est disponible pour"
           " le téléchargement."
       )
       with st.expander(
@@ -722,7 +696,7 @@ def show(supabase):
       ):
         st.caption(
             "Valeurs brutes lues en base pour les 15 dernières lignes, sur"
-            " les colonnes que le filtre 'validé et signé' vérifie. Si une"
+            " les colonnes que le filtre 'validé' vérifie. Si une"
             " colonne affiche systématiquement `None` alors que vous avez"
             " bien validé/signé le PV concerné, c'est que le formulaire de"
             " validation écrit sous un autre nom de colonne — il faudra"
@@ -794,7 +768,7 @@ def show(supabase):
 
       if not pvs_filtrés:
         st.warning(
-            "Aucun PV validé et signé ne correspond à votre recherche."
+            "Aucun PV validé ne correspond à votre recherche."
         )
       else:
         choix_pv = st.selectbox(
