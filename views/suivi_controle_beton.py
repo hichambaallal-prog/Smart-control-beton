@@ -598,14 +598,34 @@ def afficher_module_validation_admin(supabase):
             lots_dict[b_id] = []
         lots_dict[b_id].append(ep)
 
+    def _est_pv_deja_valide(statut):
+        """Même logique tolérante que côté Historique (accents/emoji/casse
+        ignorés) pour reconnaître un statut déjà 'validé & signé' et le
+        retirer de la liste à réviser, sans retirer les PV rejetés qui,
+        eux, doivent rester à retraiter."""
+        if not statut:
+            return False
+        s = str(statut).strip().lower()
+        if any(mot in s for mot in ["rejet", "invalide", "non valide"]):
+            return False
+        return "valide" in s
+
     options_valid = []
     for b_id, list_ep in lots_dict.items():
         info_b = obtenir_infos_betonnage_parent(supabase, b_id)
+        statut_lot = info_b.get("statut_pv", "⏳ En attente de validation")
+        if _est_pv_deja_valide(statut_lot):
+            # PV déjà validé & signé : on ne l'affiche plus ici, il reste
+            # consultable/téléchargeable depuis "Historique Complet & PVs".
+            continue
         ref_ctrl = determiner_ref_controle(supabase, b_id, info_b, list_ep[0])
         bl_num = extraire_num_bl(list_ep[0], info_b or {})
-        statut_lot = info_b.get("statut_pv", "⏳ En attente de validation")
         label = f"Réf: {ref_ctrl} | BL: {bl_num} | Ouvrage: {list_ep[0].get('ouvrage', '-')} | Statut: {statut_lot}"
         options_valid.append((label, b_id, list_ep, info_b))
+
+    if not options_valid:
+        st.success("✅ Tous les PV en attente ont été traités — aucun PV ne reste à valider pour le moment.")
+        return
 
     choix_label, b_id_sel, ep_sel_list, info_b_sel = st.selectbox(
         "📦 Choisir le PV / Lot à réviser :",
@@ -636,6 +656,36 @@ def afficher_module_validation_admin(supabase):
         })
 
     st.dataframe(pd.DataFrame(rows_val), use_container_width=True, hide_index=True)
+
+    def _echeance_jours(val):
+        try:
+            return int(str(val or "").replace("jours", "").replace("j", "").strip())
+        except (ValueError, TypeError):
+            return None
+
+    ep_28j = [ep for ep in ep_sel_list if _echeance_jours(ep.get("echeance")) == 28]
+    if ep_28j:
+        ep_7j = [ep for ep in ep_sel_list if _echeance_jours(ep.get("echeance")) == 7]
+        ref_ctrl_sel = determiner_ref_controle(supabase, b_id_sel, info_b_sel, ep_sel_list[0])
+        st.warning(
+            f"🔔 **Rappel avant validation à 28 jours** — Résultats à 7 jours"
+            f" déjà enregistrés pour ce même lot (Réf: {ref_ctrl_sel}) :"
+        )
+        if ep_7j:
+            rows_7j = []
+            for ep in ep_7j:
+                sec = float(ep.get("section") or 176.71)
+                f_kn = float(ep.get("force_kn") or 0.0)
+                fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+                rows_7j.append({
+                    "Repère": ep.get("repere_eprouvette", "-"),
+                    "Date Écrasement": ep.get("date_ecrasement", "-"),
+                    "Force (kN)": f_kn,
+                    "Résistance (MPa)": fc,
+                })
+            st.dataframe(pd.DataFrame(rows_7j), use_container_width=True, hide_index=True)
+        else:
+            st.caption("Aucun écrasement à 7 jours n'a encore été enregistré pour ce lot.")
 
     st.markdown("---")
     with st.form("form_valider_pv"):
