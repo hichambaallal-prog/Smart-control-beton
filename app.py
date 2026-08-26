@@ -1,9 +1,7 @@
-import base64
 import datetime
 import json
 import os
 import time
-import urllib.parse
 from fpdf import FPDF
 from PIL import Image
 import streamlit as st
@@ -62,37 +60,25 @@ if _qr_rec or _qr_bid:
     st.query_params.clear()
 
 # ==========================================
-# 1ter. GESTIONNAIRE DE COOKIES ("Se souvenir de moi")
+# 1ter. "SE SOUVENIR DE MOI" — MÉTHODE JS DIRECTE (fiable sur iOS/Safari)
 # ==========================================
 # Permet de rester connecté sur le même appareil/navigateur, y compris après
 # un scan QR Code qui ouvre une nouvelle session Streamlit (donc un
 # session_state vide) : sans cookie, il faudrait ressaisir le mot de passe
 # à CHAQUE scan.
+#
+# On n'utilise volontairement PAS de composant tiers (type
+# extra_streamlit_components) : sur Safari/iOS, le canal de communication
+# entre le composant (dans un iframe) et Python s'est révélé peu fiable
+# (le mot de passe "s'oubliait"). À la place : le cookie est écrit/lu par
+# un petit script JS injecté directement dans la page, et sa valeur est
+# transmise à Python via un aller-retour explicite dans l'URL — un
+# mécanisme simple et déterministe qui ne dépend d'aucune bibliothèque.
 REMEMBER_SECRET_KEY = os.environ.get(
     "REMEMBER_SECRET_KEY", "lpee_ctr_csb_remember_me_2026_a_changer"
 )
 REMEMBER_SESSION_DUREE = datetime.timedelta(hours=4)
-REMEMBER_COOKIE_NAME = "lpee_ctr_csb_remember_me"
-
-# On n'utilise plus extra_streamlit_components.CookieManager : ce composant
-# tiers doit renvoyer la valeur du cookie à Python via un canal
-# postMessage/iframe (Streamlit.setComponentValue), et c'est précisément ce
-# canal qui est peu fiable sur Safari/iOS (retour manquant ou tardif après
-# mise en arrière-plan de l'onglet, ITP, etc.), d'où l'ancien "bootstrap"
-# forçant un rerun au tout début du script.
-#
-# Nouvelle approche, plus directe et plus robuste :
-#   - ÉCRITURE du cookie : JavaScript injecté qui fait directement
-#     `document.cookie = ...` dans le navigateur. Aucune valeur de retour
-#     n'est attendue côté Python ("fire-and-forget") : on supprime ainsi
-#     complètement le canal de communication qui posait problème.
-#   - LECTURE du cookie : `st.context.cookies`, l'API native de Streamlit
-#     qui lit directement l'en-tête HTTP "Cookie" envoyé par le navigateur
-#     à chaque (re)chargement de page / (re)connexion websocket. Ce n'est
-#     pas du JavaScript : c'est fiable sur tous les navigateurs, y compris
-#     Safari/iOS, car ça ne dépend d'aucun aller-retour de composant.
-#     (Nécessite Streamlit >= 1.31 ; sans quoi il faudra mettre à jour
-#     requirements.txt.)
+REMEMBER_COOKIE_NAME = "lpee_ctr_csb_remember"
 
 
 def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
@@ -111,55 +97,61 @@ def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
     ).hexdigest()
 
 
-def _construire_valeur_cookie(username, role, can_edit, issued_at_iso):
-    """Empaquette les infos de session + leur jeton signé dans une seule
-    valeur (encodée en base64 url-safe pour rester un cookie valide, sans
-    caractères spéciaux à échapper)."""
-    token = _generer_jeton_souvenir(username, role, can_edit, issued_at_iso)
-    brut = f"{username}|{role}|{'1' if can_edit else '0'}|{issued_at_iso}|{token}"
-    return base64.urlsafe_b64encode(brut.encode()).decode()
+def _injecter_lecture_cookie():
+    """Injecte un script invisible qui lit le cookie 'se souvenir de moi'
+    directement dans le document et le renvoie à Python en l'ajoutant à
+    l'URL (?_lr=...), puis recharge la page une seule fois. C'est ce
+    rechargement contrôlé qui permet à Python de récupérer la valeur du
+    cookie (impossible à lire directement depuis st.components.v1.html,
+    qui n'a pas de canal de retour)."""
+    components.html(
+        """
+        <script>
+        (function() {
+          try {
+            var match = window.parent.document.cookie.match(/(?:^|; )"""
+        + REMEMBER_COOKIE_NAME
+        + """=([^;]*)/);
+            var params = new URLSearchParams(window.parent.location.search);
+            if (match) {
+              params.set('_lr', decodeURIComponent(match[1]));
+            }
+            params.set('_lr_checked', '1');
+            window.parent.location.search = params.toString();
+          } catch (e) {}
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 
-def _lire_session_souvenir():
-    """Lit et valide le cookie 'se souvenir de moi' via st.context.cookies.
-    Retourne un dict {username, role, can_edit} si valide, sinon None."""
-    valeur_b64 = st.context.cookies.get(REMEMBER_COOKIE_NAME)
-    if not valeur_b64:
-        return None
-    try:
-        brut = base64.urlsafe_b64decode(valeur_b64.encode()).decode()
-        username, role, can_edit_str, issued_at_iso, token = brut.split("|", 4)
-    except Exception:
-        return None
-
-    can_edit = can_edit_str == "1"
-    if _generer_jeton_souvenir(username, role, can_edit, issued_at_iso) != token:
-        return None
-
-    try:
-        issued_at_dt = datetime.datetime.fromisoformat(issued_at_iso)
-    except (ValueError, TypeError):
-        return None
-    if (datetime.datetime.utcnow() - issued_at_dt) > REMEMBER_SESSION_DUREE:
-        return None
-
-    return {"username": username, "role": role, "can_edit": can_edit}
-
-
-def _definir_cookie_navigateur(nom, valeur, max_age_secondes):
-    """Écrit un cookie directement dans le navigateur via JavaScript
-    (aucun retour attendu côté Python)."""
-    valeur_encodee = urllib.parse.quote(str(valeur), safe="")
-    script = f"""
-    <script>
-    document.cookie = "{nom}={valeur_encodee}; max-age={int(max_age_secondes)}; path=/; SameSite=Lax";
-    </script>
-    """
-    components.html(script, height=0, width=0)
+def _injecter_ecriture_cookie(payload_json):
+    """Injecte un script invisible qui écrit directement le cookie 'se
+    souvenir de moi' dans le document (durée = REMEMBER_SESSION_DUREE)."""
+    duree_ms = int(REMEMBER_SESSION_DUREE.total_seconds() * 1000)
+    components.html(
+        """
+        <script>
+        (function() {
+          try {
+            var d = new Date();
+            d.setTime(d.getTime() + """
+        + str(duree_ms)
+        + """);
+            window.parent.document.cookie = \""""
+        + REMEMBER_COOKIE_NAME
+        + """=" + encodeURIComponent('"""
+        + payload_json.replace("\\", "\\\\").replace("'", "\\'")
+        + """') + ";expires=" + d.toUTCString() + ";path=/;SameSite=Lax;Secure";
+          } catch (e) {}
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 
-def _supprimer_cookie_navigateur(nom):
-    _definir_cookie_navigateur(nom, "", 0)
 
 # Injection PWA dans le HEAD du document principal
 pwa_code = """
@@ -382,21 +374,48 @@ if "can_edit" not in st.session_state:
 # 3bis. AUTO-CONNEXION VIA COOKIE "SE SOUVENIR DE MOI"
 # ==========================================
 if st.session_state["user"] is None:
-  _souvenir = _lire_session_souvenir()
-  if _souvenir:
-    # Pas besoin de st.rerun() ici : on est encore en train d'exécuter le
-    # script de haut en bas, donc renseigner session_state maintenant
-    # suffit à ce que l'écran de connexion plus bas soit sauté directement
-    # dans cette même exécution.
-    st.session_state["user"] = _souvenir
-    st.session_state["role"] = _souvenir["role"]
-    st.session_state["can_edit"] = _souvenir["can_edit"]
-    st.session_state["users_db"] = load_users()
-  elif st.context.cookies.get(REMEMBER_COOKIE_NAME):
-    # Un cookie est présent mais invalide ou périmé (jeton corrompu,
-    # session > 4h...) : on le nettoie pour ne pas retenter la même
-    # vérification à chaque rerun.
-    _supprimer_cookie_navigateur(REMEMBER_COOKIE_NAME)
+  _lr_value = st.query_params.get("_lr")
+  _lr_checked = st.query_params.get("_lr_checked")
+
+  if _lr_value or _lr_checked:
+    # On revient tout juste de l'aller-retour JS de lecture du cookie :
+    # on exploite la valeur récupérée (si présente) puis on nettoie l'URL.
+    if _lr_value:
+      try:
+        payload = json.loads(_lr_value)
+        remembered_user = payload.get("u")
+        remembered_role = payload.get("r")
+        remembered_can_edit = bool(payload.get("e"))
+        remembered_issued_at = payload.get("t")
+        remembered_token = payload.get("k")
+
+        jeton_valide = bool(remembered_token) and _generer_jeton_souvenir(
+            remembered_user, remembered_role, remembered_can_edit, remembered_issued_at
+        ) == remembered_token
+        session_expiree = True
+        if jeton_valide:
+          issued_at_dt = datetime.datetime.fromisoformat(remembered_issued_at)
+          session_expiree = (datetime.datetime.utcnow() - issued_at_dt) > REMEMBER_SESSION_DUREE
+
+        if jeton_valide and not session_expiree:
+          st.session_state["user"] = {
+              "username": remembered_user,
+              "role": remembered_role,
+              "can_edit": remembered_can_edit,
+          }
+          st.session_state["role"] = remembered_role
+          st.session_state["can_edit"] = remembered_can_edit
+          st.session_state["users_db"] = load_users()
+      except (ValueError, TypeError, AttributeError, KeyError):
+        pass
+    # Nettoyer les paramètres techniques de l'URL, qu'une connexion ait été
+    # restaurée ou non.
+    st.query_params.clear()
+  elif "_cookie_check_lance" not in st.session_state:
+    # Premier chargement de cette session : on lance (une seule fois) la
+    # vérification du cookie côté navigateur.
+    st.session_state["_cookie_check_lance"] = True
+    _injecter_lecture_cookie()
 
 # ==========================================
 # 4. ÉCRAN DE CONNEXION
@@ -433,19 +452,16 @@ if st.session_state["user"] is None:
         st.session_state["can_edit"] = can_edit
         if se_souvenir:
           issued_at_iso = datetime.datetime.utcnow().isoformat()
-          valeur_cookie = _construire_valeur_cookie(
-              username, role, can_edit, issued_at_iso
-          )
-          _definir_cookie_navigateur(
-              REMEMBER_COOKIE_NAME,
-              valeur_cookie,
-              int(REMEMBER_SESSION_DUREE.total_seconds()),
-          )
-          # Laisser le temps au script injecté de s'exécuter dans le
-          # navigateur avant que le rerun ci-dessous ne démonte l'iframe qui
-          # le contient (un seul cookie à écrire désormais, donc un court
-          # délai suffit).
-          time.sleep(0.3)
+          token = _generer_jeton_souvenir(username, role, can_edit, issued_at_iso)
+          payload_json = json.dumps({
+              "u": username, "r": role, "e": bool(can_edit),
+              "t": issued_at_iso, "k": token,
+          })
+          _injecter_ecriture_cookie(payload_json)
+          # Laisser le temps au navigateur (Safari/iOS en particulier) de
+          # réellement écrire le cookie avant que le rerun ci-dessous ne
+          # démonte le script qui l'a posé.
+          time.sleep(0.4)
         st.rerun()
 
       if submit_btn:
