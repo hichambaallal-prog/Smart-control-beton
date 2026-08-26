@@ -437,7 +437,7 @@ if st.session_state["user"] is None:
       username_input = st.text_input("Nom d'utilisateur").strip().upper()
       password_input = st.text_input("Mot de passe", type="password")
       se_souvenir = st.checkbox(
-          "🔒 Rester connecté sur cet appareil pendant 4h (utile pour les scans QR répétés)",
+          "🔒 Remember me (4h)",
           value=True,
       )
       submit_btn = st.form_submit_button(
