@@ -603,19 +603,24 @@ def show(supabase):
         if isinstance(v, bool):
           return v
         if isinstance(v, str):
-          # Insensible aux accents et à l'accord (validé/validée/validés/
-          # validées) : on ne se fie pas à une orthographe exacte, car
-          # c'est une cause fréquente de PV qui "n'apparaissent pas" alors
-          # qu'ils sont bien marqués validés en base.
+          # Le statut réel enregistré par le module de validation admin est
+          # "✅ Validé & Signé" (avec emoji en préfixe) ou "❌ Rejeté / En
+          # Révision" : un simple .startswith("valide") échoue toujours car
+          # la chaîne commence par l'emoji, pas par la lettre "v". On
+          # normalise (accents retirés, emoji/caractères non-ascii ignorés)
+          # puis on cherche "valide" n'importe où dans la chaîne, tout en
+          # excluant explicitement les formulations de rejet/négation pour
+          # ne pas confondre "Rejeté" ou "Non validé" avec "Validé".
           v_norm = (
               unicodedata.normalize("NFKD", v.strip().lower())
               .encode("ascii", "ignore")
               .decode("ascii")
-          )
-          return (
-              v_norm.startswith("valide")
-              or v_norm in ["true", "1", "ok", "oui"]
-          )
+          ).strip()
+          if v_norm in ["true", "1", "ok", "oui"]:
+            return True
+          if any(mot in v_norm for mot in ["invalide", "non valide", "rejet"]):
+            return False
+          return "valide" in v_norm
         return False
 
       # 2. Statut validé (recherche parent ET ligne d'essai)
@@ -640,9 +645,11 @@ def show(supabase):
           a_signature(parent.get("visa_chef"))
           or a_signature(parent.get("visa_admin"))
           or a_signature(parent.get("visa_responsable"))
+          or a_signature(parent.get("visa_resp"))
           or a_signature(row.get("visa_chef"))
           or a_signature(row.get("visa_admin"))
           or a_signature(row.get("visa_responsable"))
+          or a_signature(row.get("visa_resp"))
       )
 
       return a_force and statut_valide and a_visa
@@ -675,6 +682,7 @@ def show(supabase):
             "visa_chef",
             "visa_admin",
             "visa_responsable",
+            "visa_resp",
         ]
         diag_rows = []
         for _, row in df_all.head(15).iterrows():
