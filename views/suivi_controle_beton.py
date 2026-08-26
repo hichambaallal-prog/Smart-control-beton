@@ -1,5 +1,6 @@
 import io
 import re
+import unicodedata
 from datetime import date, datetime, timedelta
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -599,13 +600,18 @@ def afficher_module_validation_admin(supabase):
         lots_dict[b_id].append(ep)
 
     def _est_pv_deja_valide(statut):
-        """Même logique tolérante que côté Historique (accents/emoji/casse
-        ignorés) pour reconnaître un statut déjà 'validé & signé' et le
-        retirer de la liste à réviser, sans retirer les PV rejetés qui,
-        eux, doivent rester à retraiter."""
+        """Même logique tolérante que côté Historique : on normalise les
+        accents (sinon 'valide' ne matche jamais 'validé' à cause du 'é')
+        et on ignore casse/emoji pour reconnaître un statut déjà 'validé &
+        signé' et le retirer de la liste à réviser, sans retirer les PV
+        rejetés qui, eux, doivent rester à retraiter."""
         if not statut:
             return False
-        s = str(statut).strip().lower()
+        s = (
+            unicodedata.normalize("NFKD", str(statut).strip().lower())
+            .encode("ascii", "ignore")
+            .decode("ascii")
+        ).strip()
         if any(mot in s for mot in ["rejet", "invalide", "non valide"]):
             return False
         return "valide" in s
