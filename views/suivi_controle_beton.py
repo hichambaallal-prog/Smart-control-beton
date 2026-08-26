@@ -575,7 +575,7 @@ def _format_ep_row(ep, date_ref=None):
 # =========================================================
 # MODULE NOUVEAU : PHASE 3 - VALIDATION ADMIN (PVs)
 # =========================================================
-def afficher_module_validation_admin(supabase):
+def afficher_module_validation_admin(supabase, est_admin=False):
     """Affiche le module d'approbation administrative et de signature des PVs."""
     st.subheader("🛡️ 3. Validation Administrateur & Signatures des PVs")
     st.info("💡 **Espace Responsables** : Vérifiez la conformité des écrasements et validez le statut officiel des Procès-Verbaux (PV).")
@@ -646,22 +646,69 @@ def afficher_module_validation_admin(supabase):
     c2.metric("Date de coulée", extraire_date_coulee(info_b_sel))
     c3.metric("Statut Actuel du PV", info_b_sel.get("statut_pv", "⏳ En attente"))
 
-    # Préparation des données pour affichage tableau
-    rows_val = []
-    for ep in ep_sel_list:
-        sec = float(ep.get("section") or 176.71)
-        f_kn = float(ep.get("force_kn") or 0.0)
-        fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
-        rows_val.append({
-            "Repère": ep.get("repere_eprouvette", "-"),
-            "Échéance": ep.get("echeance", "-"),
-            "Date Écrasement": ep.get("date_ecrasement", "-"),
-            "Force (kN)": f_kn,
-            "Résistance (MPa)": fc,
-            "Opérateur": ep.get("technicien", "-")
-        })
+    # Préparation des données pour affichage / édition tableau
+    df_key = f"admin_edit_pv_{b_id_sel}"
+    if df_key not in st.session_state or st.session_state.get(f"{df_key}_len") != len(ep_sel_list):
+        rows_val = []
+        for ep in ep_sel_list:
+            sec = float(ep.get("section") or 176.71)
+            f_kn = float(ep.get("force_kn") or 0.0)
+            fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+            rows_val.append({
+                "ID": ep.get("id"),
+                "Repère": ep.get("repere_eprouvette", "-"),
+                "Échéance": ep.get("echeance", "-"),
+                "Date Écrasement": ep.get("date_ecrasement", "-"),
+                "Force (kN)": f_kn,
+                "Résistance (MPa)": fc,
+                "Opérateur": ep.get("technicien", "-"),
+                "_section": sec,
+            })
+        st.session_state[df_key] = pd.DataFrame(rows_val)
+        st.session_state[f"{df_key}_len"] = len(ep_sel_list)
 
-    st.dataframe(pd.DataFrame(rows_val), use_container_width=True, hide_index=True)
+    editor_key = f"editor_{df_key}"
+
+    def _maj_resistance_admin():
+        """Recalcule Résistance (MPa) en direct quand l'admin modifie Force (kN)."""
+        editor_state = st.session_state.get(editor_key, {})
+        for row_idx, updated_cols in editor_state.get("edited_rows", {}).items():
+            if "Force (kN)" in updated_cols:
+                try:
+                    new_force = float(updated_cols["Force (kN)"])
+                except (ValueError, TypeError):
+                    new_force = 0.0
+                sec = float(st.session_state[df_key].at[row_idx, "_section"])
+                st.session_state[df_key].at[row_idx, "Force (kN)"] = new_force
+                st.session_state[df_key].at[row_idx, "Résistance (MPa)"] = (
+                    round((new_force * 10.0) / sec, 1) if sec > 0 and new_force > 0 else 0.0
+                )
+
+    if est_admin:
+        st.caption(
+            "✏️ Mode administrateur : la **Force (kN)** est modifiable"
+            " ci-dessous — la Résistance (MPa) se recalcule automatiquement."
+            " Les modifications sont enregistrées en même temps que la"
+            " décision de validation, plus bas."
+        )
+
+    st.data_editor(
+        st.session_state[df_key],
+        column_config={
+            "ID": None,
+            "_section": None,
+            "Repère": st.column_config.TextColumn("Repère", disabled=True),
+            "Échéance": st.column_config.TextColumn("Échéance", disabled=True),
+            "Date Écrasement": st.column_config.TextColumn("Date Écrasement", disabled=True),
+            "Force (kN)": st.column_config.NumberColumn(
+                "⚡ Force (kN)", disabled=not est_admin,
+                min_value=0.0, max_value=3000.0, step=0.1, format="%.1f",
+            ),
+            "Résistance (MPa)": st.column_config.NumberColumn("Résistance (MPa)", disabled=True, format="%.1f"),
+            "Opérateur": st.column_config.TextColumn("Opérateur", disabled=True),
+        },
+        use_container_width=True, hide_index=True, key=editor_key, on_change=_maj_resistance_admin,
+    )
 
     def _echeance_jours(val):
         try:
@@ -720,6 +767,21 @@ def afficher_module_validation_admin(supabase):
             }
             try:
                 supabase.table("suivi_betonnage").update(update_payload).eq("id", b_id_sel).execute()
+
+                if est_admin:
+                    df_edit = st.session_state.get(df_key)
+                    if df_edit is not None:
+                        for _, r in df_edit.iterrows():
+                            try:
+                                supabase.table("suivi_controle_beton").update({
+                                    "force_kn": float(r["Force (kN)"]),
+                                    "fc_mpa": float(r["Résistance (MPa)"]),
+                                }).eq("id", int(r["ID"])).execute()
+                            except Exception as e_row:
+                                st.warning(f"⚠️ Éprouvette {r.get('Repère', '-')} : mise à jour de la force impossible ({e_row}).")
+
+                st.session_state.pop(df_key, None)
+                st.session_state.pop(f"{df_key}_len", None)
                 st.success(f"✅ Le statut du PV a été mis à jour avec succès : **{nouveau_statut}**")
                 st.balloons()
                 st.rerun()
@@ -1402,7 +1464,8 @@ def show(supabase):
     # PHASE 3 : VALIDATION ADMIN (PVs)
     # =========================================================
     elif onglet_courant == OPTIONS_ONGLETS[3]:
-        afficher_module_validation_admin(supabase)
+        est_admin_pv = (role_user == "admin") or st.session_state.get("is_admin", False)
+        afficher_module_validation_admin(supabase, est_admin=est_admin_pv)
 
 
 # =========================================================
