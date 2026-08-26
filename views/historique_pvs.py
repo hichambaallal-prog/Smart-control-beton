@@ -584,20 +584,20 @@ def show(supabase):
     }
 
     # -------------------------------------------------------------------------
-    # FILTRE TOLÉRANT : PVs ÉCRASÉS, VALIDÉS ET SIGNÉS
+    # FILTRE AMÉLIORÉ : PVs ÉCRASÉS, VALIDÉS ET SIGNÉS
     # -------------------------------------------------------------------------
     def verifier_pv_valide_et_signe(row):
       b_id = row.get("betonnage_id")
       parent = unique_parents.get(b_id) or {}
 
-      # 1. Force appliquée (écrasement effectué)
+      # 1. Force appliquée (écrasement effectué > 0)
       f_kn = row.get("force_kn")
       try:
         a_force = pd.notnull(f_kn) and float(f_kn) > 0
       except (ValueError, TypeError):
         a_force = False
 
-      # Helper validation statut/booléen
+      # Helper tolérant pour les statuts / booléens
       def est_valide_val(v):
         if isinstance(v, bool):
           return v
@@ -605,7 +605,7 @@ def show(supabase):
           return v.strip().lower() in ["validé", "valide", "true", "1", "ok"]
         return False
 
-      # 2. Statut validé (recherche parent et ligne d'essai)
+      # 2. Statut validé (recherche parent ET ligne d'essai)
       statut_valide = (
           est_valide_val(parent.get("statut_pv"))
           or est_valide_val(parent.get("validation_admin"))
@@ -613,7 +613,7 @@ def show(supabase):
           or est_valide_val(row.get("validation_admin"))
       )
 
-      # Helper signature/visa
+      # Helper vérification visa non vide
       def a_signature(v):
         if v is None:
           return False
@@ -622,7 +622,7 @@ def show(supabase):
         v_str = str(v).strip().lower()
         return v_str not in ["", "none", "nan", "null", "false", "0"]
 
-      # 3. Visas / Signatures présents
+      # 3. Visas / Signatures présents (vérifie toutes les colonnes usuelles)
       a_visa = (
           a_signature(parent.get("visa_chef"))
           or a_signature(parent.get("visa_admin"))
