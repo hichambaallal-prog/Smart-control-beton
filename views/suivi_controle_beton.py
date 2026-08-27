@@ -26,6 +26,17 @@ OPTIONS_ONGLETS = [
 
 
 # ==============================================================================
+# FONCTION UTILITAIRE : EXTRACTION DU NOMBRE DE JOURS
+# ==============================================================================
+def extraire_nb_jours(echeance_str, default=28):
+    """Extrait le nombre de jours numérique à partir d'une chaîne (ex: '28 jours', '7 J')."""
+    if pd.isna(echeance_str) or not echeance_str:
+        return default
+    match = re.search(r'\d+', str(echeance_str))
+    return int(match.group()) if match else default
+
+
+# ==============================================================================
 # 1. GESTION DES UTILISATEURS ET CONNEXION SUPABASE
 # ==============================================================================
 def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
@@ -387,10 +398,7 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(row=curr_row, column=2, value=str(remplacer_na(infos_header.get("date_coulee"), "-")))
         ws.cell(row=curr_row, column=3, value=str(dt_essai) if (is_en_cours and dt_essai and dt_essai != "-") else ("En cours" if is_en_cours else str(remplacer_na(dt_essai, "-"))))
 
-        try:
-            age_val = int(str(item.get("age", 7)).replace("j", "").replace("jours", "").strip())
-        except (ValueError, TypeError):
-            age_val = item.get("age", 7)
+        age_val = extraire_nb_jours(item.get("age"), default=7)
         ws.cell(row=curr_row, column=4, value=age_val)
 
         if is_en_cours:
@@ -431,10 +439,8 @@ def generer_pv_excel(export_data, infos_header):
                 ws.merge_cells(f"H{start_r}:H{end_r}")
                 cell_h.value = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
             cell_h.number_format = "0.0"
-            try:
-                if int(str(data_lot["age"]).replace("j", "").replace("jours", "").strip()) >= 28:
-                    a_des_28j_ecrases, cellule_moyenne_28j = True, f"H{start_r}"
-            except (ValueError, TypeError): pass
+            if extraire_nb_jours(data_lot["age"]) >= 28:
+                a_des_28j_ecrases, cellule_moyenne_28j = True, f"H{start_r}"
 
         format_cell(cell_h, font=font_bold, align=align_center)
 
@@ -722,15 +728,9 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         use_container_width=True, hide_index=True, key=editor_key, on_change=_maj_resistance_admin,
     )
 
-    def _echeance_jours(val):
-        try:
-            return int(str(val or "").replace("jours", "").replace("j", "").strip())
-        except (ValueError, TypeError):
-            return None
-
-    ep_28j = [ep for ep in ep_sel_list if _echeance_jours(ep.get("echeance")) == 28]
+    ep_28j = [ep for ep in ep_sel_list if extraire_nb_jours(ep.get("echeance")) == 28]
     if ep_28j:
-        ep_7j = [ep for ep in ep_sel_list if _echeance_jours(ep.get("echeance")) == 7]
+        ep_7j = [ep for ep in ep_sel_list if extraire_nb_jours(ep.get("echeance")) == 7]
         ref_ctrl_sel = determiner_ref_controle(supabase, b_id_sel, info_b_sel, ep_sel_list[0])
         st.warning(
             f"🔔 **Rappel avant validation à 28 jours** — Résultats à 7 jours"
@@ -811,7 +811,6 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Erreur lors de la mise à jour du statut : {e}")
-
 
 
 # =========================================================
@@ -1105,10 +1104,7 @@ def show(supabase):
                             # Correction automatique si désynchronisé
                             if dt_coulee_ep != date_coulee_correcte:
                                 ep["date_coulee"] = date_coulee_correcte
-                                try:
-                                    nb_j = int(re.sub(r"\D", "", str(ep.get("echeance", "28"))))
-                                except Exception:
-                                    nb_j = 28
+                                nb_j = extraire_nb_jours(ep.get("echeance"), default=28)
                                 
                                 try:
                                     dt_c = datetime.strptime(date_coulee_correcte[:10], "%Y-%m-%d").date()
@@ -1162,12 +1158,9 @@ def show(supabase):
                                 ep_id, b_id = int(r_m["id"]), r_m.get("betonnage_id")
                                 ref_ctrl = str(r_m.get("ref_controle", "")).strip()
                                 
-                                # Calcul dynamique strict de la date d'écrasement en cas de modification d'échéance ou date coulée
+                                # Calcul dynamique strict : Date Écrasement = Date Coulée + Échéance Visée
                                 ech_str = str(r_m.get("echeance", "")).strip()
-                                try:
-                                    nb_jours_m = int(re.sub(r"\D", "", ech_str))
-                                except Exception:
-                                    nb_jours_m = 28
+                                nb_jours_m = extraire_nb_jours(ech_str, default=28)
                                     
                                 dt_coulee_str = str(r_m.get("date_coulee", "")).strip()[:10]
                                 try:
@@ -1255,20 +1248,18 @@ def show(supabase):
             col2.text_input("Ouvrage / Élément", value=ouvrage_p, disabled=True, key=f"p_ouv_{b_id}")
             col3.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
 
-            # GESTION DYNAMIQUE DE L'ÉCHÉANCE ET DU RECALCUL REQUIS
+            # CALCUL DYNAMIQUE DIRECT DE LA DATE D'ÉCRASEMENT PRÉVUE
             options_echeances = ["3 jours", "7 jours", "28 jours", "90 jours"]
             echeance_p = st.selectbox("Âge / Échéance visée", options_echeances, key=f"p_echeance_{b_id}")
             
-            try:
-                nb_j = int(re.sub(r"\D", "", echeance_p))
-            except Exception:
-                nb_j = 28
-                
-            date_ecrasement_calculée = date_coulee_p + timedelta(days=nb_j)
+            nb_j = extraire_nb_jours(echeance_p, default=28)
+            date_ecrasement_calculee = date_coulee_p + timedelta(days=nb_j)
 
             col_e1, col_e2, col_e3 = st.columns(3)
             col_e1.date_input("Date de Coulée (Phase 0)", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
-            date_ecrasement_prevue = col_e2.date_input("Date d'Écrasement Prévue", value=date_ecrasement_calculée, key=f"p_date_ecras_{b_id}_{nb_j}j")
+            
+            # Calcul automatique : Date Écrasement Prévue = Date Coulée + Échéance Visée
+            date_ecrasement_prevue = col_e2.date_input("Date d'Écrasement Prévue", value=date_ecrasement_calculee, key=f"p_date_ecras_{b_id}_{nb_j}j")
             
             max_allowed = solde_disponible if not mode_admin else 50
             nb_eprouvettes_p = col_e3.number_input("Nombre d'éprouvettes", min_value=(1 if max_allowed > 0 else 0), max_value=max_allowed, value=min(3, max_allowed) if max_allowed >= 3 else max_allowed, key=f"p_nb_ep_{b_id}_{nb_j}j")
