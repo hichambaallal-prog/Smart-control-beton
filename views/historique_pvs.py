@@ -589,14 +589,6 @@ def show(supabase):
       if isinstance(v, bool):
         return v
       if isinstance(v, str):
-        # Le statut réel enregistré par le module de validation admin est
-        # "✅ Validé & Signé" (avec emoji en préfixe) ou "❌ Rejeté / En
-        # Révision" : un simple .startswith("valide") échoue toujours car
-        # la chaîne commence par l'emoji, pas par la lettre "v". On
-        # normalise (accents retirés, emoji/caractères non-ascii ignorés)
-        # puis on cherche "valide" n'importe où dans la chaîne, tout en
-        # excluant explicitement les formulations de rejet/négation pour
-        # ne pas confondre "Rejeté" ou "Non validé" avec "Validé".
         v_norm = (
             unicodedata.normalize("NFKD", v.strip().lower())
             .encode("ascii", "ignore")
@@ -631,9 +623,6 @@ def show(supabase):
           or est_valide_val(row.get("validation_admin"))
       )
 
-      # Le visa n'est plus une condition bloquante : dès que le PV est
-      # marqué "validé" par l'admin (avec au moins une force > 0), il doit
-      # apparaître dans la liste, que le champ visa ait été rempli ou non.
       return a_force and statut_valide
 
     # Filtrage des enregistrements
@@ -868,6 +857,14 @@ def show(supabase):
     st.markdown("---")
     st.markdown("##### 📊 Base de données globale")
 
+    # Calcul/récupération de la référence de contrôle pour chaque ligne
+    df_all["ref_controle"] = df_all.apply(
+        lambda r: determiner_ref_controle(
+            supabase, r.get("betonnage_id"), unique_parents.get(r.get("betonnage_id")), r.to_dict()
+        ),
+        axis=1,
+    )
+
     df_all["affaissement_mm"] = df_all["betonnage_id"].map(
         lambda b: (unique_parents.get(b) or {}).get("affaissement")
         or (unique_parents.get(b) or {}).get("slump")
@@ -891,6 +888,7 @@ def show(supabase):
     cols_ordre = [
         "id",
         "betonnage_id",
+        "ref_controle",
         "repere_eprouvette",
         "num_bl",
         "ouvrage",
@@ -910,7 +908,6 @@ def show(supabase):
         "force_kn",
         "observations",
         "masse",
-        "ref_controle",
         "reference_controle",
         "refernce_controle",
         "num_reception",
@@ -934,24 +931,11 @@ def show(supabase):
     )
 
     if search_ref:
-      ref_col = next(
-          (
-              c
-              for c in [
-                  "ref_controle",
-                  "reference_controle",
-                  "refernce_controle",
-              ]
-              if c in df_all.columns
-          ),
-          None,
-      )
-      if ref_col:
-        df_final = df_final[
-            df_all[ref_col]
-            .astype(str)
-            .str.contains(search_ref, case=False, na=False)
-        ]
+      df_final = df_final[
+          df_final["ref_controle"]
+          .astype(str)
+          .str.contains(search_ref, case=False, na=False)
+      ]
     if search_date:
       df_final = df_final[
           df_final["date_coulee"]
