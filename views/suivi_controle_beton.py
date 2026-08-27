@@ -444,7 +444,7 @@ def generer_pv_excel(export_data, infos_header):
     obs_defaut = infos_header.get("observations") or "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
 
     seuil_min = 35.0
-    for classe, seuil in [("C25/30", 25.0), ("C30/37", 30.0), ("C35/45", 35.0), ("C40/50", 40.0)]:
+    for classe, seuil in [("C25/30", 25.0), ("C30/37", 30.0), ("C40/50", 40.0)]:
         if classe in classe_beton_val:
             seuil_min = seuil
             break
@@ -600,11 +600,6 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         lots_dict[b_id].append(ep)
 
     def _est_pv_deja_valide(statut):
-        """Même logique tolérante que côté Historique : on normalise les
-        accents (sinon 'valide' ne matche jamais 'validé' à cause du 'é')
-        et on ignore casse/emoji pour reconnaître un statut déjà 'validé &
-        signé' et le retirer de la liste à réviser, sans retirer les PV
-        rejetés qui, eux, doivent rester à retraiter."""
         if not statut:
             return False
         s = (
@@ -621,8 +616,6 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         info_b = obtenir_infos_betonnage_parent(supabase, b_id)
         statut_lot = info_b.get("statut_pv", "⏳ En attente de validation")
         if _est_pv_deja_valide(statut_lot):
-            # PV déjà validé & signé : on ne l'affiche plus ici, il reste
-            # consultable/téléchargeable depuis "Historique Complet & PVs".
             continue
         ref_ctrl = determiner_ref_controle(supabase, b_id, info_b, list_ep[0])
         bl_num = extraire_num_bl(list_ep[0], info_b or {})
@@ -959,8 +952,36 @@ def show(supabase):
 
                     st.markdown(f"**Génération pour `{rec_num}` ({nb_ep} éprouvettes) :**")
                     
+                    # Bouton Imprimer qui déclenche l'impression de la section QR Code
+                    st.components.v1.html("""
+                        <style>
+                            @media print {
+                                body * { visibility: hidden; }
+                                #printable-qr-section, #printable-qr-section * { visibility: visible; }
+                                #printable-qr-section { position: absolute; left: 0; top: 0; width: 100%; }
+                            }
+                        </style>
+                        <button onclick="window.parent.print()" style="
+                            background-color: #ffffff;
+                            color: #31333F;
+                            border: 1px solid #d6d6d8;
+                            border-radius: 8px;
+                            padding: 8px 16px;
+                            font-weight: 500;
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            gap: 8px;
+                            width: 100%;
+                            justify-content: center;
+                        ">
+                            🖨️ Imprimer toutes les étiquettes
+                        </button>
+                    """, height=45)
+
                     base_url = "https://smart-control-beton-lt7pusyvxjehm5kphd7hru.streamlit.app"
                     
+                    st.markdown('<div id="printable-qr-section">', unsafe_allow_html=True)
                     cols_qr = st.columns(3)
                     for i in range(1, nb_ep + 1):
                         qr_payload = f"{base_url}/?rec={rec_num}&beton_id={b_qr.get('id')}&ep={i}"
@@ -976,6 +997,7 @@ def show(supabase):
                                 key=f"btn_qr_{b_qr.get('id')}_{i}",
                                 use_container_width=True
                             )
+                    st.markdown('</div>', unsafe_allow_html=True)
 
     # =========================================================
     # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
