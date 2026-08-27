@@ -834,11 +834,6 @@ def show(supabase):
     role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
     can_edit = st.session_state.get("can_edit", False) or bool(user_info.get("can_edit", False))
 
-    # Tous les utilisateurs authentifiés peuvent consulter les phases,
-    # y compris la Phase 3. Les droits de modification/validation restent
-    # strictement réservés à l'administrateur BAALLAL (voir ci-dessous).
-
-    # Administrateur de référence : BAALLAL uniquement.
     current_username = str(
         st.session_state.get("username")
         or user_info.get("username")
@@ -1105,11 +1100,18 @@ def show(supabase):
                         parent_beton = map_betonnages.get(ep.get("betonnage_id"))
                         if parent_beton:
                             date_coulee_correcte = extraire_date_coulee(parent_beton)
-                            if ep.get("date_coulee") != date_coulee_correcte:
+                            dt_coulee_ep = str(ep.get("date_coulee") or "").strip()
+                            
+                            # Correction automatique si désynchronisé
+                            if dt_coulee_ep != date_coulee_correcte:
                                 ep["date_coulee"] = date_coulee_correcte
                                 try:
-                                    nb_j = int(str(ep.get("echeance", "28")).replace("jours", "").replace("j", "").strip())
-                                    dt_c = datetime.strptime(date_coulee_correcte, "%Y-%m-%d").date()
+                                    nb_j = int(re.sub(r"\D", "", str(ep.get("echeance", "28"))))
+                                except Exception:
+                                    nb_j = 28
+                                
+                                try:
+                                    dt_c = datetime.strptime(date_coulee_correcte[:10], "%Y-%m-%d").date()
                                     nouvelle_date_ecrasement = str(dt_c + timedelta(days=nb_j))
                                     ep["date_ecrasement"] = nouvelle_date_ecrasement
                                 except Exception:
@@ -1159,12 +1161,27 @@ def show(supabase):
                             for _, r_m in df_prog_modifiee.iterrows():
                                 ep_id, b_id = int(r_m["id"]), r_m.get("betonnage_id")
                                 ref_ctrl = str(r_m.get("ref_controle", "")).strip()
+                                
+                                # Calcul dynamique strict de la date d'écrasement en cas de modification d'échéance ou date coulée
+                                ech_str = str(r_m.get("echeance", "")).strip()
+                                try:
+                                    nb_jours_m = int(re.sub(r"\D", "", ech_str))
+                                except Exception:
+                                    nb_jours_m = 28
+                                    
+                                dt_coulee_str = str(r_m.get("date_coulee", "")).strip()[:10]
+                                try:
+                                    dt_c_obj = datetime.strptime(dt_coulee_str, "%Y-%m-%d").date()
+                                    dt_ecrasement_calc = str(dt_c_obj + timedelta(days=nb_jours_m))
+                                except Exception:
+                                    dt_ecrasement_calc = str(r_m.get("date_ecrasement", "")).strip()
+
                                 pay = {
                                     "ref_controle": ref_ctrl,
                                     "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
-                                    "echeance": str(r_m.get("echeance", "")).strip(),
-                                    "date_coulee": str(r_m.get("date_coulee", "")).strip(),
-                                    "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
+                                    "echeance": ech_str,
+                                    "date_coulee": dt_coulee_str,
+                                    "date_ecrasement": dt_ecrasement_calc,
                                 }
                                 try:
                                     supabase.table("suivi_controle_beton").update(pay).eq("id", ep_id).execute()
@@ -1238,16 +1255,23 @@ def show(supabase):
             col2.text_input("Ouvrage / Élément", value=ouvrage_p, disabled=True, key=f"p_ouv_{b_id}")
             col3.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
 
-            echeance_p = st.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], index=2, key=f"p_echeance_{b_id}")
-            nb_j = {"3 jours": 3, "7 jours": 7, "28 jours": 28, "90 jours": 90}.get(echeance_p, 28)
-            echeance_key = echeance_p.replace(" ", "_")
+            # GESTION DYNAMIQUE DE L'ÉCHÉANCE ET DU RECALCUL REQUIS
+            options_echeances = ["3 jours", "7 jours", "28 jours", "90 jours"]
+            echeance_p = st.selectbox("Âge / Échéance visée", options_echeances, key=f"p_echeance_{b_id}")
+            
+            try:
+                nb_j = int(re.sub(r"\D", "", echeance_p))
+            except Exception:
+                nb_j = 28
+                
+            date_ecrasement_calculée = date_coulee_p + timedelta(days=nb_j)
 
             col_e1, col_e2, col_e3 = st.columns(3)
             col_e1.date_input("Date de Coulée (Phase 0)", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
-            date_ecrasement_prevue = col_e2.date_input("Date d'Écrasement Prévue", value=date_coulee_p + timedelta(days=nb_j), key=f"p_date_ecras_{b_id}_{echeance_key}")
+            date_ecrasement_prevue = col_e2.date_input("Date d'Écrasement Prévue", value=date_ecrasement_calculée, key=f"p_date_ecras_{b_id}_{nb_j}j")
             
             max_allowed = solde_disponible if not mode_admin else 50
-            nb_eprouvettes_p = col_e3.number_input("Nombre d'éprouvettes", min_value=(1 if max_allowed > 0 else 0), max_value=max_allowed, value=min(2, max_allowed), key=f"p_nb_ep_{b_id}_{echeance_key}")
+            nb_eprouvettes_p = col_e3.number_input("Nombre d'éprouvettes", min_value=(1 if max_allowed > 0 else 0), max_value=max_allowed, value=min(3, max_allowed) if max_allowed >= 3 else max_allowed, key=f"p_nb_ep_{b_id}_{nb_j}j")
 
             forme_p = st.selectbox("Type / Forme d'éprouvette", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
             sect_def = 176.71 if "150x300" in forme_p else (201.06 if "160x320" in forme_p else 78.54)
@@ -1258,10 +1282,10 @@ def show(supabase):
                 cols_rep = st.columns(min(int(nb_eprouvettes_p), 6))
                 for i in range(int(nb_eprouvettes_p)):
                     with cols_rep[i % 6]:
-                        rep_val = st.text_input(f"Repère #{eprouvettes_deja_prog + i + 1}", value=f"/{eprouvettes_deja_prog + i + 1}", key=f"prog_rep_{b_id}_{echeance_key}_{i}")
+                        rep_val = st.text_input(f"Repère #{eprouvettes_deja_prog + i + 1}", value=f"/{eprouvettes_deja_prog + i + 1}", key=f"prog_rep_{b_id}_{nb_j}j_{i}")
                         reperes_p.append(rep_val)
 
-                if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}"):
+                if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}_{nb_j}j"):
                     try: supabase.table("suivi_betonnage").update({"ref_controle": ref_controle_p}).eq("id", b_id).execute()
                     except Exception: pass
 
@@ -1277,7 +1301,7 @@ def show(supabase):
                         except Exception as err: st.error(f"Erreur pour {rep} : {err}")
 
                     if succes_cnt > 0:
-                        st.success(f"✅ {succes_cnt} éprouvette(s) programmée(s) !")
+                        st.success(f"✅ {succes_cnt} éprouvette(s) programmée(s) pour le {date_ecrasement_prevue} ({echeance_p}) !")
                         st.rerun()
 
     # =========================================================
@@ -1384,11 +1408,9 @@ def show(supabase):
             for idx_key, ep in enumerate(eprouvettes_en_attente):
                 dt_ecras_str = str(ep.get("date_ecrasement") or "")[:10]
                 
-                # --- FILTRE DATE ÉCRASEMENT : Masquer les éprouvettes dont l'échéance n'est pas atteinte ---
                 if not mode_admin and dt_ecras_str:
                     try:
                         dt_ecras_obj = datetime.strptime(dt_ecras_str, "%Y-%m-%d").date()
-                        # Ignorer si la date d'échéance n'est pas encore arrivée (sauf scan QR Code explicite)
                         if dt_ecras_obj > today_date:
                             is_scanned = (scan_rec and str(scan_rec).strip().lower() in str(ep.get("ref_controle") or "").lower()) or \
                                          (scan_b_id and str(scan_b_id).strip() == str(ep.get("betonnage_id")).strip())
@@ -1403,7 +1425,6 @@ def show(supabase):
                 num_rec_parent = str((info_b_temp or {}).get("num_reception") or "").strip()
                 classe_ep = ep.get("classe_beton") or (info_b_temp.get("classe_beton") if info_b_temp else "-")
                 
-                # Tag de retard ou d'urgence pour la sélection
                 prefixe_retard = ""
                 if dt_ecras_str:
                     try:
@@ -1429,7 +1450,7 @@ def show(supabase):
             options_lots = list(groupes_lots.keys())
 
             if not options_lots:
-                st.info("ℹ️ Aucune éprouvette à écraser pour la date d'aujourd'hui ou en retard. (Seuls les lots arrivés à échéance s'affichent).")
+                st.info("ℹ️ Aucune éprouvette à écraser pour la date d'aujourd'hui ou en retard.")
             else:
                 index_defaut = min(index_selectionne, len(options_lots) - 1) if options_lots else 0
 
@@ -1586,9 +1607,6 @@ def show(supabase):
     # PHASE 3 : VALIDATION ADMIN (PVs)
     # =========================================================
     elif onglet_courant == OPTIONS_ONGLETS[3]:
-        # La Phase 3 est visible par tous les utilisateurs authentifiés.
-        # La validation, le rejet, la signature et la modification des forces
-        # sont toutefois réservés exclusivement à l'administrateur BAALLAL.
         est_admin_pv = is_baallal_admin
         afficher_module_validation_admin(supabase, est_admin=est_admin_pv)
 
