@@ -31,19 +31,26 @@ OPTIONS_ONGLETS = [
 def calculer_date_ecrasement(df):
     """
     Calcule la 'Date Écrasement Prévue' à partir de 'Date Coulée'
-    et du délai spécifié dans 'Échéance Visée' (ex: '7 jours', '28 jours').
+    et du délai spécifié dans 'Échéance Visée' ou 'echeance' (ex: '7 jours', '28 jours').
     """
     df_result = df.copy()
 
+    # Détection de la colonne d'échéance disponible
+    col_ech = next((c for c in ['Échéance Visée', 'echeance', 'Échéance'] if c in df_result.columns), None)
+    col_coul = next((c for c in ['Date Coulée', 'date_coulee'] if c in df_result.columns), None)
+
+    if not col_coul or not col_ech:
+        return df_result
+
     # 1. Conversion de Date Coulée au format datetime
-    df_result['Date Coulée'] = pd.to_datetime(df_result['Date Coulée'])
+    df_result['Date Coulée'] = pd.to_datetime(df_result[col_coul], errors='coerce')
 
     # 2. Extraction du nombre de jours
     nb_jours = (
-        df_result['Échéance Visée']
+        df_result[col_ech]
         .astype(str)
         .str.extract(r'(\d+)')
-        .fillna(0)[0]
+        .fillna(28)[0]
         .astype(int)
     )
 
@@ -1163,9 +1170,9 @@ def show(supabase):
                             "id": st.column_config.NumberColumn("ID", disabled=True),
                             "betonnage_id": None,
                             "ref_controle": st.column_config.TextColumn("Réf. Contrôle (N° Réception)"),
-                            "echeance": st.column_config.SelectboxColumn("Échéance", options=["3 jours", "7 jours", "28 jours", "90 jours"]),
+                            "echeance": st.column_config.SelectboxColumn("Échéance Visée", options=["3 jours", "7 jours", "28 jours", "90 jours"]),
                             "date_coulee": st.column_config.TextColumn("Date Coulée"),
-                            "date_ecrasement": st.column_config.TextColumn("Date Écrasement"),
+                            "date_ecrasement": st.column_config.TextColumn("Date Écrasement Prévue"),
                             "ouvrage": st.column_config.TextColumn("Ouvrage", disabled=True),
                             "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
                         },
@@ -1182,19 +1189,16 @@ def show(supabase):
                                 break
 
                         if not bloque_mod:
-                            # Utilisation de calculer_date_ecrasement en vectoriel sur le lot modifié
-                            df_calcul_temp = df_prog_modifiee[['date_coulee', 'echeance']].rename(
-                                columns={'date_coulee': 'Date Coulée', 'echeance': 'Échéance Visée'}
-                            )
-                            df_calcul_resultat = calculer_date_ecrasement(df_calcul_temp)
+                            # Calcul vectoriel systématique des nouvelles dates d'écrasement sur l'ensemble du DataFrame modifié
+                            df_calcul_resultat = calculer_date_ecrasement(df_prog_modifiee)
 
                             nb_succes = 0
                             for index_row, r_m in df_prog_modifiee.iterrows():
                                 ep_id, b_id = int(r_m["id"]), r_m.get("betonnage_id")
                                 ref_ctrl = str(r_m.get("ref_controle", "")).strip()
                                 
-                                dt_coulee_str = df_calcul_resultat.at[index_row, 'Date Coulée']
-                                dt_ecrasement_calc = df_calcul_resultat.at[index_row, 'Date Écrasement Prévue']
+                                dt_coulee_str = str(df_calcul_resultat.at[index_row, 'Date Coulée'])
+                                dt_ecrasement_calc = str(df_calcul_resultat.at[index_row, 'Date Écrasement Prévue'])
                                 ech_str = str(r_m.get("echeance", "")).strip()
 
                                 pay = {
@@ -1213,7 +1217,7 @@ def show(supabase):
                                 except Exception as err:
                                     st.error(f"Erreur pour #{ep_id} : {err}")
                             if nb_succes > 0:
-                                st.success(f"✅ {nb_succes} programmation(s) mise(s) à jour !")
+                                st.success(f"✅ {nb_succes} programmation(s) mise(s) à jour avec recalcul automatique de la date d'écrasement !")
                                 st.rerun()
         else:
             st.info("🔒 **Accès restreint :** La modification nécessite le droit `can_edit`.")
