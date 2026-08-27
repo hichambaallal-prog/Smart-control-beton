@@ -6,6 +6,7 @@ from fpdf import FPDF
 from PIL import Image
 import streamlit as st
 import streamlit.components.v1 as components
+import extra_streamlit_components as stx
 from supabase import Client, create_client
 
 # Importation sécurisée du gestionnaire Hors-Ligne SQLite
@@ -60,25 +61,26 @@ if _qr_rec or _qr_bid:
     st.query_params.clear()
 
 # ==========================================
-# 1ter. "SE SOUVENIR DE MOI" — MÉTHODE JS DIRECTE (fiable sur iOS/Safari)
+# 1ter. "SE SOUVENIR DE MOI" — COOKIE VIA COMPOSANT (rapide, sans rechargement)
 # ==========================================
 # Permet de rester connecté sur le même appareil/navigateur, y compris après
 # un scan QR Code qui ouvre une nouvelle session Streamlit (donc un
 # session_state vide) : sans cookie, il faudrait ressaisir le mot de passe
 # à CHAQUE scan.
 #
-# On n'utilise volontairement PAS de composant tiers (type
-# extra_streamlit_components) : sur Safari/iOS, le canal de communication
-# entre le composant (dans un iframe) et Python s'est révélé peu fiable
-# (le mot de passe "s'oubliait"). À la place : le cookie est écrit/lu par
-# un petit script JS injecté directement dans la page, et sa valeur est
-# transmise à Python via un aller-retour explicite dans l'URL — un
-# mécanisme simple et déterministe qui ne dépend d'aucune bibliothèque.
+# NOTE : une version précédente lisait/écrivait le cookie via un
+# rechargement complet de la page (fiable, mais lent : ~30-40s à chaque
+# scan QR). On revient donc au composant (rapide, pas de rechargement),
+# avec deux corrections de timing pour fiabiliser sur Safari/iOS :
+#  1) un premier passage "à vide" forcé pour laisser le composant le temps
+#     de récupérer les cookies déjà présents avant toute vérification,
+#  2) une courte pause après l'écriture d'un nouveau cookie, avant de
+#     recharger la vue, pour laisser le temps au navigateur de l'enregistrer.
 REMEMBER_SECRET_KEY = os.environ.get(
     "REMEMBER_SECRET_KEY", "lpee_ctr_csb_remember_me_2026_a_changer"
 )
 REMEMBER_SESSION_DUREE = datetime.timedelta(hours=4)
-REMEMBER_COOKIE_NAME = "lpee_ctr_csb_remember"
+REMEMBER_COOKIE_NAME = "remember_data"
 
 
 def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
@@ -97,59 +99,16 @@ def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
     ).hexdigest()
 
 
-def _injecter_lecture_cookie():
-    """Injecte un script invisible qui lit le cookie 'se souvenir de moi'
-    directement dans le document et le renvoie à Python en l'ajoutant à
-    l'URL (?_lr=...), puis recharge la page une seule fois. C'est ce
-    rechargement contrôlé qui permet à Python de récupérer la valeur du
-    cookie (impossible à lire directement depuis st.components.v1.html,
-    qui n'a pas de canal de retour)."""
-    components.html(
-        """
-        <script>
-        (function() {
-          try {
-            var match = window.parent.document.cookie.match(/(?:^|; )"""
-        + REMEMBER_COOKIE_NAME
-        + """=([^;]*)/);
-            var params = new URLSearchParams(window.parent.location.search);
-            if (match) {
-              params.set('_lr', decodeURIComponent(match[1]));
-            }
-            params.set('_lr_checked', '1');
-            window.parent.location.search = params.toString();
-          } catch (e) {}
-        })();
-        </script>
-        """,
-        height=0,
-    )
+cookie_manager = stx.CookieManager(key="lpee_ctr_csb_cookie_manager")
 
-
-def _injecter_ecriture_cookie(payload_json):
-    """Injecte un script invisible qui écrit directement le cookie 'se
-    souvenir de moi' dans le document (durée = REMEMBER_SESSION_DUREE)."""
-    duree_ms = int(REMEMBER_SESSION_DUREE.total_seconds() * 1000)
-    components.html(
-        """
-        <script>
-        (function() {
-          try {
-            var d = new Date();
-            d.setTime(d.getTime() + """
-        + str(duree_ms)
-        + """);
-            window.parent.document.cookie = \""""
-        + REMEMBER_COOKIE_NAME
-        + """=" + encodeURIComponent('"""
-        + payload_json.replace("\\", "\\\\").replace("'", "\\'")
-        + """') + ";expires=" + d.toUTCString() + ";path=/;SameSite=Lax;Secure";
-          } catch (e) {}
-        })();
-        </script>
-        """,
-        height=0,
-    )
+# Premier passage forcé : sur Safari/iOS notamment, le composant (chargé
+# dans un iframe) a besoin d'un premier aller-retour avant de renvoyer les
+# cookies réellement présents. Sans ce passage, la vérification "se
+# souvenir de moi" plus bas risquerait de s'exécuter avec une valeur encore
+# vide et donc d'afficher l'écran de connexion à tort.
+if "_cookies_bootstrap_ok" not in st.session_state:
+    st.session_state["_cookies_bootstrap_ok"] = True
+    st.rerun()
 
 
 
@@ -359,9 +318,12 @@ def delete_user_db(username):
     return False, str(e)
 
 
-# Initialisation de la mémoire session des utilisateurs
-if "users_db" not in st.session_state:
-  st.session_state["users_db"] = load_users()
+# Chargement paresseux : on ne fait l'appel réseau Supabase que lorsque
+# c'est réellement nécessaire (connexion manuelle ou auto-connexion réussie
+# via cookie, plus bas). Le faire ici de façon systématique coûtait un
+# aller-retour réseau inutile sur CHAQUE nouveau scan QR, y compris sur le
+# passage "jetable" qui précède la vérification du cookie.
+st.session_state.setdefault("users_db", {})
 
 if "user" not in st.session_state:
   st.session_state["user"] = None
@@ -374,48 +336,35 @@ if "can_edit" not in st.session_state:
 # 3bis. AUTO-CONNEXION VIA COOKIE "SE SOUVENIR DE MOI"
 # ==========================================
 if st.session_state["user"] is None:
-  _lr_value = st.query_params.get("_lr")
-  _lr_checked = st.query_params.get("_lr_checked")
+  _cookie_brut = cookie_manager.get(REMEMBER_COOKIE_NAME)
+  if _cookie_brut:
+    try:
+      payload = json.loads(_cookie_brut)
+      remembered_user = payload.get("u")
+      remembered_role = payload.get("r")
+      remembered_can_edit = bool(payload.get("e"))
+      remembered_issued_at = payload.get("t")
+      remembered_token = payload.get("k")
 
-  if _lr_value or _lr_checked:
-    # On revient tout juste de l'aller-retour JS de lecture du cookie :
-    # on exploite la valeur récupérée (si présente) puis on nettoie l'URL.
-    if _lr_value:
-      try:
-        payload = json.loads(_lr_value)
-        remembered_user = payload.get("u")
-        remembered_role = payload.get("r")
-        remembered_can_edit = bool(payload.get("e"))
-        remembered_issued_at = payload.get("t")
-        remembered_token = payload.get("k")
+      jeton_valide = bool(remembered_token) and _generer_jeton_souvenir(
+          remembered_user, remembered_role, remembered_can_edit, remembered_issued_at
+      ) == remembered_token
+      session_expiree = True
+      if jeton_valide:
+        issued_at_dt = datetime.datetime.fromisoformat(remembered_issued_at)
+        session_expiree = (datetime.datetime.utcnow() - issued_at_dt) > REMEMBER_SESSION_DUREE
 
-        jeton_valide = bool(remembered_token) and _generer_jeton_souvenir(
-            remembered_user, remembered_role, remembered_can_edit, remembered_issued_at
-        ) == remembered_token
-        session_expiree = True
-        if jeton_valide:
-          issued_at_dt = datetime.datetime.fromisoformat(remembered_issued_at)
-          session_expiree = (datetime.datetime.utcnow() - issued_at_dt) > REMEMBER_SESSION_DUREE
-
-        if jeton_valide and not session_expiree:
-          st.session_state["user"] = {
-              "username": remembered_user,
-              "role": remembered_role,
-              "can_edit": remembered_can_edit,
-          }
-          st.session_state["role"] = remembered_role
-          st.session_state["can_edit"] = remembered_can_edit
-          st.session_state["users_db"] = load_users()
-      except (ValueError, TypeError, AttributeError, KeyError):
-        pass
-    # Nettoyer les paramètres techniques de l'URL, qu'une connexion ait été
-    # restaurée ou non.
-    st.query_params.clear()
-  elif "_cookie_check_lance" not in st.session_state:
-    # Premier chargement de cette session : on lance (une seule fois) la
-    # vérification du cookie côté navigateur.
-    st.session_state["_cookie_check_lance"] = True
-    _injecter_lecture_cookie()
+      if jeton_valide and not session_expiree:
+        st.session_state["user"] = {
+            "username": remembered_user,
+            "role": remembered_role,
+            "can_edit": remembered_can_edit,
+        }
+        st.session_state["role"] = remembered_role
+        st.session_state["can_edit"] = remembered_can_edit
+        st.session_state["users_db"] = load_users()
+    except (ValueError, TypeError, AttributeError, KeyError):
+      pass
 
 # ==========================================
 # 4. ÉCRAN DE CONNEXION
@@ -457,12 +406,17 @@ if st.session_state["user"] is None:
               "u": username, "r": role, "e": bool(can_edit),
               "t": issued_at_iso, "k": token,
           })
-          _injecter_ecriture_cookie(payload_json)
+          expiration = datetime.datetime.now() + REMEMBER_SESSION_DUREE
+          cookie_manager.set(
+              REMEMBER_COOKIE_NAME, payload_json,
+              key="set_remember_data", expires_at=expiration,
+          )
           # Laisser le temps au navigateur (Safari/iOS en particulier) de
           # réellement écrire le cookie avant que le rerun ci-dessous ne
-          # démonte le script qui l'a posé.
+          # démonte le composant qui le gère.
           time.sleep(0.4)
         st.rerun()
+
 
       if submit_btn:
         fresh_users = load_users()
