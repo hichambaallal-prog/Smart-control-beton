@@ -523,11 +523,7 @@ def obtenir_infos_betonnage_parent(supabase, betonnage_id):
 
 
 def obtenir_infos_betonnage_parents_bulk(supabase, betonnage_ids):
-    """Charge en UNE seule requête les fiches parentes de plusieurs lots à la
-    fois (au lieu d'une requête réseau par lot / par éprouvette). Essentiel
-    pour la performance dès qu'on affiche une liste : sans ça, une liste de
-    50 éprouvettes déclenchait jusqu'à 50 allers-retours réseau séquentiels
-    rien que pour construire les libellés."""
+    """Charge en UNE seule requête les fiches parentes de plusieurs lots à la fois."""
     ids_valides = sorted({int(b) for b in betonnage_ids if b is not None})
     if not ids_valides:
         return {}
@@ -619,11 +615,6 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         lots_dict[b_id].append(ep)
 
     def _est_pv_deja_valide(statut):
-        """Même logique tolérante que côté Historique : on normalise les
-        accents (sinon 'valide' ne matche jamais 'validé' à cause du 'é')
-        et on ignore casse/emoji pour reconnaître un statut déjà 'validé &
-        signé' et le retirer de la liste à réviser, sans retirer les PV
-        rejetés qui, eux, doivent rester à retraiter."""
         if not statut:
             return False
         s = (
@@ -636,15 +627,11 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         return "valide" in s
 
     options_valid = []
-    # Une seule requête réseau pour toutes les fiches parentes des lots, au
-    # lieu d'une requête par lot dans la boucle ci-dessous.
     parents_dict_admin = obtenir_infos_betonnage_parents_bulk(supabase, list(lots_dict.keys()))
     for b_id, list_ep in lots_dict.items():
         info_b = parents_dict_admin.get(b_id, {})
         statut_lot = info_b.get("statut_pv", "⏳ En attente de validation")
         if _est_pv_deja_valide(statut_lot):
-            # PV déjà validé & signé : on ne l'affiche plus ici, il reste
-            # consultable/téléchargeable depuis "Historique Complet & PVs".
             continue
         ref_ctrl = determiner_ref_controle(supabase, b_id, info_b, list_ep[0])
         bl_num = extraire_num_bl(list_ep[0], info_b or {})
@@ -1001,7 +988,6 @@ def show(supabase):
                                 use_container_width=True
                             )
 
-                    # --- Impression : uniquement la grille d'étiquettes QR ---
                     etiquettes_html = "".join(
                         f"""
                         <div class="etiquette">
@@ -1395,6 +1381,7 @@ def show(supabase):
             betonnage_id = sample.get("betonnage_id")
 
             info_betonnage = parents_dict.get(betonnage_id, {}) or obtenir_infos_betonnage_parent(supabase, betonnage_id)
+            historique_complet = obtenir_historique_betonnage(supabase, betonnage_id)
             exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
             num_reception_affiche = sample.get("num_reception") or sample.get("n_reception") or ((info_betonnage or {}).get("num_reception") or "-")
 
@@ -1506,7 +1493,11 @@ def show(supabase):
             df_actuel = st.session_state[lot_key]
 
             st.markdown("---")
-            btn_enregistrer = st.button("💾 Valider et Mettre à Jour Le Lot" if mode_admin else "💾 Valider et Enregistrer Le Lot", type="primary", use_container_width=True)
+            btn_enregistrer = st.button(
+                "💾 Valider et Mettre à Jour Le Lot" if mode_admin else "💾 Valider et Enregistrer Le Lot",
+                type="primary",
+                use_container_width=True
+            )
 
             if btn_enregistrer:
                 if (df_actuel["Force (kN)"].astype(float) == 0).any() and not mode_admin:
