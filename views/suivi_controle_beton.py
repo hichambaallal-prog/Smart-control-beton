@@ -934,7 +934,7 @@ def show(supabase):
                     use_container_width=True, key="btn_download_reception_excel",
                 )
 
-            # --- MODULE ÉTIQUETTES QR CODE ---
+          # --- MODULE ÉTIQUETTES QR CODE ---
             st.divider()
             st.subheader("📱 Étiquettes QR Code")
             
@@ -952,35 +952,78 @@ def show(supabase):
 
                     st.markdown(f"**Génération pour `{rec_num}` ({nb_ep} éprouvettes) :**")
                     
-                    # Bouton Imprimer qui déclenche l'impression de la section QR Code
+                    # Bouton avec script d'impression ciblé
                     st.components.v1.html("""
-                        <style>
-                            @media print {
-                                body * { visibility: hidden; }
-                                #printable-qr-section, #printable-qr-section * { visibility: visible; }
-                                #printable-qr-section { position: absolute; left: 0; top: 0; width: 100%; }
-                            }
-                        </style>
-                        <button onclick="window.parent.print()" style="
-                            background-color: #ffffff;
-                            color: #31333F;
-                            border: 1px solid #d6d6d8;
+                        <button onclick="imprimerSeulementQR()" style="
+                            background-color: #ff4b4b;
+                            color: white;
+                            border: none;
                             border-radius: 8px;
-                            padding: 8px 16px;
-                            font-weight: 500;
+                            padding: 10px 16px;
+                            font-weight: bold;
                             cursor: pointer;
                             display: flex;
                             align-items: center;
                             gap: 8px;
                             width: 100%;
                             justify-content: center;
+                            font-size: 16px;
                         ">
-                            🖨️ Imprimer toutes les étiquettes
+                            🖨️ Imprimer uniquement les QR Codes
                         </button>
-                    """, height=45)
+
+                        <script>
+                        function imprimerSeulementQR() {
+                            const parentDoc = window.parent.document;
+                            
+                            // Supprime l'ancien style d'impression s'il existe
+                            let oldStyle = parentDoc.getElementById('style-print-qr');
+                            if (oldStyle) oldStyle.remove();
+
+                            // Injecte le style d'impression dans le document parent
+                            const style = parentDoc.createElement('style');
+                            style.id = 'style-print-qr';
+                            style.innerHTML = `
+                                @media print {
+                                    /* Cache l'ensemble de l'application Streamlit */
+                                    header, [data-testid="stSidebar"], .stAppHeader, footer, [data-testid="stHeader"] {
+                                        display: none !important;
+                                    }
+                                    
+                                    /* Cache tous les éléments sauf le conteneur des QR codes */
+                                    body * {
+                                        visibility: hidden !important;
+                                    }
+                                    
+                                    /* Rendre visible uniquement la zone des QR Codes */
+                                    #printable-qr-section, #printable-qr-section * {
+                                        visibility: visible !important;
+                                    }
+                                    
+                                    #printable-qr-section {
+                                        position: absolute !important;
+                                        left: 0 !important;
+                                        top: 0 !important;
+                                        width: 100% !important;
+                                    }
+
+                                    /* Cache les boutons de téléchargement individuels à l'impression */
+                                    #printable-qr-section button, #printable-qr-section .stDownloadButton {
+                                        display: none !important;
+                                    }
+                                }
+                            `;
+                            parentDoc.head.appendChild(style);
+
+                            // Lance l'impression
+                            window.parent.print();
+                        }
+                        </script>
+                    """, height=55)
 
                     base_url = "https://smart-control-beton-lt7pusyvxjehm5kphd7hru.streamlit.app"
                     
+                    # Zone à imprimer
                     st.markdown('<div id="printable-qr-section">', unsafe_allow_html=True)
                     cols_qr = st.columns(3)
                     for i in range(1, nb_ep + 1):
