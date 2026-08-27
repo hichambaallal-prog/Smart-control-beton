@@ -152,7 +152,6 @@ def _injecter_ecriture_cookie(payload_json):
     )
 
 
-
 # Injection PWA dans le HEAD du document principal
 pwa_code = """
 <script>
@@ -625,9 +624,7 @@ with st.sidebar:
     if "Suivi Contrôle Béton" in available_pages:
       st.session_state["selected_page"] = "Suivi Contrôle Béton"
       # Nouvelle clé => Streamlit traite le widget comme neuf et applique
-      # obligatoirement l'index demandé (contrairement à un simple
-      # pré-remplissage de session_state sur une clé déjà utilisée, qui peut
-      # être ignoré si le widget a déjà un état côté navigateur).
+      # obligatoirement l'index demandé
       st.session_state["page_widget_seed"] += 1
     else:
       st.warning(
@@ -688,10 +685,6 @@ with st.sidebar:
     st.session_state["user"] = None
     st.session_state["role"] = None
     st.session_state["can_edit"] = False
-    # NOTE : le cookie "se souvenir de moi" n'est PAS supprimé ici. Tant que
-    # la fenêtre de 4h (REMEMBER_SESSION_DUREE) n'est pas écoulée, revenir
-    # sur l'application reconnectera automatiquement sans redemander le mot
-    # de passe. Passé les 4h, le cookie expire et le mot de passe est requis.
     st.rerun()
 
 
