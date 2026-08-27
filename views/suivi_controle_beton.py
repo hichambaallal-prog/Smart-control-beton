@@ -1,3 +1,4 @@
+import base64
 import io
 import re
 import unicodedata
@@ -7,6 +8,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import qrcode
 
 try:
@@ -958,13 +960,15 @@ def show(supabase):
                     nb_ep = int(b_qr.get("nb_eprouvettes") or 12)
 
                     st.markdown(f"**Génération pour `{rec_num}` ({nb_ep} éprouvettes) :**")
-                    
+
                     base_url = "https://smart-control-beton-lt7pusyvxjehm5kphd7hru.streamlit.app"
-                    
+
+                    qr_items = []  # (numero, bytes_png)
                     cols_qr = st.columns(3)
                     for i in range(1, nb_ep + 1):
                         qr_payload = f"{base_url}/?rec={rec_num}&beton_id={b_qr.get('id')}&ep={i}"
                         qr_bytes = generer_qr_code(qr_payload)
+                        qr_items.append((i, qr_bytes))
                         with cols_qr[(i - 1) % 3]:
                             st.caption(f"Éprouvette #{i} / {rec_num}")
                             st.image(qr_bytes, width=140)
@@ -976,6 +980,83 @@ def show(supabase):
                                 key=f"btn_qr_{b_qr.get('id')}_{i}",
                                 use_container_width=True
                             )
+
+                    # --- Impression : uniquement la grille d'étiquettes QR ---
+                    # On construit une mini-page HTML autonome affichée dans une
+                    # iframe isolée. Le bouton "Imprimer" y appelle window.print()
+                    # SUR CETTE IFRAME UNIQUEMENT (pas sur la page Streamlit
+                    # parente) : le navigateur n'imprime donc que le contenu de
+                    # cette iframe (les étiquettes), jamais le menu, la barre
+                    # latérale ou le reste de l'application.
+                    etiquettes_html = "".join(
+                        f"""
+                        <div class="etiquette">
+                          <img src="data:image/png;base64,{base64.b64encode(qr_bytes).decode()}" />
+                          <div class="legende">Éprouvette #{num} / {rec_num}</div>
+                        </div>
+                        """
+                        for num, qr_bytes in qr_items
+                    )
+                    page_impression = f"""
+                    <html>
+                    <head>
+                    <style>
+                      body {{
+                        font-family: Arial, sans-serif;
+                        margin: 0;
+                        padding: 12px;
+                      }}
+                      .barre-actions {{
+                        margin-bottom: 14px;
+                      }}
+                      .barre-actions button {{
+                        background: #FF4B4B;
+                        color: white;
+                        border: none;
+                        padding: 10px 18px;
+                        border-radius: 6px;
+                        font-size: 15px;
+                        cursor: pointer;
+                      }}
+                      .grille {{
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 18px;
+                      }}
+                      .etiquette {{
+                        text-align: center;
+                        width: 150px;
+                        break-inside: avoid;
+                        page-break-inside: avoid;
+                      }}
+                      .etiquette img {{
+                        width: 140px;
+                        height: 140px;
+                      }}
+                      .legende {{
+                        font-size: 12px;
+                        margin-top: 4px;
+                      }}
+                      @media print {{
+                        .barre-actions {{ display: none; }}
+                      }}
+                    </style>
+                    </head>
+                    <body>
+                      <div class="barre-actions">
+                        <button onclick="window.print()">🖨️ Imprimer les étiquettes QR</button>
+                      </div>
+                      <div class="grille">
+                        {etiquettes_html}
+                      </div>
+                    </body>
+                    </html>
+                    """
+                    st.caption(
+                        "Le bouton ci-dessous n'imprime que les étiquettes"
+                        " QR (pas le reste de l'application) :"
+                    )
+                    components.html(page_impression, height=min(250 + 220 * ((nb_ep - 1) // 3 + 1), 900), scrolling=True)
 
     # =========================================================
     # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
