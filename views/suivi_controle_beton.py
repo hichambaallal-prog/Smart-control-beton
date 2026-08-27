@@ -1356,12 +1356,40 @@ def show(supabase):
             )
 
             for idx_key, ep in enumerate(eprouvettes_en_attente):
+                dt_ecras_str = str(ep.get("date_ecrasement") or "")[:10]
+                
+                # --- FILTRE DATE ÉCRASEMENT : Masquer les éprouvettes dont l'échéance n'est pas atteinte ---
+                if not mode_admin and dt_ecras_str:
+                    try:
+                        dt_ecras_obj = datetime.strptime(dt_ecras_str, "%Y-%m-%d").date()
+                        # Ignorer si la date d'échéance n'est pas encore arrivée (sauf scan QR Code explicite)
+                        if dt_ecras_obj > today_date:
+                            is_scanned = (scan_rec and str(scan_rec).strip().lower() in str(ep.get("ref_controle") or "").lower()) or \
+                                         (scan_b_id and str(scan_b_id).strip() == str(ep.get("betonnage_id")).strip())
+                            if not is_scanned:
+                                continue
+                    except Exception:
+                        pass
+
                 b_id_ep = ep.get("betonnage_id")
                 info_b_temp = parents_dict.get(b_id_ep, {})
                 ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
                 num_rec_parent = str((info_b_temp or {}).get("num_reception") or "").strip()
                 classe_ep = ep.get("classe_beton") or (info_b_temp.get("classe_beton") if info_b_temp else "-")
-                cle_groupe = f"Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ep.get('ouvrage', '-')} | Échéance : {ep.get('echeance', '28 jours')} (Date Prévue : {ep.get('date_ecrasement', '-')}) | Lot ID #{b_id_ep}"
+                
+                # Tag de retard ou d'urgence pour la sélection
+                prefixe_retard = ""
+                if dt_ecras_str:
+                    try:
+                        dt_e = datetime.strptime(dt_ecras_str, "%Y-%m-%d").date()
+                        if dt_e < today_date:
+                            prefixe_retard = f"🚨 [RETARD {(today_date - dt_e).days}j] "
+                        elif dt_e == today_date:
+                            prefixe_retard = "⚠️ [À ÉCRASER AUJOURD'HUI] "
+                    except Exception:
+                        pass
+
+                cle_groupe = f"{prefixe_retard}Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ep.get('ouvrage', '-')} | Échéance : {ep.get('echeance', '28 jours')} (Date Prévue : {dt_ecras_str or '-'}) | Lot ID #{b_id_ep}"
 
                 if cle_groupe not in groupes_lots:
                     if scan_rec and (str(scan_rec).strip().lower() in ref_ctrl.lower() or str(scan_rec).strip().lower() in num_rec_parent.lower()):
@@ -1373,156 +1401,160 @@ def show(supabase):
                 groupes_lots[cle_groupe].append(ep)
 
             options_lots = list(groupes_lots.keys())
-            index_defaut = min(index_selectionne, len(options_lots) - 1) if options_lots else 0
 
-            choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes à écraser / modifier :", options_lots, index=index_defaut, key="select_lot_saisie")
-            lot_selected = groupes_lots[choix_lot]
-            sample = lot_selected[0]
-            betonnage_id = sample.get("betonnage_id")
+            if not options_lots:
+                st.info("ℹ️ Aucune éprouvette à écraser pour la date d'aujourd'hui ou en retard. (Seuls les lots arrivés à échéance s'affichent).")
+            else:
+                index_defaut = min(index_selectionne, len(options_lots) - 1) if options_lots else 0
 
-            info_betonnage = parents_dict.get(betonnage_id, {}) or obtenir_infos_betonnage_parent(supabase, betonnage_id)
-            historique_complet = obtenir_historique_betonnage(supabase, betonnage_id)
-            exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
-            num_reception_affiche = sample.get("num_reception") or sample.get("n_reception") or ((info_betonnage or {}).get("num_reception") or "-")
+                choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes à écraser / modifier :", options_lots, index=index_defaut, key="select_lot_saisie")
+                lot_selected = groupes_lots[choix_lot]
+                sample = lot_selected[0]
+                betonnage_id = sample.get("betonnage_id")
 
-            col_l1, col_l2, col_l3, col_l4 = st.columns(4)
-            col_l1.metric("N° Réception", str(num_reception_affiche))
-            col_l2.metric("N° Bon Livraison", exact_bl_phase1)
-            col_l3.metric("Ouvrage", str(((info_betonnage or {}).get("ouvrage")) or sample.get("ouvrage") or "-"))
-            col_l4.metric("Échéance Visée", str(sample.get("echeance", "-")))
+                info_betonnage = parents_dict.get(betonnage_id, {}) or obtenir_infos_betonnage_parent(supabase, betonnage_id)
+                historique_complet = obtenir_historique_betonnage(supabase, betonnage_id)
+                exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
+                num_reception_affiche = sample.get("num_reception") or sample.get("n_reception") or ((info_betonnage or {}).get("num_reception") or "-")
 
-            scan_ep = st.session_state.get("pending_qr_ep")
-            eprouvette_ciblee = None
-            if scan_ep:
-                for ep_c in lot_selected:
-                    rep_c = str(ep_c.get("repere_eprouvette", "")).strip()
-                    if rep_c in (f"/{scan_ep}", str(scan_ep)):
-                        eprouvette_ciblee = ep_c
-                        break
+                col_l1, col_l2, col_l3, col_l4 = st.columns(4)
+                col_l1.metric("N° Réception", str(num_reception_affiche))
+                col_l2.metric("N° Bon Livraison", exact_bl_phase1)
+                col_l3.metric("Ouvrage", str(((info_betonnage or {}).get("ouvrage")) or sample.get("ouvrage") or "-"))
+                col_l4.metric("Échéance Visée", str(sample.get("echeance", "-")))
 
-            if eprouvette_ciblee is not None:
+                scan_ep = st.session_state.get("pending_qr_ep")
+                eprouvette_ciblee = None
+                if scan_ep:
+                    for ep_c in lot_selected:
+                        rep_c = str(ep_c.get("repere_eprouvette", "")).strip()
+                        if rep_c in (f"/{scan_ep}", str(scan_ep)):
+                            eprouvette_ciblee = ep_c
+                            break
+
+                if eprouvette_ciblee is not None:
+                    st.markdown("---")
+                    st.success(f"🎯 **Saisie rapide — Éprouvette {eprouvette_ciblee.get('repere_eprouvette', '?')}** (scannée)")
+                    col_q1, col_q2, col_q3 = st.columns([1.5, 2, 1.5])
+                    with col_q1:
+                        st.metric("Repère", eprouvette_ciblee.get("repere_eprouvette", "-"))
+                    with col_q2:
+                        force_rapide = st.number_input(
+                            "⚡ Force (kN) — saisie directe",
+                            min_value=0.0, max_value=3000.0, step=0.1,
+                            value=float(eprouvette_ciblee.get("force_kn") or 0.0),
+                            key=f"force_rapide_{eprouvette_ciblee['id']}",
+                        )
+                    with col_q3:
+                        st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+                        if st.button("💾 Enregistrer cette éprouvette", type="primary", use_container_width=True, key=f"btn_save_rapide_{eprouvette_ciblee['id']}"):
+                            sec_q = float(eprouvette_ciblee.get("section") or 176.71)
+                            fc_q = round((force_rapide * 10.0) / sec_q, 1) if sec_q > 0 and force_rapide > 0 else 0.0
+                            try:
+                                supabase.table("suivi_controle_beton").update({
+                                    "force_kn": force_rapide, "fc_mpa": fc_q,
+                                }).eq("id", eprouvette_ciblee["id"]).execute()
+                                st.success(f"✅ Enregistré : Éprouvette {eprouvette_ciblee.get('repere_eprouvette')} → {force_rapide} kN / {fc_q} MPa")
+                                st.session_state.pop(f"df_lot_{choix_lot}", None)
+                                st.balloons()
+                            except Exception as e:
+                                st.error(f"❌ Erreur lors de l'enregistrement : {e}")
+                    st.caption("Les autres éprouvettes du lot restent modifiables dans le tableau complet ci-dessous si besoin.")
+
                 st.markdown("---")
-                st.success(f"🎯 **Saisie rapide — Éprouvette {eprouvette_ciblee.get('repere_eprouvette', '?')}** (scannée)")
-                col_q1, col_q2, col_q3 = st.columns([1.5, 2, 1.5])
-                with col_q1:
-                    st.metric("Repère", eprouvette_ciblee.get("repere_eprouvette", "-"))
-                with col_q2:
-                    force_rapide = st.number_input(
-                        "⚡ Force (kN) — saisie directe",
-                        min_value=0.0, max_value=3000.0, step=0.1,
-                        value=float(eprouvette_ciblee.get("force_kn") or 0.0),
-                        key=f"force_rapide_{eprouvette_ciblee['id']}",
-                    )
-                with col_q3:
-                    st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
-                    if st.button("💾 Enregistrer cette éprouvette", type="primary", use_container_width=True, key=f"btn_save_rapide_{eprouvette_ciblee['id']}"):
-                        sec_q = float(eprouvette_ciblee.get("section") or 176.71)
-                        fc_q = round((force_rapide * 10.0) / sec_q, 1) if sec_q > 0 and force_rapide > 0 else 0.0
+                col_g1, col_g2 = st.columns(2)
+                tech_global = col_g1.text_input("Technicien / Opérateur", value=sample.get("technicien", (info_betonnage or {}).get("technicien_prelevement") or "Technicien LPEE"), key="tech_global")
+                obs_globale = col_g2.text_input("Commentaire / Observation", value=sample.get("observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"), key="obs_global")
+
+                st.markdown("##### 📝 Saisie / Modification des forces d'écrasement")
+                ref_controle_courante = determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample)
+                lot_key = f"df_lot_{choix_lot}"
+
+                if lot_key not in st.session_state or mode_admin:
+                    rows_list = []
+                    for ep in lot_selected:
+                        sec = float(ep.get("section") or 176.71)
                         try:
-                            supabase.table("suivi_controle_beton").update({
-                                "force_kn": force_rapide, "fc_mpa": fc_q,
-                            }).eq("id", eprouvette_ciblee["id"]).execute()
-                            st.success(f"✅ Enregistré : Éprouvette {eprouvette_ciblee.get('repere_eprouvette')} → {force_rapide} kN / {fc_q} MPa")
-                            st.session_state.pop(f"df_lot_{choix_lot}", None)
+                            f_kn = float(ep.get("force_kn") or 0.0)
+                        except (ValueError, TypeError):
+                            f_kn = 0.0
+                        fc = round((f_kn * 10.0) / sec, 1) if sec > 0 and f_kn > 0 else 0.0
+                        rows_list.append({
+                            "ID": ep["id"], "🏷️ Référence de Contrôle": str(ep.get("ref_controle") or ref_controle_courante).strip(),
+                            "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"), "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
+                            "_section": sec, "Force (kN)": f_kn, "Résistance Fc (MPa)": fc, "Moyenne Resistance Fc (MPa)": 0.0,
+                        })
+                    df_init = pd.DataFrame(rows_list)
+                    valides_init = df_init[df_init["Résistance Fc (MPa)"] > 0]
+                    df_init["Moyenne Resistance Fc (MPa)"] = round(valides_init["Résistance Fc (MPa)"].mean(), 1) if not valides_init.empty else 0.0
+                    st.session_state[lot_key] = df_init
+
+                def update_fc():
+                    editor_state = st.session_state.get("data_editor_ecrasement", {})
+                    for row_idx, updated_cols in editor_state.get("edited_rows", {}).items():
+                        if "Force (kN)" in updated_cols:
+                            try: new_force = float(updated_cols["Force (kN)"])
+                            except (ValueError, TypeError): new_force = 0.0
+                            sec = float(st.session_state[lot_key].at[row_idx, "_section"])
+                            st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
+                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1) if sec > 0 and new_force > 0 else 0.0
+
+                        if "🏷️ Référence de Contrôle" in updated_cols:
+                            nouvelle_ref = str(updated_cols["🏷️ Référence de Contrôle"] or "").strip()
+                            st.session_state[lot_key].at[row_idx, "🏷️ Référence de Contrôle"] = nouvelle_ref
+                            st.session_state[f"ref_controle_beton_{betonnage_id}"] = nouvelle_ref
+
+                    df_cur = st.session_state[lot_key]
+                    valides = df_cur[df_cur["Résistance Fc (MPa)"].astype(float) > 0]
+                    st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = round(valides["Résistance Fc (MPa)"].astype(float).mean(), 1) if not valides.empty else 0.0
+
+                st.data_editor(
+                    st.session_state[lot_key],
+                    column_config={
+                        "ID": st.column_config.NumberColumn("ID", disabled=True),
+                        "Repère": st.column_config.TextColumn("Repère", disabled=not mode_admin),
+                        "Forme d'éprouvette": st.column_config.TextColumn("Forme d'éprouvette", disabled=True),
+                        "_section": None,
+                        "Force (kN)": st.column_config.NumberColumn("⚡ Force (kN)", min_value=0.0, max_value=3000.0, step=0.1, format="%.1f"),
+                        "Résistance Fc (MPa)": st.column_config.NumberColumn("💥 Résistance Fc (MPa)", disabled=True, format="%.1f"),
+                        "Moyenne Resistance Fc (MPa)": st.column_config.NumberColumn("📊 Moyenne Resistance Fc (MPa)", disabled=True, format="%.1f"),
+                    },
+                    use_container_width=True, hide_index=True, key="data_editor_ecrasement", on_change=update_fc,
+                )
+
+                df_actuel = st.session_state[lot_key]
+
+                st.markdown("---")
+                btn_enregistrer = st.button(
+                    "💾 Valider et Mettre à Jour Le Lot" if mode_admin else "💾 Valider et Enregistrer Le Lot",
+                    type="primary",
+                    use_container_width=True
+                )
+
+                if btn_enregistrer:
+                    if (df_actuel["Force (kN)"].astype(float) == 0).any() and not mode_admin:
+                        st.error("❌ Les forces de rupture doivent toutes être saisies (> 0 kN).")
+                    else:
+                        succes_lot = 0
+                        ref_finale = df_actuel.iloc[0].get("🏷️ Référence de Contrôle")
+                        try: supabase.table("suivi_betonnage").update({"ref_controle": ref_finale}).eq("id", betonnage_id).execute()
+                        except Exception: pass
+
+                        for _, row in df_actuel.iterrows():
+                            upd = {
+                                "ref_controle": row.get("🏷️ Référence de Contrôle"), "repere_eprouvette": row.get("Repère"),
+                                "force_kn": float(row["Force (kN)"]), "fc_mpa": float(row["Résistance Fc (MPa)"]),
+                                "technicien": tech_global, "observations": obs_globale,
+                            }
+                            try:
+                                supabase.table("suivi_controle_beton").update(upd).eq("id", int(row["ID"])).execute()
+                                succes_lot += 1
+                            except Exception as e:
+                                st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
+
+                        if succes_lot == len(df_actuel):
                             st.balloons()
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de l'enregistrement : {e}")
-                st.caption("Les autres éprouvettes du lot restent modifiables dans le tableau complet ci-dessous si besoin.")
-
-            st.markdown("---")
-            col_g1, col_g2 = st.columns(2)
-            tech_global = col_g1.text_input("Technicien / Opérateur", value=sample.get("technicien", (info_betonnage or {}).get("technicien_prelevement") or "Technicien LPEE"), key="tech_global")
-            obs_globale = col_g2.text_input("Commentaire / Observation", value=sample.get("observations", "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"), key="obs_global")
-
-            st.markdown("##### 📝 Saisie / Modification des forces d'écrasement")
-            ref_controle_courante = determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample)
-            lot_key = f"df_lot_{choix_lot}"
-
-            if lot_key not in st.session_state or mode_admin:
-                rows_list = []
-                for ep in lot_selected:
-                    sec = float(ep.get("section") or 176.71)
-                    try:
-                        f_kn = float(ep.get("force_kn") or 0.0)
-                    except (ValueError, TypeError):
-                        f_kn = 0.0
-                    fc = round((f_kn * 10.0) / sec, 1) if sec > 0 and f_kn > 0 else 0.0
-                    rows_list.append({
-                        "ID": ep["id"], "🏷️ Référence de Contrôle": str(ep.get("ref_controle") or ref_controle_courante).strip(),
-                        "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"), "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
-                        "_section": sec, "Force (kN)": f_kn, "Résistance Fc (MPa)": fc, "Moyenne Resistance Fc (MPa)": 0.0,
-                    })
-                df_init = pd.DataFrame(rows_list)
-                valides_init = df_init[df_init["Résistance Fc (MPa)"] > 0]
-                df_init["Moyenne Resistance Fc (MPa)"] = round(valides_init["Résistance Fc (MPa)"].mean(), 1) if not valides_init.empty else 0.0
-                st.session_state[lot_key] = df_init
-
-            def update_fc():
-                editor_state = st.session_state.get("data_editor_ecrasement", {})
-                for row_idx, updated_cols in editor_state.get("edited_rows", {}).items():
-                    if "Force (kN)" in updated_cols:
-                        try: new_force = float(updated_cols["Force (kN)"])
-                        except (ValueError, TypeError): new_force = 0.0
-                        sec = float(st.session_state[lot_key].at[row_idx, "_section"])
-                        st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
-                        st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1) if sec > 0 and new_force > 0 else 0.0
-
-                    if "🏷️ Référence de Contrôle" in updated_cols:
-                        nouvelle_ref = str(updated_cols["🏷️ Référence de Contrôle"] or "").strip()
-                        st.session_state[lot_key].at[row_idx, "🏷️ Référence de Contrôle"] = nouvelle_ref
-                        st.session_state[f"ref_controle_beton_{betonnage_id}"] = nouvelle_ref
-
-                df_cur = st.session_state[lot_key]
-                valides = df_cur[df_cur["Résistance Fc (MPa)"].astype(float) > 0]
-                st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = round(valides["Résistance Fc (MPa)"].astype(float).mean(), 1) if not valides.empty else 0.0
-
-            st.data_editor(
-                st.session_state[lot_key],
-                column_config={
-                    "ID": st.column_config.NumberColumn("ID", disabled=True),
-                    "Repère": st.column_config.TextColumn("Repère", disabled=not mode_admin),
-                    "Forme d'éprouvette": st.column_config.TextColumn("Forme d'éprouvette", disabled=True),
-                    "_section": None,
-                    "Force (kN)": st.column_config.NumberColumn("⚡ Force (kN)", min_value=0.0, max_value=3000.0, step=0.1, format="%.1f"),
-                    "Résistance Fc (MPa)": st.column_config.NumberColumn("💥 Résistance Fc (MPa)", disabled=True, format="%.1f"),
-                    "Moyenne Resistance Fc (MPa)": st.column_config.NumberColumn("📊 Moyenne Resistance Fc (MPa)", disabled=True, format="%.1f"),
-                },
-                use_container_width=True, hide_index=True, key="data_editor_ecrasement", on_change=update_fc,
-            )
-
-            df_actuel = st.session_state[lot_key]
-
-            st.markdown("---")
-            btn_enregistrer = st.button(
-                "💾 Valider et Mettre à Jour Le Lot" if mode_admin else "💾 Valider et Enregistrer Le Lot",
-                type="primary",
-                use_container_width=True
-            )
-
-            if btn_enregistrer:
-                if (df_actuel["Force (kN)"].astype(float) == 0).any() and not mode_admin:
-                    st.error("❌ Les forces de rupture doivent toutes être saisies (> 0 kN).")
-                else:
-                    succes_lot = 0
-                    ref_finale = df_actuel.iloc[0].get("🏷️ Référence de Contrôle")
-                    try: supabase.table("suivi_betonnage").update({"ref_controle": ref_finale}).eq("id", betonnage_id).execute()
-                    except Exception: pass
-
-                    for _, row in df_actuel.iterrows():
-                        upd = {
-                            "ref_controle": row.get("🏷️ Référence de Contrôle"), "repere_eprouvette": row.get("Repère"),
-                            "force_kn": float(row["Force (kN)"]), "fc_mpa": float(row["Résistance Fc (MPa)"]),
-                            "technicien": tech_global, "observations": obs_globale,
-                        }
-                        try:
-                            supabase.table("suivi_controle_beton").update(upd).eq("id", int(row["ID"])).execute()
-                            succes_lot += 1
-                        except Exception as e:
-                            st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
-
-                    if succes_lot == len(df_actuel):
-                        st.balloons()
-                        st.success(f"✅ Lot de {succes_lot} éprouvettes mis à jour / validé !")
+                            st.success(f"✅ Lot de {succes_lot} éprouvettes mis à jour / validé !")
 
     # =========================================================
     # PHASE 3 : VALIDATION ADMIN (PVs)
