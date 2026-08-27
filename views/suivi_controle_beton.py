@@ -592,8 +592,11 @@ def _format_ep_row(ep, date_ref=None):
 # =========================================================
 def afficher_module_validation_admin(supabase, est_admin=False):
     """Affiche le module d'approbation administrative et de signature des PVs."""
-    st.subheader("🛡️ 3. Validation Administrateur & Signatures des PVs")
-    st.info("💡 **Espace Responsables** : Vérifiez la conformité des écrasements et validez le statut officiel des Procès-Verbaux (PV).")
+    st.subheader("🛡️ 3. Validation & Consultation des PVs")
+    if est_admin:
+        st.info("💡 **Espace Administrateur BAALLAL** : vérifiez la conformité des écrasements et validez/signalez officiellement les PVs.")
+    else:
+        st.info("👁️ **Mode consultation** : cette phase est ouverte aux utilisateurs connectés. La validation officielle, le rejet, la signature et la modification des résultats sont réservés à l'administrateur BAALLAL.")
 
     try:
         res = supabase.table("suivi_controle_beton").select("*").not_.is_("force_kn", "null").gt("force_kn", 0).order("id", desc=True).execute()
@@ -750,34 +753,46 @@ def afficher_module_validation_admin(supabase, est_admin=False):
             st.caption("Aucun écrasement à 7 jours n'a encore été enregistré pour ce lot.")
 
     st.markdown("---")
-    with st.form("form_valider_pv"):
-        st.markdown("##### ✍️ Décision & Signatures Officielles")
-        col_sig1, col_sig2 = st.columns(2)
-        resp_essai = col_sig1.text_input("Visa Responsable d'essai", value=info_b_sel.get("visa_resp", "O.IKKEN"))
-        chef_labo = col_sig2.text_input("Visa Chef du laboratoire", value=info_b_sel.get("visa_chef", "H.BAALLAL"))
+    if not est_admin:
+        st.warning("🔐 **Validation officielle désactivée pour votre compte.** Seul l'administrateur **BAALLAL** peut enregistrer une décision, modifier les forces ou signer le PV.")
+        st.markdown("### 📄 Statut du PV")
+        st.write(info_b_sel.get("statut_pv", "⏳ En attente de validation"))
+        if info_b_sel.get("visa_resp"):
+            st.write(f"**Visa Responsable d'essai :** {info_b_sel.get('visa_resp')}")
+        if info_b_sel.get("visa_chef"):
+            st.write(f"**Visa Chef du laboratoire :** {info_b_sel.get('visa_chef')}")
+        if info_b_sel.get("date_validation"):
+            st.write(f"**Date de validation :** {info_b_sel.get('date_validation')}")
+        if info_b_sel.get("observations_admin"):
+            st.write(f"**Observations :** {info_b_sel.get('observations_admin')}")
+    else:
+        with st.form("form_valider_pv"):
+            st.markdown("##### ✍️ Décision & Signatures Officielles")
+            col_sig1, col_sig2 = st.columns(2)
+            resp_essai = col_sig1.text_input("Visa Responsable d'essai", value=info_b_sel.get("visa_resp", "O.IKKEN"))
+            chef_labo = col_sig2.text_input("Visa Chef du laboratoire", value=info_b_sel.get("visa_chef", "H.BAALLAL"))
 
-        statut_decision = st.radio(
-            "Décision d'approbation :",
-            ["✅ Valider et Signer le PV", "⚠️ Remettre en Révision / Rejeter"],
-            horizontal=True
-        )
-        comm_admin = st.text_area("Observations / Instructions complémentaires", value=info_b_sel.get("observations_admin", "Conforme aux spécifications NF EN 12390."))
+            statut_decision = st.radio(
+                "Décision d'approbation :",
+                ["✅ Valider et Signer le PV", "⚠️ Remettre en Révision / Rejeter"],
+                horizontal=True
+            )
+            comm_admin = st.text_area("Observations / Instructions complémentaires", value=info_b_sel.get("observations_admin", "Conforme aux spécifications NF EN 12390."))
 
-        submit_val = st.form_submit_button("💾 Enregistrer la décision de validation", type="primary", use_container_width=True)
+            submit_val = st.form_submit_button("💾 Enregistrer la décision de validation", type="primary", use_container_width=True)
 
-        if submit_val:
-            nouveau_statut = "✅ Validé & Signé" if "Valider" in statut_decision else "❌ Rejeté / En Révision"
-            update_payload = {
-                "statut_pv": nouveau_statut,
-                "visa_resp": resp_essai,
-                "visa_chef": chef_labo,
-                "observations_admin": comm_admin,
-                "date_validation": str(date.today())
-            }
-            try:
-                supabase.table("suivi_betonnage").update(update_payload).eq("id", b_id_sel).execute()
+            if submit_val:
+                nouveau_statut = "✅ Validé & Signé" if "Valider" in statut_decision else "❌ Rejeté / En Révision"
+                update_payload = {
+                    "statut_pv": nouveau_statut,
+                    "visa_resp": resp_essai,
+                    "visa_chef": chef_labo,
+                    "observations_admin": comm_admin,
+                    "date_validation": str(date.today())
+                }
+                try:
+                    supabase.table("suivi_betonnage").update(update_payload).eq("id", b_id_sel).execute()
 
-                if est_admin:
                     df_edit = st.session_state.get(df_key)
                     if df_edit is not None:
                         for _, r in df_edit.iterrows():
@@ -789,13 +804,14 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                             except Exception as e_row:
                                 st.warning(f"⚠️ Éprouvette {r.get('Repère', '-')} : mise à jour de la force impossible ({e_row}).")
 
-                st.session_state.pop(df_key, None)
-                st.session_state.pop(f"{df_key}_len", None)
-                st.success(f"✅ Le statut du PV a été mis à jour avec succès : **{nouveau_statut}**")
-                st.balloons()
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Erreur lors de la mise à jour du statut : {e}")
+                    st.session_state.pop(df_key, None)
+                    st.session_state.pop(f"{df_key}_len", None)
+                    st.success(f"✅ Le statut du PV a été mis à jour avec succès : **{nouveau_statut}**")
+                    st.balloons()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de la mise à jour du statut : {e}")
+
 
 
 # =========================================================
@@ -818,17 +834,27 @@ def show(supabase):
     role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
     can_edit = st.session_state.get("can_edit", False) or bool(user_info.get("can_edit", False))
 
-    if role_user not in ["laboratoire", "labo", "admin", "responsable_labo", "qualite"] and not st.session_state.get("is_admin", False) and not can_edit:
-        st.error("⛔ **Accès Restreint**")
-        st.warning("Ce module est réservé exclusivement au personnel du **Laboratoire de Contrôle**.")
-        return
+    # Tous les utilisateurs authentifiés peuvent consulter les phases,
+    # y compris la Phase 3. Les droits de modification/validation restent
+    # strictement réservés à l'administrateur BAALLAL (voir ci-dessous).
+
+    # Administrateur de référence : BAALLAL uniquement.
+    current_username = str(
+        st.session_state.get("username")
+        or user_info.get("username")
+        or ""
+    ).strip().upper()
+    is_baallal_admin = current_username == "BAALLAL" and (
+        role_user == "admin" or st.session_state.get("is_admin", False)
+    )
 
     mode_admin = False
-    if role_user == "admin" or st.session_state.get("is_admin") or can_edit:
+    if is_baallal_admin:
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔒 Mode Administration / Édition")
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
-        if mode_admin: st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
+        if mode_admin:
+            st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
     # NAVIGATION INTERACTIVE DES PHASES
     widget_key = f"nav_phase_widget_{st.session_state['nav_widget_seed']}"
@@ -1560,7 +1586,10 @@ def show(supabase):
     # PHASE 3 : VALIDATION ADMIN (PVs)
     # =========================================================
     elif onglet_courant == OPTIONS_ONGLETS[3]:
-        est_admin_pv = (role_user == "admin") or st.session_state.get("is_admin", False)
+        # La Phase 3 est visible par tous les utilisateurs authentifiés.
+        # La validation, le rejet, la signature et la modification des forces
+        # sont toutefois réservés exclusivement à l'administrateur BAALLAL.
+        est_admin_pv = is_baallal_admin
         afficher_module_validation_admin(supabase, est_admin=est_admin_pv)
 
 
