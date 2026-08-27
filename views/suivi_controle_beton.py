@@ -522,6 +522,23 @@ def obtenir_infos_betonnage_parent(supabase, betonnage_id):
     return {}
 
 
+def obtenir_infos_betonnage_parents_bulk(supabase, betonnage_ids):
+    """Charge en UNE seule requête les fiches parentes de plusieurs lots à la
+    fois (au lieu d'une requête réseau par lot / par éprouvette). Essentiel
+    pour la performance dès qu'on affiche une liste : sans ça, une liste de
+    50 éprouvettes déclenchait jusqu'à 50 allers-retours réseau séquentiels
+    rien que pour construire les libellés."""
+    ids_valides = sorted({int(b) for b in betonnage_ids if b is not None})
+    if not ids_valides:
+        return {}
+    try:
+        res = supabase.table("suivi_betonnage").select("*").in_("id", ids_valides).execute()
+        return {p["id"]: p for p in (res.data or [])}
+    except Exception as e:
+        st.warning(f"Note : Impossible de charger les fiches parentes en lot : {e}")
+        return {}
+
+
 def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
     session_key = f"ref_controle_beton_{betonnage_id}"
     if st.session_state.get(session_key): return st.session_state[session_key]
@@ -619,8 +636,11 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         return "valide" in s
 
     options_valid = []
+    # Une seule requête réseau pour toutes les fiches parentes des lots, au
+    # lieu d'une requête par lot dans la boucle ci-dessous.
+    parents_dict_admin = obtenir_infos_betonnage_parents_bulk(supabase, list(lots_dict.keys()))
     for b_id, list_ep in lots_dict.items():
-        info_b = obtenir_infos_betonnage_parent(supabase, b_id)
+        info_b = parents_dict_admin.get(b_id, {})
         statut_lot = info_b.get("statut_pv", "⏳ En attente de validation")
         if _est_pv_deja_valide(statut_lot):
             # PV déjà validé & signé : on ne l'affiche plus ici, il reste
@@ -1329,8 +1349,24 @@ def show(supabase):
         st.markdown("---")
 
         try:
-            res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=False).execute()
-            eprouvettes_en_attente = res_att.data if mode_admin else [e for e in (res_att.data or []) if e.get("force_kn") is None or float(e.get("force_kn") or 0) == 0]
+            if mode_admin:
+                # Mode admin : on doit pouvoir rouvrir/corriger des lots déjà
+                # écrasés, donc on charge tout.
+                res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=False).execute()
+                eprouvettes_en_attente = res_att.data or []
+            else:
+                # Hors mode admin : seules les éprouvettes en attente sont
+                # utiles. Filtrer côté serveur (au lieu de télécharger toute
+                # la table pour filtrer ensuite en Python) réduit fortement
+                # le volume transféré, surtout quand la table grandit.
+                res_att = (
+                    supabase.table("suivi_controle_beton")
+                    .select("*")
+                    .or_("force_kn.is.null,force_kn.eq.0")
+                    .order("id", desc=False)
+                    .execute()
+                )
+                eprouvettes_en_attente = res_att.data or []
         except Exception as e:
             eprouvettes_en_attente = []
             st.error(f"Erreur de chargement des essais : {e}")
@@ -1340,10 +1376,17 @@ def show(supabase):
         else:
             groupes_lots = {}
             index_selectionne = 0
-            
+
+            # Une seule requête réseau pour toutes les fiches parentes des lots
+            # concernés (au lieu d'une requête par éprouvette dans la boucle
+            # ci-dessous) : c'était la principale cause de lenteur.
+            parents_dict = obtenir_infos_betonnage_parents_bulk(
+                supabase, [ep.get("betonnage_id") for ep in eprouvettes_en_attente]
+            )
+
             for idx_key, ep in enumerate(eprouvettes_en_attente):
                 b_id_ep = ep.get("betonnage_id")
-                info_b_temp = obtenir_infos_betonnage_parent(supabase, b_id_ep)
+                info_b_temp = parents_dict.get(b_id_ep, {})
                 ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
                 num_rec_parent = str((info_b_temp or {}).get("num_reception") or "").strip()
                 classe_ep = ep.get("classe_beton") or (info_b_temp.get("classe_beton") if info_b_temp else "-")
@@ -1366,7 +1409,7 @@ def show(supabase):
             sample = lot_selected[0]
             betonnage_id = sample.get("betonnage_id")
 
-            info_betonnage = obtenir_infos_betonnage_parent(supabase, betonnage_id)
+            info_betonnage = parents_dict.get(betonnage_id, {}) or obtenir_infos_betonnage_parent(supabase, betonnage_id)
             historique_complet = obtenir_historique_betonnage(supabase, betonnage_id)
             exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
             num_reception_affiche = sample.get("num_reception") or sample.get("n_reception") or ((info_betonnage or {}).get("num_reception") or "-")
