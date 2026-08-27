@@ -934,113 +934,129 @@ def show(supabase):
                     use_container_width=True, key="btn_download_reception_excel",
                 )
 
-          # --- MODULE ÉTIQUETTES QR CODE ---
-            st.divider()
-            st.subheader("📱 Étiquettes QR Code")
+         # --- MODULE ÉTIQUETTES QR CODE ---
+st.divider()
+st.subheader("📱 Étiquettes QR Code")
+
+receptions_validees = [b for b in betonnages_preleves if b.get("num_reception") and str(b.get("num_reception")).strip() not in ["", "-", "None"]]
+
+if not receptions_validees:
+    st.warning("⚠️ Renseignez et enregistrez un **N° de Réception** dans le tableau ci-dessus pour générer les QR Codes.")
+else:
+    with st.expander("🖨️ Afficher & Imprimer les QR Codes des Éprouvettes", expanded=True):
+        opt_qr = {f"Réception N° {b.get('num_reception')} | {b.get('ouvrage', '-')} ({extraire_date_coulee(b)})": b for b in receptions_validees}
+        choix_qr_lab = st.selectbox("Choisir la Réception à étiqueter :", list(opt_qr.keys()), key="select_qr_reception")
+        b_qr = opt_qr[choix_qr_lab]
+        rec_num = b_qr.get("num_reception")
+        nb_ep = int(b_qr.get("nb_eprouvettes") or 12)
+
+        st.markdown(f"**Génération pour `{rec_num}` ({nb_ep} éprouvettes) :**")
+        
+        base_url = "https://smart-control-beton-lt7pusyvxjehm5kphd7hru.streamlit.app"
+        
+        # 1. Génération des QR codes en mémoire pour l'affichage et l'impression
+        qr_items_html = ""
+        cols_qr = st.columns(3)
+        
+        for i in range(1, nb_ep + 1):
+            qr_payload = f"{base_url}/?rec={rec_num}&beton_id={b_qr.get('id')}&ep={i}"
+            qr_bytes = generer_qr_code(qr_payload)
             
-            receptions_validees = [b for b in betonnages_preleves if b.get("num_reception") and str(b.get("num_reception")).strip() not in ["", "-", "None"]]
+            # Conversion en Base64 pour injection HTML dans la fenêtre d'impression
+            import base64
+            qr_b64 = base64.b64encode(qr_bytes).decode("utf-8")
+            
+            qr_items_html += f"""
+                <div style="border: 1px dashed #ccc; padding: 10px; text-align: center; border-radius: 6px; page-break-inside: avoid;">
+                    <div style="font-size: 12px; font-weight: bold; margin-bottom: 5px;">Éprouvette #{i}</div>
+                    <div style="font-size: 11px; color: #555; margin-bottom: 5px;">Réf: {rec_num}</div>
+                    <img src="data:image/png;base64,{qr_b64}" width="120" height="120" />
+                </div>
+            """
+            
+            # Affichage dans l'interface Streamlit
+            with cols_qr[(i - 1) % 3]:
+                st.caption(f"Éprouvette #{i} / {rec_num}")
+                st.image(qr_bytes, width=140)
+                st.download_button(
+                    label=f"📥 QR Épr. #{i}",
+                    data=qr_bytes,
+                    file_name=f"QR_{str(rec_num).replace('/', '_')}_Ep{i}.png",
+                    mime="image/png",
+                    key=f"btn_qr_{b_qr.get('id')}_{i}",
+                    use_container_width=True
+                )
 
-            if not receptions_validees:
-                st.warning("⚠️ Renseignez et enregistrez un **N° de Réception** dans le tableau ci-dessus pour générer les QR Codes.")
-            else:
-                with st.expander("🖨️ Afficher & Imprimer les QR Codes des Éprouvettes", expanded=True):
-                    opt_qr = {f"Réception N° {b.get('num_reception')} | {b.get('ouvrage', '-')} ({extraire_date_coulee(b)})": b for b in receptions_validees}
-                    choix_qr_lab = st.selectbox("Choisir la Réception à étiqueter :", list(opt_qr.keys()), key="select_qr_reception")
-                    b_qr = opt_qr[choix_qr_lab]
-                    rec_num = b_qr.get("num_reception")
-                    nb_ep = int(b_qr.get("nb_eprouvettes") or 12)
+        # 2. Bouton déclenchant l'impression autonome dans une popup
+        html_print_script = f"""
+            <button onclick="imprimerQRUniquement()" style="
+                background-color: #ff4b4b;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 20px;
+                font-weight: bold;
+                cursor: pointer;
+                width: 100%;
+                font-size: 16px;
+                margin-top: 10px;
+            ">
+                🖨️ Imprimer uniquement la fiche QR Codes
+            </button>
 
-                    st.markdown(f"**Génération pour `{rec_num}` ({nb_ep} éprouvettes) :**")
-                    
-                    # Bouton avec script d'impression ciblé
-                    st.components.v1.html("""
-                        <button onclick="imprimerSeulementQR()" style="
-                            background-color: #ff4b4b;
-                            color: white;
-                            border: none;
-                            border-radius: 8px;
-                            padding: 10px 16px;
-                            font-weight: bold;
-                            cursor: pointer;
-                            display: flex;
-                            align-items: center;
-                            gap: 8px;
-                            width: 100%;
-                            justify-content: center;
-                            font-size: 16px;
-                        ">
-                            🖨️ Imprimer uniquement les QR Codes
-                        </button>
-
+            <script>
+            function imprimerQRUniquement() {{
+                const printWindow = window.open('', '_blank', 'width=800,height=600');
+                const htmlContent = `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>Impression QR Codes - {rec_num}</title>
+                        <style>
+                            body {{
+                                font-family: Arial, sans-serif;
+                                margin: 20px;
+                            }}
+                            .header {{
+                                text-align: center;
+                                margin-bottom: 20px;
+                                border-bottom: 2px solid #333;
+                                padding-bottom: 10px;
+                            }}
+                            .grid {{
+                                display: grid;
+                                grid-template-columns: repeat(3, 1fr);
+                                gap: 15px;
+                            }}
+                            @media print {{
+                                body {{ margin: 0; }}
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h2>LPEE - CTR-CSB</h2>
+                            <h3>Étiquettes QR Code - Réception N° {rec_num}</h3>
+                        </div>
+                        <div class="grid">
+                            {qr_items_html}
+                        </div>
                         <script>
-                        function imprimerSeulementQR() {
-                            const parentDoc = window.parent.document;
-                            
-                            // Supprime l'ancien style d'impression s'il existe
-                            let oldStyle = parentDoc.getElementById('style-print-qr');
-                            if (oldStyle) oldStyle.remove();
-
-                            // Injecte le style d'impression dans le document parent
-                            const style = parentDoc.createElement('style');
-                            style.id = 'style-print-qr';
-                            style.innerHTML = `
-                                @media print {
-                                    /* Cache l'ensemble de l'application Streamlit */
-                                    header, [data-testid="stSidebar"], .stAppHeader, footer, [data-testid="stHeader"] {
-                                        display: none !important;
-                                    }
-                                    
-                                    /* Cache tous les éléments sauf le conteneur des QR codes */
-                                    body * {
-                                        visibility: hidden !important;
-                                    }
-                                    
-                                    /* Rendre visible uniquement la zone des QR Codes */
-                                    #printable-qr-section, #printable-qr-section * {
-                                        visibility: visible !important;
-                                    }
-                                    
-                                    #printable-qr-section {
-                                        position: absolute !important;
-                                        left: 0 !important;
-                                        top: 0 !important;
-                                        width: 100% !important;
-                                    }
-
-                                    /* Cache les boutons de téléchargement individuels à l'impression */
-                                    #printable-qr-section button, #printable-qr-section .stDownloadButton {
-                                        display: none !important;
-                                    }
-                                }
-                            `;
-                            parentDoc.head.appendChild(style);
-
-                            // Lance l'impression
-                            window.parent.print();
-                        }
+                            window.onload = function() {{
+                                window.print();
+                                setTimeout(function() {{ window.close(); }}, 500);
+                            }};
                         </script>
-                    """, height=55)
-
-                    base_url = "https://smart-control-beton-lt7pusyvxjehm5kphd7hru.streamlit.app"
-                    
-                    # Zone à imprimer
-                    st.markdown('<div id="printable-qr-section">', unsafe_allow_html=True)
-                    cols_qr = st.columns(3)
-                    for i in range(1, nb_ep + 1):
-                        qr_payload = f"{base_url}/?rec={rec_num}&beton_id={b_qr.get('id')}&ep={i}"
-                        qr_bytes = generer_qr_code(qr_payload)
-                        with cols_qr[(i - 1) % 3]:
-                            st.caption(f"Éprouvette #{i} / {rec_num}")
-                            st.image(qr_bytes, width=140)
-                            st.download_button(
-                                label=f"📥 QR Épr. #{i}",
-                                data=qr_bytes,
-                                file_name=f"QR_{str(rec_num).replace('/', '_')}_Ep{i}.png",
-                                mime="image/png",
-                                key=f"btn_qr_{b_qr.get('id')}_{i}",
-                                use_container_width=True
-                            )
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    </body>
+                    </html>
+                `;
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+            }}
+            </script>
+        """
+        
+        st.components.v1.html(html_print_script, height=70)
 
     # =========================================================
     # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
