@@ -1146,7 +1146,7 @@ def show(supabase):
                                         try: supabase.table("suivi_betonnage").update({"num_reception": ref_ctrl}).eq("id", b_id).execute()
                                         except Exception: pass
                                     nb_succes += 1
-                                except Exception as err:
+                                me:
                                     st.error(f"Erreur pour #{ep_id} : {err}")
                             if nb_succes > 0:
                                 st.success(f"✅ {nb_succes} programmation(s) mise(s) à jour !")
@@ -1333,9 +1333,11 @@ def show(supabase):
                 res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=False).execute()
                 eprouvettes_en_attente = res_att.data or []
             else:
+                # Filtrage : n'afficher que les éprouvettes non écrasées ET dont la date d'écrasement est atteinte ou passée (<= date courante)
                 res_att = (
                     supabase.table("suivi_controle_beton")
                     .select("*")
+                    .lte("date_ecrasement", today_str)
                     .or_("force_kn.is.null,force_kn.eq.0")
                     .order("id", desc=False)
                     .execute()
@@ -1346,7 +1348,7 @@ def show(supabase):
             st.error(f"Erreur de chargement des essais : {e}")
 
         if not eprouvettes_en_attente:
-            st.info("👍 Aucune éprouvette en attente de saisie.")
+            st.info("👍 Aucune éprouvette en attente de saisie pour la date d'aujourd'hui ou antérieure.")
         else:
             groupes_lots = {}
             index_selectionne = 0
