@@ -1002,12 +1002,6 @@ def show(supabase):
                             )
 
                     # --- Impression : uniquement la grille d'étiquettes QR ---
-                    # On construit une mini-page HTML autonome affichée dans une
-                    # iframe isolée. Le bouton "Imprimer" y appelle window.print()
-                    # SUR CETTE IFRAME UNIQUEMENT (pas sur la page Streamlit
-                    # parente) : le navigateur n'imprime donc que le contenu de
-                    # cette iframe (les étiquettes), jamais le menu, la barre
-                    # latérale ou le reste de l'application.
                     etiquettes_html = "".join(
                         f"""
                         <div class="etiquette">
@@ -1350,15 +1344,9 @@ def show(supabase):
 
         try:
             if mode_admin:
-                # Mode admin : on doit pouvoir rouvrir/corriger des lots déjà
-                # écrasés, donc on charge tout.
                 res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=False).execute()
                 eprouvettes_en_attente = res_att.data or []
             else:
-                # Hors mode admin : seules les éprouvettes en attente sont
-                # utiles. Filtrer côté serveur (au lieu de télécharger toute
-                # la table pour filtrer ensuite en Python) réduit fortement
-                # le volume transféré, surtout quand la table grandit.
                 res_att = (
                     supabase.table("suivi_controle_beton")
                     .select("*")
@@ -1377,9 +1365,6 @@ def show(supabase):
             groupes_lots = {}
             index_selectionne = 0
 
-            # Une seule requête réseau pour toutes les fiches parentes des lots
-            # concernés (au lieu d'une requête par éprouvette dans la boucle
-            # ci-dessous) : c'était la principale cause de lenteur.
             parents_dict = obtenir_infos_betonnage_parents_bulk(
                 supabase, [ep.get("betonnage_id") for ep in eprouvettes_en_attente]
             )
@@ -1410,7 +1395,6 @@ def show(supabase):
             betonnage_id = sample.get("betonnage_id")
 
             info_betonnage = parents_dict.get(betonnage_id, {}) or obtenir_infos_betonnage_parent(supabase, betonnage_id)
-            historique_complet = obtenir_historique_betonnage(supabase, betonnage_id)
             exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
             num_reception_affiche = sample.get("num_reception") or sample.get("n_reception") or ((info_betonnage or {}).get("num_reception") or "-")
 
@@ -1520,44 +1504,9 @@ def show(supabase):
             )
 
             df_actuel = st.session_state[lot_key]
-            dict_actuel = {int(row["ID"]): row for _, row in df_actuel.iterrows()}
-            export_data = []
-
-            for ep_h in (historique_complet or lot_selected):
-                ep_id, sec_h = ep_h["id"], float(ep_h.get("section") or 176.71)
-                if ep_id in dict_actuel:
-                    r_s = dict_actuel[ep_id]
-                    f_kn, fc_mpa = float(r_s["Force (kN)"]), float(r_s["Résistance Fc (MPa)"])
-                    ref_p, rep_s = str(r_s["🏷️ Référence de Contrôle"]).strip(), str(r_s["Repère"]).strip()
-                else:
-                    try:
-                        f_kn = float(ep_h.get("force_kn") or 0.0)
-                    except (ValueError, TypeError):
-                        f_kn = 0.0
-                    fc_mpa = float(ep_h.get("fc_mpa") or (round((f_kn * 10.0) / sec_h, 1) if f_kn > 0 else 0.0))
-                    ref_p, rep_s = str(ep_h.get("ref_controle") or ref_controle_courante).strip(), str(ep_h.get("repere_eprouvette", f"/{ep_id}")).strip()
-
-                export_data.append({
-                    "repere_eprouvette": f"{ref_p}{rep_s}" if ref_p else rep_s,
-                    "forme": ep_h.get("forme", "Cylindrique 150x300"), "section": sec_h, "force_kn": f_kn, "fc_mpa": fc_mpa,
-                    "date_essai": ep_h.get("date_ecrasement", "-"), "age": str(ep_h.get("echeance", "28")).replace(" jours", "").replace("j", ""),
-                    "statut": "En cours" if f_kn == 0 else "Réalisé",
-                })
-
-            infos_header = {
-                "re_num": "25/260/LGV/ B/", "dossier": "2025-260-05985-2025-0247", "client": "TGCC",
-                "num_bl": exact_bl_phase1, "ouvrage": (info_betonnage or {}).get("ouvrage") or sample.get("ouvrage"),
-                "lieu_prelevement": (info_betonnage or {}).get("ouvrage") or sample.get("ouvrage"),
-                "classe_beton": sample.get("classe_beton", "C35/45"), "date_coulee": extraire_date_coulee(info_betonnage or sample),
-                "affaissement": (info_betonnage or {}).get("affaissement"), "temperature": (info_betonnage or {}).get("temperature"),
-                "forme": sample.get("forme", "Cylindrique 150x300"), "centrale": (info_betonnage or {}).get("centrale") or sample.get("centrale"),
-                "observations": obs_globale, "technicien_prelevement": (info_betonnage or {}).get("technicien_prelevement") or tech_global,
-            }
 
             st.markdown("---")
-            col_b1, col_b2 = st.columns(2)
-            btn_enregistrer = col_b1.button("💾 Valider et Mettre à Jour Le Lot" if mode_admin else "💾 Valider et Enregistrer Le Lot", type="primary", use_container_width=True)
-            col_b2.download_button("📄 Télécharger le PV (Excel Modèle LPEE)", generer_pv_excel(export_data, infos_header), file_name=f"PV_Ecrasement_LPEE_{exact_bl_phase1 if exact_bl_phase1 != '-' else 'BL'}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            btn_enregistrer = st.button("💾 Valider et Mettre à Jour Le Lot" if mode_admin else "💾 Valider et Enregistrer Le Lot", type="primary", use_container_width=True)
 
             if btn_enregistrer:
                 if (df_actuel["Force (kN)"].astype(float) == 0).any() and not mode_admin:
