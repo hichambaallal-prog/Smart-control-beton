@@ -934,7 +934,7 @@ def show(supabase):
                     use_container_width=True, key="btn_download_reception_excel",
                 )
 
-         # --- MODULE ÉTIQUETTES QR CODE ---
+     # --- MODULE ÉTIQUETTES QR CODE ---
 st.divider()
 st.subheader("📱 Étiquettes QR Code")
 
@@ -1057,7 +1057,6 @@ else:
         """
         
         st.components.v1.html(html_print_script, height=70)
-
     # =========================================================
     # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
     # =========================================================
