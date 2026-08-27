@@ -26,8 +26,37 @@ OPTIONS_ONGLETS = [
 
 
 # ==============================================================================
-# FONCTION UTILITAIRE : EXTRACTION DU NOMBRE DE JOURS
+# FONCTIONS UTILITAIRES : EXTRACTION DE DATES ET DÉLAIS (DAP-PANDAS & REGEX)
 # ==============================================================================
+def calculer_date_ecrasement(df):
+    """
+    Calcule la 'Date Écrasement Prévue' à partir de 'Date Coulée'
+    et du délai spécifié dans 'Échéance Visée' (ex: '7 jours', '28 jours').
+    """
+    df_result = df.copy()
+
+    # 1. Conversion de Date Coulée au format datetime
+    df_result['Date Coulée'] = pd.to_datetime(df_result['Date Coulée'])
+
+    # 2. Extraction du nombre de jours
+    nb_jours = (
+        df_result['Échéance Visée']
+        .astype(str)
+        .str.extract(r'(\d+)')
+        .fillna(0)[0]
+        .astype(int)
+    )
+
+    # 3. Calcul de la Date Écrasement Prévue en ajoutant le nombre de jours
+    df_result['Date Écrasement Prévue'] = df_result['Date Coulée'] + pd.to_timedelta(nb_jours, unit='D')
+
+    # 4. Formate les dates au format YYYY-MM-DD
+    df_result['Date Coulée'] = df_result['Date Coulée'].dt.strftime('%Y-%m-%d')
+    df_result['Date Écrasement Prévue'] = df_result['Date Écrasement Prévue'].dt.strftime('%Y-%m-%d')
+
+    return df_result
+
+
 def extraire_nb_jours(echeance_str, default=28):
     """Extrait le nombre de jours numérique à partir d'une chaîne (ex: '28 jours', '7 J')."""
     if pd.isna(echeance_str) or not echeance_str:
@@ -525,7 +554,7 @@ def obtenir_infos_betonnage_parent(supabase, betonnage_id):
         if res.data: return res.data[0]
     except Exception as e:
         st.warning(f"Note : Impossible de charger la fiche parent #{betonnage_id} : {e}")
-    return {}
+        return {}
 
 
 def obtenir_infos_betonnage_parents_bulk(supabase, betonnage_ids):
@@ -1101,7 +1130,7 @@ def show(supabase):
                             date_coulee_correcte = extraire_date_coulee(parent_beton)
                             dt_coulee_ep = str(ep.get("date_coulee") or "").strip()
                             
-                            # Correction automatique si désynchronisé
+                            # Synchronisation automatique
                             if dt_coulee_ep != date_coulee_correcte:
                                 ep["date_coulee"] = date_coulee_correcte
                                 nb_j = extraire_nb_jours(ep.get("echeance"), default=28)
@@ -1153,21 +1182,20 @@ def show(supabase):
                                 break
 
                         if not bloque_mod:
+                            # Utilisation de calculer_date_ecrasement en vectoriel sur le lot modifié
+                            df_calcul_temp = df_prog_modifiee[['date_coulee', 'echeance']].rename(
+                                columns={'date_coulee': 'Date Coulée', 'echeance': 'Échéance Visée'}
+                            )
+                            df_calcul_resultat = calculer_date_ecrasement(df_calcul_temp)
+
                             nb_succes = 0
-                            for _, r_m in df_prog_modifiee.iterrows():
+                            for index_row, r_m in df_prog_modifiee.iterrows():
                                 ep_id, b_id = int(r_m["id"]), r_m.get("betonnage_id")
                                 ref_ctrl = str(r_m.get("ref_controle", "")).strip()
                                 
-                                # Calcul dynamique strict : Date Écrasement = Date Coulée + Échéance Visée
+                                dt_coulee_str = df_calcul_resultat.at[index_row, 'Date Coulée']
+                                dt_ecrasement_calc = df_calcul_resultat.at[index_row, 'Date Écrasement Prévue']
                                 ech_str = str(r_m.get("echeance", "")).strip()
-                                nb_jours_m = extraire_nb_jours(ech_str, default=28)
-                                    
-                                dt_coulee_str = str(r_m.get("date_coulee", "")).strip()[:10]
-                                try:
-                                    dt_c_obj = datetime.strptime(dt_coulee_str, "%Y-%m-%d").date()
-                                    dt_ecrasement_calc = str(dt_c_obj + timedelta(days=nb_jours_m))
-                                except Exception:
-                                    dt_ecrasement_calc = str(r_m.get("date_ecrasement", "")).strip()
 
                                 pay = {
                                     "ref_controle": ref_ctrl,
@@ -1248,17 +1276,23 @@ def show(supabase):
             col2.text_input("Ouvrage / Élément", value=ouvrage_p, disabled=True, key=f"p_ouv_{b_id}")
             col3.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
 
-            # CALCUL DYNAMIQUE DIRECT DE LA DATE D'ÉCRASEMENT PRÉVUE
+            # CALCUL DYNAMIQUE ET VECTORIEL DE LA DATE D'ÉCRASEMENT PRÉVUE VIA LA FONCTION PRINCIPALE
             options_echeances = ["3 jours", "7 jours", "28 jours", "90 jours"]
             echeance_p = st.selectbox("Âge / Échéance visée", options_echeances, key=f"p_echeance_{b_id}")
             
+            # Utilisation directe du dataframe pour calculer la date
+            df_calcul_single = pd.DataFrame([{
+                'Date Coulée': str(date_coulee_p),
+                'Échéance Visée': echeance_p
+            }])
+            df_calcul_single_res = calculer_date_ecrasement(df_calcul_single)
+            date_ecrasement_calculee = datetime.strptime(df_calcul_single_res.at[0, 'Date Écrasement Prévue'], "%Y-%m-%d").date()
+
             nb_j = extraire_nb_jours(echeance_p, default=28)
-            date_ecrasement_calculee = date_coulee_p + timedelta(days=nb_j)
 
             col_e1, col_e2, col_e3 = st.columns(3)
             col_e1.date_input("Date de Coulée (Phase 0)", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
             
-            # Calcul automatique : Date Écrasement Prévue = Date Coulée + Échéance Visée
             date_ecrasement_prevue = col_e2.date_input("Date d'Écrasement Prévue", value=date_ecrasement_calculee, key=f"p_date_ecras_{b_id}_{nb_j}j")
             
             max_allowed = solde_disponible if not mode_admin else 50
