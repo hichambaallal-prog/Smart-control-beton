@@ -199,7 +199,9 @@ def generate_pdf_courbe(
 
   # Alignement de l'axe X pour afficher l'ensemble des dates de la période
   ax.set_xticks(range(len(df_grouped)))
-  ax.set_xticklabels(df_grouped["X_Axis"], rotation=45 if len(df_grouped) > 8 else 0)
+  ax.set_xticklabels(
+      df_grouped["X_Axis"], rotation=45 if len(df_grouped) > 8 else 0
+  )
 
   plt.tight_layout()
 
@@ -461,9 +463,7 @@ def afficher_evolution_resistances(df, key_suffix=""):
   pdf_courbe_bytes = generate_pdf_courbe(
       df_grouped, classe_selectionnee, fck_cible, mode_agreg
   )
-  clean_cls = (
-      str(classe_selectionnee).replace(" ", "_").replace("/", "-")
-  )
+  clean_cls = str(classe_selectionnee).replace(" ", "_").replace("/", "-")
 
   with col_dl1:
     st.download_button(
@@ -489,7 +489,9 @@ def afficher_evolution_resistances(df, key_suffix=""):
 # =========================================================
 
 
-def generate_excel_synthesis_betonnage(df_data, titre_periode, is_mensuel=False):
+def generate_excel_synthesis_betonnage(
+    df_data, titre_periode, is_mensuel=False
+):
   output = io.BytesIO()
   wb = openpyxl.Workbook()
   ws = wb.active
@@ -1393,12 +1395,16 @@ def load_and_process_controle_data(supabase):
     for ech in ["3 jours", "7 jours", "28 jours"]:
       vals = group_df[group_df["echeance_clean"] == ech]["fc_mpa"].dropna()
       if not vals.empty:
-        if len(vals) == 1:
-          row_dict[f"fc_mpa_{ech}"] = round(vals.iloc[0], 1)
+        if ech == "7 jours":
+          # Calcul de la moyenne des résultats à 7 jours
+          row_dict[f"fc_mpa_{ech}"] = round(vals.mean(), 1)
         else:
-          row_dict[f"fc_mpa_{ech}"] = " - ".join(
-              [f"{round(v, 1):.1f}" for v in vals]
-          )
+          if len(vals) == 1:
+            row_dict[f"fc_mpa_{ech}"] = round(vals.iloc[0], 1)
+          else:
+            row_dict[f"fc_mpa_{ech}"] = " - ".join(
+                [f"{round(v, 1):.1f}" for v in vals]
+            )
       else:
         row_dict[f"fc_mpa_{ech}"] = None
 
