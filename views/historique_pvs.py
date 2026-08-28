@@ -549,45 +549,48 @@ def generer_pv_pdf(export_data, infos_header):
       (5, row_visa_nom, 7, row_visa_nom, "TOP"),
   ]
 
-  # ==========================================================================
-  # HAUTEURS STRICTEMENT CALCULÉES POUR VERROUILLER 1 PAGE A4
-  # ==========================================================================
-  fixed_heights = {
-      0: 12,
-      1: 10,
-      2: 10,
-      3: 13,
-      4: 10,
-      5: 10,
-      6: 14,
-      7: 18,
-      8: 10,
-      9: 11,
-      10: 11,
-      11: 11,
-      12: 10,
-      13: 10,
-      row_comment: 12,
-      row_visa_titre: 10,
-  }
+ # ==========================================================================
+    # HAUTEURS STRICTEMENT CALCULÉES POUR VERROUILLER 1 PAGE A4
+    # ==========================================================================
+    HEIGHT_VISA_NOM = 35
 
-  h_fixes = sum(fixed_heights.values())
-  hauteur_disponible = total_page_height - h_fixes
+    fixed_heights = {
+        0: 12,
+        1: 10,
+        2: 10,
+        3: 13,
+        4: 10,
+        5: 10,
+        6: 14,
+        7: 18,
+        8: 10,
+        9: 11,
+        10: 11,
+        11: 11,
+        12: 10,
+        13: 10,
+        row_comment: 12,
+        row_visa_titre: 10,
+        row_visa_nom: HEIGHT_VISA_NOM,
+    }
 
-  nb_body_rows = len(row_indices_body)
-  body_h_unit = max(min(hauteur_disponible * 0.50 / max(nb_body_rows, 1), 14), 10)
-  visa_nom_h = max(hauteur_disponible - (body_h_unit * nb_body_rows), 20)
+    h_fixes = sum(fixed_heights.values())
+    hauteur_disponibile = total_page_height - h_fixes
 
-  list_row_heights = []
-  for idx in range(len(data)):
-    if idx in row_indices_body:
-      list_row_heights.append(body_h_unit)
-    elif idx == row_visa_nom:
-      list_row_heights.append(visa_nom_h)
+    nb_body_rows = len(row_indices_body)
+    if nb_body_rows > 0:
+      body_h_unit = max(min(hauteur_disponibile / nb_body_rows, 13.0), 9.0)
     else:
-      list_row_heights.append(fixed_heights.get(idx, 10))
+      body_h_unit = 10.0
 
-  table = Table(data, colWidths=col_widths, rowHeights=list_row_heights)
+    list_row_heights = []
+    for idx in range(len(data)):
+      if idx in row_indices_body:
+        list_row_heights.append(body_h_unit)
+      else:
+        list_row_heights.append(fixed_heights.get(idx, 10))
+
+    table = Table(data, colWidths=col_widths, rowHeights=list_row_heights)
 
   style_cmds = [
       ("GRID", (0, 0), (-1, -1), 0.5, BLACK),
