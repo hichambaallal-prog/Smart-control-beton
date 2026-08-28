@@ -464,14 +464,12 @@ if (
   )
 
 try:
-    from views import (
-        essai_Plaque,
-        historique_pvs,
-        suivi_Betonnage,
-        suivi_controle_beton,
-        synthese_Beton,
-        synthese_plaque,
-    )
+    import views.essai_Plaque as essai_Plaque
+    import views.historique_pvs as historique_pvs
+    import views.suivi_Betonnage as suivi_Betonnage
+    import views.suivi_controle_beton as suivi_controle_beton
+    import views.synthese_Beton as synthese_Beton
+    import views.synthese_plaque as synthese_plaque
 except ImportError as e:
     st.error(f"❌ Erreur lors de l'importation des modules : {e}")
     st.stop()
