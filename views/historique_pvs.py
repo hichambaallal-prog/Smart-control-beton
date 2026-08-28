@@ -940,7 +940,6 @@ def exporter_pv_excel(export_data, infos_header):
     else:
       ws[f"E{cur_row}"] = f_kn
       ws[f"E{cur_row}"].number_format = "0.0"
-      # Formule Excel pour la résistance : (Force * 10) / Section
       sec = float(item.get("section") or 176.71)
       ws[f"F{cur_row}"] = f"=(E{cur_row}*10)/{sec}"
       ws[f"F{cur_row}"].number_format = "0.0"
@@ -974,7 +973,6 @@ def exporter_pv_excel(export_data, infos_header):
       cell_h.value = f"=AVERAGE(F{start_r}:F{end_r})"
       cell_h.number_format = "0.0"
 
-      # Calcul de valeur secours pour commentaire si besoin
       vals = [
           float(export_data[i - 15].get("fc_mpa", 0.0))
           for i in lignes
@@ -1423,29 +1421,30 @@ def show(supabase):
         nom_rec_clean = nettoyer_nom_fichier(ref_ctrl_h)
         date_fab_clean = formater_date_nom_fichier(date_coulee_h)
 
-      col_pdf, col_excel = st.columns(2)
+        col_pdf, col_excel = st.columns(2)
 
-with col_pdf:
-  nom_fichier_pv_pdf = f"PV_{nom_rec_clean}_{date_fab_clean}.pdf"
-  st.download_button(
-      label="📄 Télécharger le PV (PDF)",
-      data=generer_pv_pdf(export_data_h, infos_header_h),
-      file_name=nom_fichier_pv_pdf,
-      mime="application/pdf",
-      use_container_width=True,
-      key=f"btn_pdf_{b_id_h}_{sample_h.get('echeance', '')}",
-  )
+        with col_pdf:
+          nom_fichier_pv_pdf = f"PV_{nom_rec_clean}_{date_fab_clean}.pdf"
+          st.download_button(
+              label="📄 Télécharger le PV (PDF)",
+              data=generer_pv_pdf(export_data_h, infos_header_h),
+              file_name=nom_fichier_pv_pdf,
+              mime="application/pdf",
+              use_container_width=True,
+              key=f"btn_pdf_{b_id_h}_{sample_h.get('echeance', '')}",
+          )
 
-with col_excel:
-  nom_fichier_pv_xlsx = f"PV_{nom_rec_clean}_{date_fab_clean}.xlsx"
-  st.download_button(
-      label="📊 Télécharger le PV (Excel)",
-      data=exporter_pv_excel(export_data_h, infos_header_h),
-      file_name=nom_fichier_pv_xlsx,
-      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      use_container_width=True,
-      key=f"btn_excel_{b_id_h}_{sample_h.get('echeance', '')}",
-  )
+        with col_excel:
+          nom_fichier_pv_xlsx = f"PV_{nom_rec_clean}_{date_fab_clean}.xlsx"
+          st.download_button(
+              label="📊 Télécharger le PV (Excel)",
+              data=exporter_pv_excel(export_data_h, infos_header_h),
+              file_name=nom_fichier_pv_xlsx,
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True,
+              key=f"btn_excel_{b_id_h}_{sample_h.get('echeance', '')}",
+          )
+
     # Base de données globale
     st.markdown("---")
     st.markdown("##### 📊 Base de données globale")
