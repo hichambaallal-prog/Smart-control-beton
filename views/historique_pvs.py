@@ -187,9 +187,9 @@ def generer_pv_excel(export_data, infos_header):
       if c <= 4:
         ws.cell(row=r, column=c).fill = fill_dark
 
-  set_cell("E1", "RE N° :", f_bold)
-  ws.merge_cells("F1:G1")
-  set_cell("F1", clean_na(infos_header.get("re_num"), "25/260/LGV/ B/"))
+ set_cell("E1", "RE N° :", f_bold)
+ws.merge_cells("F1:G1")
+set_cell("F1", clean_na(infos_header.get("re_num"), "25/260/LGV/ B/"), align=a_right)
 
   ref_h1 = clean_na(
       infos_header.get("num_reception")
