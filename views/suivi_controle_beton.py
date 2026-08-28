@@ -1121,6 +1121,58 @@ def show(supabase):
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
         if can_edit:
+            # --- Correction en masse des dates déjà en base (données historiques) ---
+            # Le calcul automatique (ci-dessous) ne s'applique qu'aux MODIFICATIONS
+            # futures faites depuis ce tableau. Pour corriger d'un coup les
+            # éprouvettes déjà enregistrées avec une date d'écrasement incohérente
+            # (ex : échéance changée de 7 à 28 jours sans que la date ait suivi à
+            # l'époque), ce bouton recalcule et corrige tout en une fois.
+            with st.expander("🔧 Corriger en masse les dates d'écrasement incohérentes", expanded=False):
+                st.caption(
+                    "Recalcule `Date Écrasement Prévue = Date Coulée + Échéance Visée` "
+                    "pour TOUTES les éprouvettes en base, et corrige celles qui ne "
+                    "correspondent pas (ex: échéance modifiée sans mise à jour de la date à l'époque)."
+                )
+                if st.button("🔧 Recalculer et corriger toutes les dates d'écrasement", key="btn_fix_toutes_dates_ecrasement"):
+                    try:
+                        res_fix = supabase.table("suivi_controle_beton").select("*").execute()
+                        toutes_eprouvettes = res_fix.data or []
+                    except Exception as e:
+                        toutes_eprouvettes = []
+                        st.error(f"Erreur lors du chargement : {e}")
+
+                    nb_corrigees = 0
+                    nb_ignorees = 0
+                    for ep_fix in toutes_eprouvettes:
+                        dt_coulee_fix = str(ep_fix.get("date_coulee") or "").strip()
+                        echeance_fix = str(ep_fix.get("echeance") or "").strip()
+                        date_actuelle_fix = str(ep_fix.get("date_ecrasement") or "").strip()
+                        nb_j_fix = extraire_nb_jours(echeance_fix, default=None)
+                        if nb_j_fix is None or not dt_coulee_fix:
+                            nb_ignorees += 1
+                            continue
+                        try:
+                            dt_c_fix = datetime.strptime(dt_coulee_fix[:10], "%Y-%m-%d").date()
+                            date_correcte_fix = str(dt_c_fix + timedelta(days=nb_j_fix))
+                        except (ValueError, TypeError):
+                            nb_ignorees += 1
+                            continue
+
+                        if date_correcte_fix != date_actuelle_fix[:10]:
+                            try:
+                                supabase.table("suivi_controle_beton").update(
+                                    {"date_ecrasement": date_correcte_fix}
+                                ).eq("id", ep_fix["id"]).execute()
+                                nb_corrigees += 1
+                            except Exception as err_fix:
+                                st.error(f"Erreur pour #{ep_fix.get('id')} : {err_fix}")
+
+                    if nb_corrigees > 0:
+                        st.success(f"✅ {nb_corrigees} date(s) d'écrasement corrigée(s) !")
+                        st.rerun()
+                    else:
+                        st.info("👍 Toutes les dates d'écrasement étaient déjà cohérentes.")
+
             with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
                 try:
                     res_p = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
