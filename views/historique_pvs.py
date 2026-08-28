@@ -145,14 +145,14 @@ def formater_date_nom_fichier(dt_str):
 
 
 # ==============================================================================
-# 2. GÉNÉRATION DU PROCÈS-VERBAL PDF (STRICTEMENT 1 SEULE PAGE)
+# 2. GÉNÉRATION DU PROCÈS-VERBAL PDF (FORCE 1 SEULE PAGE - STRICT)
 # ==============================================================================
 def generer_pv_pdf(export_data, infos_header):
   buf = io.BytesIO()
 
-  # Marges compactes (0.2 pouce) pour maximiser la hauteur exploitable
-  left_m = right_m = 0.2 * inch
-  top_m = bottom_m = 0.2 * inch
+  # Marges extrêmement réduites pour sécuriser l'espace (0.15 pouce)
+  left_m = right_m = 0.15 * inch
+  top_m = bottom_m = 0.15 * inch
 
   doc = SimpleDocTemplate(
       buf,
@@ -176,13 +176,13 @@ def generer_pv_pdf(export_data, infos_header):
   WHITE = colors.white
   BLACK = colors.black
 
-  def P(text, size=7, bold=False, align="CENTER", color=BLACK):
+  def P(text, size=6.5, bold=False, align="CENTER", color=BLACK, leading=None):
     align_map = {"CENTER": TA_CENTER, "LEFT": TA_LEFT, "RIGHT": TA_RIGHT}
     style = ParagraphStyle(
         name=f"p_{size}_{bold}_{align}_{hash(str(text))}",
         fontName="Helvetica-Bold" if bold else "Helvetica",
         fontSize=size,
-        leading=size * 1.05,
+        leading=leading if leading else size * 1.0,
         alignment=align_map.get(align, TA_CENTER),
         textColor=color,
     )
@@ -215,10 +215,10 @@ def generer_pv_pdf(export_data, infos_header):
   row0 = 0
   spans += [(0, row0, 3, row0), (5, row0, 6, row0)]
   bg.append((0, row0, 3, row0, DARK))
-  fonts.append((0, row0, 3, row0, "Helvetica-Bold", 8, WHITE))
-  fonts.append((4, row0, 4, row0, "Helvetica-Bold", 7.5, BLACK))
+  fonts.append((0, row0, 3, row0, "Helvetica-Bold", 7.5, WHITE))
+  fonts.append((4, row0, 4, row0, "Helvetica-Bold", 7, BLACK))
   aligns.append((5, row0, 6, row0, "RIGHT"))
-  fonts.append((7, row0, 7, row0, "Helvetica-Bold", 7.5, BLACK))
+  fonts.append((7, row0, 7, row0, "Helvetica-Bold", 7, BLACK))
   aligns.append((7, row0, 7, row0, "LEFT"))
 
   # --- ROW 1 & 2 ---
@@ -237,12 +237,12 @@ def generer_pv_pdf(export_data, infos_header):
 
   spans.append((0, row1, 3, row2))
   bg.append((0, row1, 3, row2, DARK))
-  fonts.append((0, row1, 3, row2, "Helvetica-Bold", 8, WHITE))
+  fonts.append((0, row1, 3, row2, "Helvetica-Bold", 7.5, WHITE))
   spans += [(5, row1, 7, row1), (5, row2, 7, row2)]
-  fonts.append((4, row1, 4, row1, "Helvetica-Bold", 7.5, BLACK))
-  fonts.append((4, row2, 4, row2, "Helvetica-Bold", 7.5, BLACK))
-  fonts.append((5, row1, 7, row1, "Helvetica", 7.5, BLACK))
-  fonts.append((5, row2, 7, row2, "Helvetica-Bold", 7.5, BLACK))
+  fonts.append((4, row1, 4, row1, "Helvetica-Bold", 7, BLACK))
+  fonts.append((4, row2, 4, row2, "Helvetica-Bold", 7, BLACK))
+  fonts.append((5, row1, 7, row1, "Helvetica", 7, BLACK))
+  fonts.append((5, row2, 7, row2, "Helvetica-Bold", 7, BLACK))
 
   # --- ROW 3 ---
   r = blank_row()
@@ -251,7 +251,7 @@ def generer_pv_pdf(export_data, infos_header):
   row3 = 3
   spans.append((0, row3, 7, row3))
   bg.append((0, row3, 7, row3, DARK))
-  fonts.append((0, row3, 7, row3, "Helvetica-Bold", 9, WHITE))
+  fonts.append((0, row3, 7, row3, "Helvetica-Bold", 8, WHITE))
 
   # --- ROW 4 ---
   r = blank_row()
@@ -260,7 +260,7 @@ def generer_pv_pdf(export_data, infos_header):
   data.append(r)
   row4 = 4
   spans += [(0, row4, 3, row4), (4, row4, 7, row4)]
-  fonts.append((0, row4, 7, row4, "Helvetica-Bold", 7, BLACK))
+  fonts.append((0, row4, 7, row4, "Helvetica-Bold", 6.5, BLACK))
 
   # --- ROW 5 ---
   r = blank_row()
@@ -269,7 +269,7 @@ def generer_pv_pdf(export_data, infos_header):
   data.append(r)
   row5 = 5
   spans += [(0, row5, 5, row5), (6, row5, 7, row5)]
-  fonts.append((0, row5, 7, row5, "Helvetica-Bold", 7, BLACK))
+  fonts.append((0, row5, 7, row5, "Helvetica-Bold", 6.5, BLACK))
   aligns.append((0, row5, 5, row5, "RIGHT"))
 
   # --- ROW 6 ---
@@ -282,16 +282,16 @@ def generer_pv_pdf(export_data, infos_header):
       clean_na(
           infos_header.get("lieu_prelevement", infos_header.get("ouvrage")), "-"
       ),
-      size=7,
+      size=6.5,
       bold=True,
   )
   data.append(r)
   row6 = 6
   spans += [(2, row6, 3, row6), (4, row6, 7, row6)]
   bg += [(0, row6, 0, row6, LABEL_BG), (2, row6, 3, row6, LABEL_BG)]
-  fonts.append((0, row6, 0, row6, "Helvetica-Bold", 7, BLACK))
-  fonts.append((1, row6, 1, row6, "Helvetica-Bold", 7, BLACK))
-  fonts.append((2, row6, 3, row6, "Helvetica-Bold", 7, BLACK))
+  fonts.append((0, row6, 0, row6, "Helvetica-Bold", 6.5, BLACK))
+  fonts.append((1, row6, 1, row6, "Helvetica-Bold", 6.5, BLACK))
+  fonts.append((2, row6, 3, row6, "Helvetica-Bold", 6.5, BLACK))
 
   # --- ROW 7 ---
   r = blank_row()
@@ -303,7 +303,8 @@ def generer_pv_pdf(export_data, infos_header):
           " rétablissement de communication entre PK 5+500 et PK"
           " 10+000-GARE CASA SUD.",
       ),
-      size=6,
+      size=5.5,
+      leading=6.0,
   )
   r[4] = "Type de béton"
   r[6] = str(clean_na(infos_header.get("classe_beton"), "C35/45")).upper()
@@ -311,9 +312,9 @@ def generer_pv_pdf(export_data, infos_header):
   row7 = 7
   spans += [(1, row7, 3, row7), (4, row7, 5, row7), (6, row7, 7, row7)]
   bg += [(0, row7, 0, row7, LABEL_BG), (4, row7, 5, row7, LABEL_BG)]
-  fonts.append((0, row7, 0, row7, "Helvetica-Bold", 7, BLACK))
-  fonts.append((4, row7, 5, row7, "Helvetica-Bold", 7, BLACK))
-  fonts.append((6, row7, 7, row7, "Helvetica-Bold", 7.5, BLACK))
+  fonts.append((0, row7, 0, row7, "Helvetica-Bold", 6.5, BLACK))
+  fonts.append((4, row7, 5, row7, "Helvetica-Bold", 6.5, BLACK))
+  fonts.append((6, row7, 7, row7, "Helvetica-Bold", 7, BLACK))
 
   # --- ROW 8 ---
   r = blank_row()
@@ -324,41 +325,41 @@ def generer_pv_pdf(export_data, infos_header):
   row8 = 8
   spans += [(0, row8, 1, row8), (3, row8, 7, row8)]
   bg.append((0, row8, 1, row8, LABEL_BG))
-  fonts.append((0, row8, 1, row8, "Helvetica-Bold", 7, BLACK))
+  fonts.append((0, row8, 1, row8, "Helvetica-Bold", 6.5, BLACK))
   aligns.append((2, row8, 2, row8, "LEFT"))
-  fonts.append((3, row8, 7, row8, "Helvetica-Bold", 7, BLACK))
+  fonts.append((3, row8, 7, row8, "Helvetica-Bold", 6.5, BLACK))
 
   # --- ROW 9 ---
   r = blank_row()
-  r[0] = P("Affaissement au cône d'abrams NF EN 12350-2", size=6)
+  r[0] = P("Affaissement au cône d'abrams NF EN 12350-2", size=5.5)
   r[2] = str(clean_na(infos_header.get("affaissement"), "-"))
-  r[3] = P("- Mode confection", size=6, align="LEFT")
+  r[3] = P("- Mode confection", size=5.5, align="LEFT")
   r[4] = "Par vibration NF EN 12390-2 (2019)"
   data.append(r)
   row9 = 9
   spans += [(0, row9, 1, row9), (4, row9, 7, row9)]
   bg.append((0, row9, 1, row9, LABEL_BG))
-  fonts.append((2, row9, 2, row9, "Helvetica-Bold", 7, BLACK))
+  fonts.append((2, row9, 2, row9, "Helvetica-Bold", 6.5, BLACK))
   aligns.append((3, row9, 3, row9, "LEFT"))
-  fonts.append((4, row9, 7, row9, "Helvetica-Bold", 7, BLACK))
+  fonts.append((4, row9, 7, row9, "Helvetica-Bold", 6.5, BLACK))
 
   # --- ROW 10 ---
   r = blank_row()
   r[0] = "Température °C"
   r[2] = str(clean_na(infos_header.get("temperature"), "-"))
-  r[3] = P("- Mode conservation", size=6, align="LEFT")
+  r[3] = P("- Mode conservation", size=5.5, align="LEFT")
   r[4] = P(
       "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C"
       " ± 2°C",
-      size=6,
+      size=5.5,
       bold=True,
   )
   data.append(r)
   row10 = 10
   spans += [(0, row10, 1, row10), (4, row10, 7, row10)]
   bg.append((0, row10, 1, row10, LABEL_BG))
-  fonts.append((0, row10, 1, row10, "Helvetica-Bold", 7, BLACK))
-  fonts.append((2, row10, 2, row10, "Helvetica-Bold", 7, BLACK))
+  fonts.append((0, row10, 1, row10, "Helvetica-Bold", 6.5, BLACK))
+  fonts.append((2, row10, 2, row10, "Helvetica-Bold", 6.5, BLACK))
   aligns.append((3, row10, 3, row10, "LEFT"))
 
   # --- ROW 11 ---
@@ -369,15 +370,15 @@ def generer_pv_pdf(export_data, infos_header):
       "Technicien LPEE",
   )
   r = blank_row()
-  r[0] = P(f"prélèvement effectué par {tech}", size=6)
+  r[0] = P(f"prélèvement effectué par {tech}", size=5.5)
   r[3] = "N° de bon de livraison"
   r[5] = default_bl
   data.append(r)
   row11 = 11
   spans += [(0, row11, 2, row11), (3, row11, 4, row11), (5, row11, 7, row11)]
   bg += [(0, row11, 2, row11, LABEL_BG), (3, row11, 4, row11, LABEL_BG)]
-  fonts.append((3, row11, 4, row11, "Helvetica-Bold", 7, BLACK))
-  fonts.append((5, row11, 7, row11, "Helvetica-Bold", 7, BLACK))
+  fonts.append((3, row11, 4, row11, "Helvetica-Bold", 6.5, BLACK))
+  fonts.append((5, row11, 7, row11, "Helvetica-Bold", 6.5, BLACK))
 
   # --- ROW 12 & 13 : Entête Résultats ---
   r = blank_row()
@@ -406,7 +407,7 @@ def generer_pv_pdf(export_data, infos_header):
       (5, row12, 7, row12),
   ]
   bg.append((0, row12, 7, row13, TABLE_BG))
-  fonts.append((0, row12, 7, row13, "Helvetica-Bold", 7.5, BLACK))
+  fonts.append((0, row12, 7, row13, "Helvetica-Bold", 7, BLACK))
 
   # --- ÉPROUVETTES ---
   row_indices_body = []
@@ -451,7 +452,7 @@ def generer_pv_pdf(export_data, infos_header):
     data.append(r)
     r_idx = len(data) - 1
     row_indices_body.append(r_idx)
-    fonts.append((0, r_idx, 7, r_idx, "Helvetica", 7.5, BLACK))
+    fonts.append((0, r_idx, 7, r_idx, "Helvetica", 7, BLACK))
 
     cle = f"{age_val}_{dt_essai}"
     groupes_lots.setdefault(
@@ -478,7 +479,7 @@ def generer_pv_pdf(export_data, infos_header):
       data[start_r][7] = f"{moy:.1f}"
       if int(age) >= 28:
         moyenne_28j_val = moy
-    fonts.append((7, start_r, 7, end_r, "Helvetica-Bold", 7.5, BLACK))
+    fonts.append((7, start_r, 7, end_r, "Helvetica-Bold", 7, BLACK))
     if int(age) >= 28:
       a_des_28j = True
       if gdata["en_cours"]:
@@ -510,12 +511,12 @@ def generer_pv_pdf(export_data, infos_header):
 
   r = blank_row()
   r[0] = "Commentaire :"
-  r[1] = P(comment_valeur, size=7, bold=True, align="LEFT")
+  r[1] = P(comment_valeur, size=6.5, bold=True, align="LEFT")
   data.append(r)
   row_comment = len(data) - 1
   spans.append((1, row_comment, 7, row_comment))
   bg.append((0, row_comment, 0, row_comment, LABEL_BG))
-  fonts.append((0, row_comment, 0, row_comment, "Helvetica-Bold", 7, BLACK))
+  fonts.append((0, row_comment, 0, row_comment, "Helvetica-Bold", 6.5, BLACK))
   aligns.append((0, row_comment, 0, row_comment, "LEFT"))
 
   # --- VISAS ---
@@ -529,10 +530,10 @@ def generer_pv_pdf(export_data, infos_header):
       (5, row_visa_titre, 7, row_visa_titre),
   ]
   fonts.append(
-      (1, row_visa_titre, 3, row_visa_titre, "Helvetica-Bold", 7.5, BLACK)
+      (1, row_visa_titre, 3, row_visa_titre, "Helvetica-Bold", 7, BLACK)
   )
   fonts.append(
-      (5, row_visa_titre, 7, row_visa_titre, "Helvetica-Bold", 7.5, BLACK)
+      (5, row_visa_titre, 7, row_visa_titre, "Helvetica-Bold", 7, BLACK)
   )
 
   r = blank_row()
@@ -541,41 +542,41 @@ def generer_pv_pdf(export_data, infos_header):
   data.append(r)
   row_visa_nom = len(data) - 1
   spans += [(1, row_visa_nom, 3, row_visa_nom), (5, row_visa_nom, 7, row_visa_nom)]
-  fonts.append((1, row_visa_nom, 3, row_visa_nom, "Helvetica-Bold", 8, BLACK))
-  fonts.append((5, row_visa_nom, 7, row_visa_nom, "Helvetica-Bold", 8, BLACK))
+  fonts.append((1, row_visa_nom, 3, row_visa_nom, "Helvetica-Bold", 7.5, BLACK))
+  fonts.append((5, row_visa_nom, 7, row_visa_nom, "Helvetica-Bold", 7.5, BLACK))
   valigns += [
       (1, row_visa_nom, 3, row_visa_nom, "TOP"),
       (5, row_visa_nom, 7, row_visa_nom, "TOP"),
   ]
 
   # ==========================================================================
-  # AJUSTEMENT RIGOUR EUX DE LA HAUTEUR (VERROUILLAGE UNIQUE PAGE)
+  # HAUTEURS STRICTEMENT CALCULÉES POUR VERROUILLER 1 PAGE A4
   # ==========================================================================
   fixed_heights = {
-      0: 14,
-      1: 12,
-      2: 12,
-      3: 15,
-      4: 11,
-      5: 11,
-      6: 16,
-      7: 22,
-      8: 12,
-      9: 13,
-      10: 13,
-      11: 13,
-      12: 11,
-      13: 11,
-      row_comment: 14,
-      row_visa_titre: 12,
+      0: 12,
+      1: 10,
+      2: 10,
+      3: 13,
+      4: 10,
+      5: 10,
+      6: 14,
+      7: 18,
+      8: 10,
+      9: 11,
+      10: 11,
+      11: 11,
+      12: 10,
+      13: 10,
+      row_comment: 12,
+      row_visa_titre: 10,
   }
 
   h_fixes = sum(fixed_heights.values())
   hauteur_disponible = total_page_height - h_fixes
 
   nb_body_rows = len(row_indices_body)
-  body_h_unit = max(min(hauteur_disponible * 0.55 / max(nb_body_rows, 1), 16), 11)
-  visa_nom_h = min(max(hauteur_disponible - (body_h_unit * nb_body_rows), 25), 65)
+  body_h_unit = max(min(hauteur_disponible * 0.50 / max(nb_body_rows, 1), 14), 10)
+  visa_nom_h = max(hauteur_disponible - (body_h_unit * nb_body_rows), 20)
 
   list_row_heights = []
   for idx in range(len(data)):
@@ -584,7 +585,7 @@ def generer_pv_pdf(export_data, infos_header):
     elif idx == row_visa_nom:
       list_row_heights.append(visa_nom_h)
     else:
-      list_row_heights.append(fixed_heights.get(idx, 12))
+      list_row_heights.append(fixed_heights.get(idx, 10))
 
   table = Table(data, colWidths=col_widths, rowHeights=list_row_heights)
 
@@ -593,9 +594,9 @@ def generer_pv_pdf(export_data, infos_header):
       ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
       ("ALIGN", (0, 0), (-1, -1), "CENTER"),
       ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-      ("FONTSIZE", (0, 0), (-1, -1), 7),
-      ("TOPPADDING", (0, 0), (-1, -1), 0.1),
-      ("BOTTOMPADDING", (0, 0), (-1, -1), 0.1),
+      ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+      ("TOPPADDING", (0, 0), (-1, -1), 0),
+      ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
       ("LEFTPADDING", (0, 0), (-1, -1), 1.0),
       ("RIGHTPADDING", (0, 0), (-1, -1), 1.0),
   ]
