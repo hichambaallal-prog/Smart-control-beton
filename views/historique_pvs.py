@@ -561,8 +561,6 @@ def generer_pv_pdf(export_data, infos_header):
     else:
       row_heights.append(16)
 
-  table = Table(data, colWidths=col_widths, rowHeights=row_heights)
-
   style_cmds = [
       ("GRID", (0, 0), (-1, -1), 0.5, BLACK),
       ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -586,8 +584,43 @@ def generer_pv_pdf(export_data, infos_header):
     style_cmds.append(("ALIGN", (c1, r1), (c2, r2), al))
   for (c1, r1, c2, r2, va) in valigns:
     style_cmds.append(("VALIGN", (c1, r1), (c2, r2), va))
+  table_style = TableStyle(style_cmds)
 
-  table.setStyle(TableStyle(style_cmds))
+  # ---- Étirer le tableau pour qu'il couvre toute la page ----
+  # Avec des hauteurs de ligne fixes, un PV à peu d'éprouvettes laisse un
+  # grand vide sous le tableau à l'impression. On mesure d'abord la hauteur
+  # réellement nécessaire (table1), puis on agrandit proportionnellement
+  # TOUTES les lignes pour que le tableau final occupe toute la hauteur
+  # imprimable — quel que soit le nombre d'éprouvettes.
+  page_height_dispo = A4[1] - top_m - bottom_m
+
+  table1 = Table(data, colWidths=col_widths, rowHeights=row_heights)
+  table1.setStyle(table_style)
+  _, hauteur_naturelle = table1.wrap(page_width, page_height_dispo * 10)
+
+  if hauteur_naturelle > 0 and hauteur_naturelle < page_height_dispo:
+    # table1._rowHeights contient les hauteurs réellement calculées (y
+    # compris pour les lignes en hauteur automatique) après le wrap().
+    hauteurs_reelles = list(table1._rowHeights)
+    # Petite marge de sécurité (les cellules fusionnées ne redistribuent
+    # pas toujours la hauteur de façon parfaitement linéaire).
+    facteur = min((page_height_dispo * 0.97) / hauteur_naturelle, 3.5)
+    row_heights_final = [h * facteur for h in hauteurs_reelles]
+
+    # Vérification a posteriori : si malgré tout le résultat dépasse la
+    # page (et déborderait sur une 2e page), on corrige le facteur une
+    # dernière fois avant de construire la version définitive.
+    table_verif = Table(data, colWidths=col_widths, rowHeights=row_heights_final)
+    table_verif.setStyle(table_style)
+    _, hauteur_finale = table_verif.wrap(page_width, page_height_dispo * 10)
+    if hauteur_finale > page_height_dispo:
+      correction = (page_height_dispo * 0.97) / hauteur_finale
+      row_heights_final = [h * correction for h in row_heights_final]
+  else:
+    row_heights_final = row_heights
+
+  table = Table(data, colWidths=col_widths, rowHeights=row_heights_final)
+  table.setStyle(table_style)
 
   doc.build([table])
   buf.seek(0)
