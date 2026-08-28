@@ -10,3 +10,4 @@ matplotlib
 qrcode
 Pillow
 extra-streamlit-components
+reportlab
