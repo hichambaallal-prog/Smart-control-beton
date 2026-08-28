@@ -119,6 +119,27 @@ def calculer_age_jours(date_fab, date_ess, age_defaut=None):
   return 28
 
 
+def nettoyer_nom_fichier(chaine):
+  """Remplace les caractères interdits pour les noms de fichiers OS."""
+  if not chaine:
+    return "PV"
+  # Remplace les slashes, anti-slashes et caractères spéciaux par des tirets
+  clean = re.sub(r'[\\/*?:"<>|]', "-", str(chaine).strip())
+  # Supprime les espaces multiples
+  return re.sub(r"\s+", "_", clean)
+
+
+def formater_date_nom_fichier(dt_str):
+  """Convertit 'YYYY-MM-DD' en 'DD-MM-YYYY' pour le nom du fichier."""
+  if not dt_str or str(dt_str).strip() in ["-", "None", "NaN", "N/A"]:
+    return "date_inconnue"
+  try:
+    dt_obj = datetime.strptime(str(dt_str).strip()[:10], "%Y-%m-%d")
+    return dt_obj.strftime("%d-%m-%Y")
+  except Exception:
+    return str(dt_str).replace("/", "-")
+
+
 # ==============================================================================
 # 2. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT LPEE)
 # ==============================================================================
@@ -364,7 +385,7 @@ def generer_pv_excel(export_data, infos_header):
     # Calcul dynamique précis de l'âge
     age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
 
-    # Calcul de la date d'essai (si réalisé: date effective, si en cours: date théorique prévisionnelle = date coulée + âge)
+    # Calcul de la date d'essai
     date_essai_affichage = "-"
     if not is_en_cours and dt_essai and str(dt_essai).strip() not in ["-", "", "None", "NaN"]:
       date_essai_affichage = str(clean_na(dt_essai, "-"))
@@ -840,12 +861,15 @@ def show(supabase):
             ),
         }
 
+        # Formatage dynamique du nom du fichier : N°Réception_DateFabrication.xlsx
+        nom_rec_clean = nettoyer_nom_fichier(ref_ctrl_h)
+        date_fab_clean = formater_date_nom_fichier(date_coulee_h)
+        nom_fichier_pv = f"PV_{nom_rec_clean}_{date_fab_clean}.xlsx"
+
         st.download_button(
-            label="📄 Télécharger le PV (Excel Format LPEE)",
+            label=f"📄 Télécharger le PV ({nom_fichier_pv})",
             data=generer_pv_excel(export_data_h, infos_header_h),
-            file_name=(
-                f"PV_Ecrasement_LPEE_{num_bl_h if num_bl_h != '-' else 'BL'}.xlsx"
-            ),
+            file_name=nom_fichier_pv,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             type="primary",
