@@ -250,7 +250,7 @@ def generer_pv_pdf(export_data, infos_header):
 
   # ---- Row 3 : Titre ----
   r = blank_row()
-  r[0] = "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
+  r[0] = "RAPPORT D'ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
   data.append(r)
   row3 = len(data) - 1
   spans.append((0, row3, 7, row3))
