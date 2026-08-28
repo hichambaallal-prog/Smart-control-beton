@@ -207,7 +207,7 @@ def generer_pv_pdf(export_data, infos_header):
   r = blank_row()
   r[0] = "LPEE / CTR CSB"
   r[4] = "RE N° :"
-  r[5] = clean_na(infos_header.get("re_num"), "25/260/LGV/ B/")
+  r[5] = clean_na(infos_header.get("re_num"), "25/260/LGV/")
   ref_h1 = clean_na(
       infos_header.get("num_reception")
       or infos_header.get("ref_controle")
