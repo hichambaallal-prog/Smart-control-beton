@@ -256,9 +256,8 @@ def generer_pv_excel(export_data, infos_header):
       "B8",
       clean_na(
           infos_header.get("chantier"),
-          "Augmentation de la capacité ferroviaire entre Kenitra 
-et Marrakech et au niveau du hub de Casablanca-Travaux d’exécution de terrassement",
-    ),
+          "LGV-Travaux d’exécution de terrassement, ouvrages d’art et rétablissement de communication entre PK 5+500 et PK 10+000-GARE CASA SUD.",
+      ),
       f_small,
   )
   ws.merge_cells("E8:F8")
