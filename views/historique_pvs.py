@@ -260,7 +260,7 @@ def generer_pv_pdf(export_data, infos_header):
   # ---- Row 4 : Compression / Traction ----
   r = blank_row()
   r[0] = "[X] COMPRESSION NF EN 12390-3 (2019)"
-  r[4] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
+  r[4] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2023)"
   data.append(r)
   row4 = len(data) - 1
   spans += [(0, row4, 3, row4), (4, row4, 7, row4)]
