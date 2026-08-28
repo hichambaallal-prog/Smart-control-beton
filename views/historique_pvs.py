@@ -1,18 +1,19 @@
 import io
 import re
 import unicodedata
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
+
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 import pandas as pd
-import streamlit as st
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
+import streamlit as st
 
 
 # ==============================================================================
@@ -129,9 +130,7 @@ def nettoyer_nom_fichier(chaine):
   """Remplace les caractères interdits pour les noms de fichiers OS."""
   if not chaine:
     return "PV"
-  # Remplace les slashes, anti-slashes et caractères spéciaux par des tirets
   clean = re.sub(r'[\\/*?:"<>|]', "-", str(chaine).strip())
-  # Supprime les espaces multiples
   return re.sub(r"\s+", "_", clean)
 
 
@@ -147,11 +146,10 @@ def formater_date_nom_fichier(dt_str):
 
 
 # ==============================================================================
-# 2. GÉNÉRATION DU PROCÈS-VERBAL PDF (FORMAT LPEE)
+# 2. GENERATION DES PROCES-VERBAUX (PDF & EXCEL LPEE)
 # ==============================================================================
 def generer_pv_pdf(export_data, infos_header):
-  """Génère le PV d'écrasement en PDF, avec la même mise en page (mêmes
-  sections, mêmes libellés, même grille) que l'ancienne version Excel."""
+  """Génère le PV d'écrasement en PDF (Format officiel LPEE)."""
   buf = io.BytesIO()
   left_m = right_m = 0.3 * inch
   top_m = bottom_m = 0.4 * inch
@@ -165,7 +163,7 @@ def generer_pv_pdf(export_data, infos_header):
   )
 
   page_width = A4[0] - left_m - right_m
-  base_widths = [16, 12, 12, 10, 18, 14, 12, 12]  # proportions A..H (comme Excel)
+  base_widths = [16, 12, 12, 10, 18, 14, 12, 12]
   total_units = sum(base_widths)
   col_widths = [page_width * (w / total_units) for w in base_widths]
 
@@ -176,10 +174,6 @@ def generer_pv_pdf(export_data, infos_header):
   BLACK = colors.black
 
   def P(text, size=7.5, bold=False, align="CENTER", color=BLACK):
-    """Cellule 'Paragraph' : contrairement à une simple chaîne de
-    caractères, elle passe à la ligne automatiquement si le texte est trop
-    long pour la largeur de la colonne (indispensable pour le Chantier,
-    l'affaissement, etc. dont le texte dépasse largement une ligne)."""
     align_map = {"CENTER": TA_CENTER, "LEFT": TA_LEFT, "RIGHT": TA_RIGHT}
     style = ParagraphStyle(
         name="cell",
@@ -417,7 +411,7 @@ def generer_pv_pdf(export_data, infos_header):
   bg.append((0, row12, 7, row13, TABLE_BG))
   fonts.append((0, row12, 7, row13, "Helvetica-Bold", 8.5, BLACK))
 
-  # ---- Lignes de résultats (une par éprouvette) ----
+  # ---- Lignes de résultats ----
   row_indices_body = []
   groupes_lots = {}
   for item in export_data:
@@ -468,7 +462,7 @@ def generer_pv_pdf(export_data, infos_header):
         cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
     )["lignes"].append(r_idx)
 
-  # Fusion des moyennes (comme les cellules H fusionnées côté Excel)
+  # Fusion des moyennes
   a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
   for gdata in groupes_lots.values():
     lignes, age = gdata["lignes"], gdata["age"]
@@ -536,26 +530,39 @@ def generer_pv_pdf(export_data, infos_header):
   r[5] = "Visa Chef du laboratoire"
   data.append(r)
   row_visa_titre = len(data) - 1
-  spans += [(1, row_visa_titre, 3, row_visa_titre), (5, row_visa_titre, 7, row_visa_titre)]
-  fonts.append((1, row_visa_titre, 3, row_visa_titre, "Helvetica-Bold", 8.5, BLACK))
-  fonts.append((5, row_visa_titre, 7, row_visa_titre, "Helvetica-Bold", 8.5, BLACK))
+  spans += [
+      (1, row_visa_titre, 3, row_visa_titre),
+      (5, row_visa_titre, 7, row_visa_titre),
+  ]
+  fonts.append(
+      (1, row_visa_titre, 3, row_visa_titre, "Helvetica-Bold", 8.5, BLACK)
+  )
+  fonts.append(
+      (5, row_visa_titre, 7, row_visa_titre, "Helvetica-Bold", 8.5, BLACK)
+  )
 
   r = blank_row()
   r[1] = "O.IKKEN"
   r[5] = "H.BAALLAL"
   data.append(r)
   row_visa_nom = len(data) - 1
-  spans += [(1, row_visa_nom, 3, row_visa_nom), (5, row_visa_nom, 7, row_visa_nom)]
+  spans += [
+      (1, row_visa_nom, 3, row_visa_nom),
+      (5, row_visa_nom, 7, row_visa_nom),
+  ]
   fonts.append((1, row_visa_nom, 3, row_visa_nom, "Helvetica-Bold", 9, BLACK))
   fonts.append((5, row_visa_nom, 7, row_visa_nom, "Helvetica-Bold", 9, BLACK))
-  valigns += [(1, row_visa_nom, 3, row_visa_nom, "TOP"), (5, row_visa_nom, 7, row_visa_nom, "TOP")]
+  valigns += [
+      (1, row_visa_nom, 3, row_visa_nom, "TOP"),
+      (5, row_visa_nom, 7, row_visa_nom, "TOP"),
+  ]
 
   # ---- Construction de la table ----
   rows_auto_hauteur = {row6, row7, row9, row10, row11, row_comment}
   row_heights = []
   for i in range(len(data)):
     if i in rows_auto_hauteur:
-      row_heights.append(None)  # calculé automatiquement selon le texte
+      row_heights.append(None)
     elif i == row_visa_nom:
       row_heights.append(48)
     else:
@@ -572,45 +579,33 @@ def generer_pv_pdf(export_data, infos_header):
       ("LEFTPADDING", (0, 0), (-1, -1), 2),
       ("RIGHTPADDING", (0, 0), (-1, -1), 2),
   ]
-  for (c1, r1, c2, r2) in spans:
+  for c1, r1, c2, r2 in spans:
     style_cmds.append(("SPAN", (c1, r1), (c2, r2)))
-  for (c1, r1, c2, r2, color) in bg:
+  for c1, r1, c2, r2, color in bg:
     style_cmds.append(("BACKGROUND", (c1, r1), (c2, r2), color))
-  for (c1, r1, c2, r2, fname, fsize, fcolor) in fonts:
+  for c1, r1, c2, r2, fname, fsize, fcolor in fonts:
     style_cmds.append(("FONTNAME", (c1, r1), (c2, r2), fname))
     style_cmds.append(("FONTSIZE", (c1, r1), (c2, r2), fsize))
     style_cmds.append(("TEXTCOLOR", (c1, r1), (c2, r2), fcolor))
-  for (c1, r1, c2, r2, al) in aligns:
+  for c1, r1, c2, r2, al in aligns:
     style_cmds.append(("ALIGN", (c1, r1), (c2, r2), al))
-  for (c1, r1, c2, r2, va) in valigns:
+  for c1, r1, c2, r2, va in valigns:
     style_cmds.append(("VALIGN", (c1, r1), (c2, r2), va))
   table_style = TableStyle(style_cmds)
 
-  # ---- Étirer le tableau pour qu'il couvre toute la page ----
-  # Avec des hauteurs de ligne fixes, un PV à peu d'éprouvettes laisse un
-  # grand vide sous le tableau à l'impression. On mesure d'abord la hauteur
-  # réellement nécessaire (table1), puis on agrandit proportionnellement
-  # TOUTES les lignes pour que le tableau final occupe toute la hauteur
-  # imprimable — quel que soit le nombre d'éprouvettes.
   page_height_dispo = A4[1] - top_m - bottom_m
-
   table1 = Table(data, colWidths=col_widths, rowHeights=row_heights)
   table1.setStyle(table_style)
   _, hauteur_naturelle = table1.wrap(page_width, page_height_dispo * 10)
 
-  if hauteur_naturelle > 0 and hauteur_naturelle < page_height_dispo:
-    # table1._rowHeights contient les hauteurs réellement calculées (y
-    # compris pour les lignes en hauteur automatique) après le wrap().
+  if 0 < hauteur_naturelle < page_height_dispo:
     hauteurs_reelles = list(table1._rowHeights)
-    # Petite marge de sécurité (les cellules fusionnées ne redistribuent
-    # pas toujours la hauteur de façon parfaitement linéaire).
     facteur = min((page_height_dispo * 0.97) / hauteur_naturelle, 3.5)
     row_heights_final = [h * facteur for h in hauteurs_reelles]
 
-    # Vérification a posteriori : si malgré tout le résultat dépasse la
-    # page (et déborderait sur une 2e page), on corrige le facteur une
-    # dernière fois avant de construire la version définitive.
-    table_verif = Table(data, colWidths=col_widths, rowHeights=row_heights_final)
+    table_verif = Table(
+        data, colWidths=col_widths, rowHeights=row_heights_final
+    )
     table_verif.setStyle(table_style)
     _, hauteur_finale = table_verif.wrap(page_width, page_height_dispo * 10)
     if hauteur_finale > page_height_dispo:
@@ -627,6 +622,463 @@ def generer_pv_pdf(export_data, infos_header):
   return buf
 
 
+def exporter_pv_excel(export_data, infos_header):
+  """Génère un fichier Excel du PV respectant scrupuleusement le layout LPEE."""
+  wb = openpyxl.Workbook()
+  ws = wb.active
+  ws.title = "PV Écrasement"
+  ws.views.sheetView[0].showGridLines = True
+
+  # Styles
+  font_header = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+  font_bold = Font(name="Calibri", size=9, bold=True)
+  font_regular = Font(name="Calibri", size=9)
+  font_title = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
+
+  fill_dark = PatternFill(
+      start_color="1F4E78", end_color="1F4E78", fill_type="solid"
+  )
+  fill_label = PatternFill(
+      start_color="F2F2F2", end_color="F2F2F2", fill_type="solid"
+  )
+  fill_table_hdr = PatternFill(
+      start_color="D9E1F2", end_color="D9E1F2", fill_type="solid"
+  )
+
+  thin_side = Side(border_style="thin", color="000000")
+  thin_border = Border(
+      left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
+  )
+
+  align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+  align_left = Alignment(horizontal="left", vertical="center", wrap_text=True)
+  align_right = Alignment(horizontal="right", vertical="center", wrap_text=True)
+
+  default_bl = extraire_num_bl(infos_header)
+
+  def clean_na(val, fallback=default_bl):
+    v = str(val).strip() if val is not None else ""
+    return fallback if v.upper() in ["N/A", "NONE", "NAN", "", "-"] else val
+
+  date_fab_header = clean_na(infos_header.get("date_coulee"), "-")
+  ref_h1 = clean_na(
+      infos_header.get("num_reception")
+      or infos_header.get("ref_controle")
+      or infos_header.get("reference"),
+      "B/406",
+  )
+  tech = clean_na(
+      infos_header.get("technicien_prelevement")
+      or infos_header.get("preleve_par")
+      or infos_header.get("technicien"),
+      "Technicien LPEE",
+  )
+
+  # Row 1
+  ws.merge_cells("A1:D1")
+  ws["A1"] = "LPEE / CTR CSB"
+  ws["A1"].fill = fill_dark
+  ws["A1"].font = font_header
+  ws["A1"].alignment = align_center
+
+  ws["E1"] = "RE N° :"
+  ws["E1"].font = font_bold
+  ws["E1"].alignment = align_right
+
+  ws.merge_cells("F1:G1")
+  ws["F1"] = clean_na(infos_header.get("re_num"), "25/260/LGV/")
+  ws["F1"].font = font_regular
+  ws["F1"].alignment = align_right
+
+  ws["H1"] = ref_h1
+  ws["H1"].font = font_bold
+  ws["H1"].alignment = align_left
+
+  # Row 2 & 3
+  ws.merge_cells("A2:D3")
+  ws["A2"] = "Laboratoire de Contrôle Externe"
+  ws["A2"].fill = fill_dark
+  ws["A2"].font = font_header
+  ws["A2"].alignment = align_center
+
+  ws["E2"] = "DOSSIER :"
+  ws["E2"].font = font_bold
+  ws["E2"].alignment = align_left
+  ws.merge_cells("F2:H2")
+  ws["F2"] = clean_na(infos_header.get("dossier"), "2025-260-05985-2025-0247")
+  ws["F2"].font = font_regular
+
+  ws["E3"] = "CLIENT :"
+  ws["E3"].font = font_bold
+  ws["E3"].alignment = align_left
+  ws.merge_cells("F3:H3")
+  ws["F3"] = clean_na(infos_header.get("client"), "TGCC")
+  ws["F3"].font = font_bold
+
+  # Row 4 : Titre
+  ws.merge_cells("A4:H4")
+  ws["A4"] = "RAPPORT D'ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
+  ws["A4"].fill = fill_dark
+  ws["A4"].font = font_title
+  ws["A4"].alignment = align_center
+
+  # Row 5 : Compression / Traction
+  ws.merge_cells("A5:D5")
+  ws["A5"] = "[X] COMPRESSION NF EN 12390-3 (2019)"
+  ws["A5"].font = font_bold
+  ws["A5"].alignment = align_center
+
+  ws.merge_cells("E5:H5")
+  ws["E5"] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2023)"
+  ws["E5"].font = font_bold
+  ws["E5"].alignment = align_center
+
+  # Row 6 : Presse
+  ws.merge_cells("A6:F6")
+  ws["A6"] = "Presse : Marque: Controls"
+  ws["A6"].font = font_bold
+  ws["A6"].alignment = align_right
+
+  ws.merge_cells("G6:H6")
+  ws["G6"] = "Classe : A"
+  ws["G6"].font = font_bold
+  ws["G6"].alignment = align_center
+
+  # Row 7 : Date & Lieu
+  ws["A7"] = "Date de\nprélèvement"
+  ws["A7"].fill = fill_label
+  ws["A7"].font = font_bold
+  ws["A7"].alignment = align_center
+
+  ws["B7"] = str(date_fab_header)
+  ws["B7"].font = font_bold
+  ws["B7"].alignment = align_center
+
+  ws.merge_cells("C7:D7")
+  ws["C7"] = "Lieu de\nprélèvement"
+  ws["C7"].fill = fill_label
+  ws["C7"].font = font_bold
+  ws["C7"].alignment = align_center
+
+  ws.merge_cells("E7:H7")
+  ws["E7"] = clean_na(
+      infos_header.get("lieu_prelevement", infos_header.get("ouvrage")), "-"
+  )
+  ws["E7"].font = font_bold
+  ws["E7"].alignment = align_center
+
+  # Row 8 : Chantier & Type de béton
+  ws["A8"] = "Chantier"
+  ws["A8"].fill = fill_label
+  ws["A8"].font = font_bold
+  ws["A8"].alignment = align_center
+
+  ws.merge_cells("B8:D8")
+  ws["B8"] = clean_na(
+      infos_header.get("chantier"),
+      "LGV-Travaux d'exécution de terrassement, ouvrages d'art et"
+      " rétablissement de communication entre PK 5+500 et PK 10+000-GARE CASA"
+      " SUD.",
+  )
+  ws["B8"].font = font_regular
+  ws["B8"].alignment = align_center
+
+  ws.merge_cells("E8:F8")
+  ws["E8"] = "Type de béton"
+  ws["E8"].fill = fill_label
+  ws["E8"].font = font_bold
+  ws["E8"].alignment = align_center
+
+  ws.merge_cells("G8:H8")
+  ws["G8"] = str(clean_na(infos_header.get("classe_beton"), "C35/45")).upper()
+  ws["G8"].font = font_bold
+  ws["G8"].alignment = align_center
+
+  # Row 9 : Centrale & Dimensions
+  ws.merge_cells("A9:B9")
+  ws["A9"] = clean_na(infos_header.get("centrale"), "Centrale à Béton")
+  ws["A9"].fill = fill_label
+  ws["A9"].font = font_bold
+  ws["A9"].alignment = align_center
+
+  ws["C9"] = "- Dimensions"
+  ws["C9"].font = font_bold
+  ws["C9"].alignment = align_left
+
+  ws.merge_cells("D9:H9")
+  ws["D9"] = clean_na(infos_header.get("forme"), "Cylindrique 150x300")
+  ws["D9"].font = font_bold
+  ws["D9"].alignment = align_center
+
+  # Row 10 : Affaissement
+  ws.merge_cells("A10:B10")
+  ws["A10"] = "Affaissement au cône d'abrams NF EN 12350-2"
+  ws["A10"].fill = fill_label
+  ws["A10"].font = font_regular
+  ws["A10"].alignment = align_center
+
+  ws["C10"] = str(clean_na(infos_header.get("affaissement"), "-"))
+  ws["C10"].font = font_bold
+  ws["C10"].alignment = align_center
+
+  ws["D10"] = "- Mode confection"
+  ws["D10"].font = font_regular
+  ws["D10"].alignment = align_left
+
+  ws.merge_cells("E10:H10")
+  ws["E10"] = "Par vibration NF EN 12390-2 (2019)"
+  ws["E10"].font = font_bold
+  ws["E10"].alignment = align_center
+
+  # Row 11 : Température
+  ws.merge_cells("A11:B11")
+  ws["A11"] = "Température °C"
+  ws["A11"].fill = fill_label
+  ws["A11"].font = font_bold
+  ws["A11"].alignment = align_center
+
+  ws["C11"] = str(clean_na(infos_header.get("temperature"), "-"))
+  ws["C11"].font = font_bold
+  ws["C11"].alignment = align_center
+
+  ws["D11"] = "- Mode conservation"
+  ws["D11"].font = font_regular
+  ws["D11"].alignment = align_left
+
+  ws.merge_cells("E11:H11")
+  ws["E11"] = (
+      "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C"
+      " ± 2°C"
+  )
+  ws["E11"].font = font_bold
+  ws["E11"].alignment = align_center
+
+  # Row 12 : Tech & BL
+  ws.merge_cells("A12:C12")
+  ws["A12"] = f"prélèvement effectué par {tech}"
+  ws["A12"].fill = fill_label
+  ws["A12"].font = font_regular
+  ws["A12"].alignment = align_center
+
+  ws.merge_cells("D12:E12")
+  ws["D12"] = "N° de bon de livraison"
+  ws["D12"].fill = fill_label
+  ws["D12"].font = font_bold
+  ws["D12"].alignment = align_center
+
+  ws.merge_cells("F12:H12")
+  ws["F12"] = default_bl
+  ws["F12"].font = font_bold
+  ws["F12"].alignment = align_center
+
+  # Row 13 & 14 : En-têtes du Tableau de résultats
+  for row in [13, 14]:
+    for col in range(1, 9):
+      cell = ws.cell(row=row, column=col)
+      cell.fill = fill_table_hdr
+      cell.font = font_bold
+      cell.alignment = align_center
+
+  ws.merge_cells("A13:A14")
+  ws["A13"] = "Réf,"
+
+  ws.merge_cells("B13:C13")
+  ws["B13"] = "Date"
+  ws["B14"] = "Fabri"
+  ws["C14"] = "Essai"
+
+  ws.merge_cells("D13:D14")
+  ws["D13"] = "Age (jours)"
+
+  ws.merge_cells("E13:E14")
+  ws["E13"] = "Charge rupture(KN)"
+
+  ws.merge_cells("F13:H13")
+  ws["F13"] = "Résistance (MPa)"
+  ws["F14"] = "Compression"
+  ws["G14"] = "Traction"
+  ws["H14"] = "Moyenne"
+
+  # Injection des résultats & formules Excel
+  cur_row = 15
+  groupes_lots = {}
+  a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
+
+  for item in export_data:
+    f_kn = float(item.get("force_kn", 0.0) or 0.0)
+    is_en_cours = (
+        str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
+    )
+    dt_essai = item.get("date_essai")
+    age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
+
+    if (
+        not is_en_cours
+        and dt_essai
+        and str(dt_essai).strip() not in ["-", "", "None", "NaN"]
+    ):
+      date_essai_affichage = str(clean_na(dt_essai, "-"))
+    else:
+      try:
+        df_obj = datetime.strptime(
+            str(date_fab_header).strip()[:10], "%Y-%m-%d"
+        )
+        date_essai_affichage = (
+            df_obj + timedelta(days=int(age_val))
+        ).strftime("%Y-%m-%d")
+      except Exception:
+        date_essai_affichage = "-"
+
+    ws[f"A{cur_row}"] = str(item.get("repere_eprouvette", "B/01"))
+    ws[f"B{cur_row}"] = str(date_fab_header)
+    ws[f"C{cur_row}"] = date_essai_affichage
+    ws[f"D{cur_row}"] = age_val
+
+    if is_en_cours:
+      ws[f"E{cur_row}"] = "En cours"
+      ws[f"F{cur_row}"] = "En cours"
+    else:
+      ws[f"E{cur_row}"] = f_kn
+      ws[f"E{cur_row}"].number_format = "0.0"
+      # Formule Excel pour la résistance : (Force * 10) / Section
+      sec = float(item.get("section") or 176.71)
+      ws[f"F{cur_row}"] = f"=(E{cur_row}*10)/{sec}"
+      ws[f"F{cur_row}"].number_format = "0.0"
+
+    ws[f"G{cur_row}"] = "-"
+
+    for c in ["A", "B", "C", "D", "E", "F", "G"]:
+      ws[f"{c}{cur_row}"].font = font_regular
+      ws[f"{c}{cur_row}"].alignment = align_center
+
+    cle = f"{age_val}_{dt_essai}"
+    groupes_lots.setdefault(
+        cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
+    )["lignes"].append(cur_row)
+    cur_row += 1
+
+  # Fusions et formules de moyenne Excel (colonne H)
+  for gdata in groupes_lots.values():
+    lignes, age = gdata["lignes"], gdata["age"]
+    start_r, end_r = min(lignes), max(lignes)
+    if start_r != end_r:
+      ws.merge_cells(f"H{start_r}:H{end_r}")
+
+    cell_h = ws[f"H{start_r}"]
+    cell_h.font = font_bold
+    cell_h.alignment = align_center
+
+    if gdata["en_cours"]:
+      cell_h.value = "En cours"
+    else:
+      cell_h.value = f"=AVERAGE(F{start_r}:F{end_r})"
+      cell_h.number_format = "0.0"
+
+      # Calcul de valeur secours pour commentaire si besoin
+      vals = [
+          float(export_data[i - 15].get("fc_mpa", 0.0))
+          for i in lignes
+          if float(export_data[i - 15].get("force_kn", 0.0) or 0.0) > 0
+      ]
+      if vals:
+        moyenne_28j_val = round(sum(vals) / len(vals), 1)
+
+    if int(age) >= 28:
+      a_des_28j = True
+      if gdata["en_cours"]:
+        est_en_cours_28j = True
+
+  # Commentaire de conformité
+  seuil = next(
+      (
+          s
+          for k, s in [
+              ("C25/30", 25.0),
+              ("C30/37", 30.0),
+              ("C35/45", 35.0),
+              ("C40/50", 40.0),
+          ]
+          if k
+          in str(clean_na(infos_header.get("classe_beton"), "C35/45")).upper()
+      ),
+      35.0,
+  )
+
+  if not a_des_28j or est_en_cours_28j or moyenne_28j_val is None:
+    comment_valeur = (
+        "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
+    )
+  elif moyenne_28j_val >= seuil:
+    comment_valeur = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+  else:
+    comment_valeur = "PERFORMANCES MECANIQUES NON CONFORMES"
+
+  ws[f"A{cur_row}"] = "Commentaire :"
+  ws[f"A{cur_row}"].fill = fill_label
+  ws[f"A{cur_row}"].font = font_bold
+  ws[f"A{cur_row}"].alignment = align_left
+
+  ws.merge_cells(f"B{cur_row}:H{cur_row}")
+  ws[f"B{cur_row}"] = comment_valeur
+  ws[f"B{cur_row}"].font = font_bold
+  ws[f"B{cur_row}"].alignment = align_left
+
+  cur_row += 1
+
+  # Visas
+  ws.merge_cells(f"B{cur_row}:D{cur_row}")
+  ws[f"B{cur_row}"] = "Visa Responsable d'essai"
+  ws[f"B{cur_row}"].font = font_bold
+  ws[f"B{cur_row}"].alignment = align_center
+
+  ws.merge_cells(f"F{cur_row}:H{cur_row}")
+  ws[f"F{cur_row}"] = "Visa Chef du laboratoire"
+  ws[f"F{cur_row}"].font = font_bold
+  ws[f"F{cur_row}"].alignment = align_center
+
+  cur_row += 1
+  ws.row_dimensions[cur_row].height = 40
+
+  ws.merge_cells(f"B{cur_row}:D{cur_row}")
+  ws[f"B{cur_row}"] = "O.IKKEN"
+  ws[f"B{cur_row}"].font = font_bold
+  ws[f"B{cur_row}"].alignment = Alignment(horizontal="center", vertical="top")
+
+  ws.merge_cells(f"F{cur_row}:H{cur_row}")
+  ws[f"F{cur_row}"] = "H.BAALLAL"
+  ws[f"F{cur_row}"].font = font_bold
+  ws[f"F{cur_row}"].alignment = Alignment(horizontal="center", vertical="top")
+
+  # Application universelle des bordures sur la grille complète
+  for r in range(1, cur_row + 1):
+    for c in range(1, 9):
+      ws.cell(row=r, column=c).border = thin_border
+
+  # Définition des largeurs de colonnes optimales
+  col_widths = {
+      "A": 16,
+      "B": 14,
+      "C": 14,
+      "D": 12,
+      "E": 20,
+      "F": 16,
+      "G": 14,
+      "H": 14,
+  }
+  for col_letter, width in col_widths.items():
+    ws.column_dimensions[col_letter].width = width
+
+  # Mise en page pour l'impression (1 page de large)
+  ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+  ws.page_setup.paperSize = ws.PAPERSIZE_A4
+  ws.sheet_properties.pageSetUpPr.fitToPage = True
+  ws.page_setup.fitToWidth = 1
+  ws.page_setup.fitToHeight = 0
+
+  buf = io.BytesIO()
+  wb.save(buf)
+  buf.seek(0)
+  return buf
 
 
 def exporter_dataframe_excel(df, date_chaine):
@@ -896,7 +1348,9 @@ def show(supabase):
         info_b_h = unique_parents.get(b_id_h) or {}
         essais_h = obtenir_historique_betonnage(supabase, b_id_h) or lot_hist
 
-        date_coulee_h = info_b_h.get("date_coulee") or sample_h.get("date_coulee")
+        date_coulee_h = info_b_h.get("date_coulee") or sample_h.get(
+            "date_coulee"
+        )
 
         export_data_h = []
         for item in essais_h:
@@ -910,7 +1364,6 @@ def show(supabase):
           rep_s = str(item.get("repere_eprouvette", f"/{item['id']}")).strip()
           dt_essai_item = item.get("date_ecrasement", "-")
 
-          # Calcul dynamique de l'âge spécifique pour chaque ligne
           age_real = calculer_age_jours(
               date_coulee_h, dt_essai_item, item.get("age")
           )
@@ -967,20 +1420,34 @@ def show(supabase):
             ),
         }
 
-        # Formatage dynamique du nom du fichier : N°Réception_DateFabrication.pdf
         nom_rec_clean = nettoyer_nom_fichier(ref_ctrl_h)
         date_fab_clean = formater_date_nom_fichier(date_coulee_h)
-        nom_fichier_pv = f"PV_{nom_rec_clean}_{date_fab_clean}.pdf"
 
-        st.download_button(
-            label=f"📄 Télécharger le PV ({nom_fichier_pv})",
-            data=generer_pv_pdf(export_data_h, infos_header_h),
-            file_name=nom_fichier_pv,
-            mime="application/pdf",
-            use_container_width=True,
-            type="primary",
-            key="btn_download_hist",
-        )
+        col_pdf, col_excel = st.columns(2)
+
+        with col_pdf:
+          nom_fichier_pv_pdf = f"PV_{nom_rec_clean}_{date_fab_clean}.pdf"
+          st.download_button(
+              label=f"📄 Télécharger le PV (PDF)",
+              data=generer_pv_pdf(export_data_h, infos_header_h),
+              file_name=nom_fichier_pv_pdf,
+              mime="application/pdf",
+              use_container_width=True,
+              type="primary",
+              key="btn_download_hist_pdf",
+          )
+
+        with col_excel:
+          nom_fichier_pv_xlsx = f"PV_{nom_rec_clean}_{date_fab_clean}.xlsx"
+          st.download_button(
+              label=f"📊 Télécharger le PV (Excel)",
+              data=exporter_pv_excel(export_data_h, infos_header_h),
+              file_name=nom_fichier_pv_xlsx,
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True,
+              type="secondary",
+              key="btn_download_hist_excel",
+          )
 
     # Base de données globale
     st.markdown("---")
