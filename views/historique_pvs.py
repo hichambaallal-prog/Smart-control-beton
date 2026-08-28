@@ -7,6 +7,12 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 import pandas as pd
 import streamlit as st
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
 
 
 # ==============================================================================
@@ -141,55 +147,49 @@ def formater_date_nom_fichier(dt_str):
 
 
 # ==============================================================================
-# 2. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT LPEE)
+# 2. GÉNÉRATION DU PROCÈS-VERBAL PDF (FORMAT LPEE)
 # ==============================================================================
-def generer_pv_excel(export_data, infos_header):
-  """Génère le PV d'écrasement Excel selon la mise en page LPEE."""
-  wb = openpyxl.Workbook()
-  ws = wb.active
-  ws.title = "PV Écrasement LPEE"
-
-  ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
-  ws.page_setup.paperSize = ws.PAPERSIZE_A4
-  ws.sheet_properties.pageSetUpPr.fitToPage = True
-  ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
-  ws.page_margins = PageMargins(
-      left=0.3, right=0.3, top=0.4, bottom=0.4, header=0.2, footer=0.2
+def generer_pv_pdf(export_data, infos_header):
+  """Génère le PV d'écrasement en PDF, avec la même mise en page (mêmes
+  sections, mêmes libellés, même grille) que l'ancienne version Excel."""
+  buf = io.BytesIO()
+  left_m = right_m = 0.3 * inch
+  top_m = bottom_m = 0.4 * inch
+  doc = SimpleDocTemplate(
+      buf,
+      pagesize=A4,
+      leftMargin=left_m,
+      rightMargin=right_m,
+      topMargin=top_m,
+      bottomMargin=bottom_m,
   )
 
-  # Styles
-  f_bold = Font(name="Calibri", size=9, bold=True)
-  f_bold_w = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
-  f_title_w = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-  f_reg = Font(name="Calibri", size=8.5)
-  f_small = Font(name="Calibri", size=8)
+  page_width = A4[0] - left_m - right_m
+  base_widths = [16, 12, 12, 10, 18, 14, 12, 12]  # proportions A..H (comme Excel)
+  total_units = sum(base_widths)
+  col_widths = [page_width * (w / total_units) for w in base_widths]
 
-  fill_dark = PatternFill("solid", fgColor="1F4E78")
-  fill_table = PatternFill("solid", fgColor="D9E1F2")
-  fill_label = PatternFill("solid", fgColor="F2F2F2")
+  DARK = colors.HexColor("#1F4E78")
+  TABLE_BG = colors.HexColor("#D9E1F2")
+  LABEL_BG = colors.HexColor("#F2F2F2")
+  WHITE = colors.white
+  BLACK = colors.black
 
-  a_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
-  a_left = Alignment(horizontal="left", vertical="center", wrap_text=True)
-  a_right = Alignment(horizontal="right", vertical="center", wrap_text=True)
-  a_top_center = Alignment(horizontal="center", vertical="top", wrap_text=True)
-
-  thin = Side(border_style="thin", color="000000")
-  b_cell = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-  def set_cell(
-      coord_or_cell,
-      val=None,
-      font=f_reg,
-      align=a_center,
-      fill=None,
-      border=b_cell,
-  ):
-    cell = ws[coord_or_cell] if isinstance(coord_or_cell, str) else coord_or_cell
-    if val is not None:
-      cell.value = val
-    cell.font, cell.alignment, cell.border = font, align, border
-    if fill:
-      cell.fill = fill
+  def P(text, size=7.5, bold=False, align="CENTER", color=BLACK):
+    """Cellule 'Paragraph' : contrairement à une simple chaîne de
+    caractères, elle passe à la ligne automatiquement si le texte est trop
+    long pour la largeur de la colonne (indispensable pour le Chantier,
+    l'affaissement, etc. dont le texte dépasse largement une ligne)."""
+    align_map = {"CENTER": TA_CENTER, "LEFT": TA_LEFT, "RIGHT": TA_RIGHT}
+    style = ParagraphStyle(
+        name="cell",
+        fontName="Helvetica-Bold" if bold else "Helvetica",
+        fontSize=size,
+        leading=size * 1.2,
+        alignment=align_map.get(align, TA_CENTER),
+        textColor=color,
+    )
+    return Paragraph(str(text), style)
 
   default_bl = extraire_num_bl(infos_header)
 
@@ -197,259 +197,304 @@ def generer_pv_excel(export_data, infos_header):
     v = str(val).strip() if val is not None else ""
     return fallback if v.upper() in ["N/A", "NONE", "NAN", "", "-"] else val
 
-  # En-tête
-  ws.merge_cells("A1:D1")
-  set_cell("A1", "LPEE / CTR CSB", f_bold_w, fill=fill_dark)
-  ws.merge_cells("A2:D3")
-  set_cell("A2", "Laboratoire de Contrôle Externe", f_bold_w, fill=fill_dark)
-  for r in range(1, 4):
-    for c in range(1, 9):
-      ws.cell(row=r, column=c).border = b_cell
-      if c <= 4:
-        ws.cell(row=r, column=c).fill = fill_dark
+  def blank_row():
+    return ["" for _ in range(8)]
 
-  set_cell("E1", "RE N° :", f_bold)
+  data = []
+  spans, bg, fonts, aligns, valigns = [], [], [], [], []
 
-  ws.merge_cells("F1:G1")
-
-  set_cell("F1", clean_na(infos_header.get("re_num"), "25/260/LGV/ B/"), align=a_right)
-
+  # ---- Row 0 : LPEE / CTR CSB | RE N° | Réf ----
+  r = blank_row()
+  r[0] = "LPEE / CTR CSB"
+  r[4] = "RE N° :"
+  r[5] = clean_na(infos_header.get("re_num"), "25/260/LGV/ B/")
   ref_h1 = clean_na(
       infos_header.get("num_reception")
       or infos_header.get("ref_controle")
       or infos_header.get("reference"),
       "B/406",
   )
-  set_cell("H1", ref_h1, f_bold, align=a_left)
+  r[7] = ref_h1
+  data.append(r)
+  row0 = len(data) - 1
+  spans += [(0, row0, 3, row0), (5, row0, 6, row0)]
+  bg.append((0, row0, 3, row0, DARK))
+  fonts.append((0, row0, 3, row0, "Helvetica-Bold", 9, WHITE))
+  fonts.append((4, row0, 4, row0, "Helvetica-Bold", 8.5, BLACK))
+  aligns.append((5, row0, 6, row0, "RIGHT"))
+  fonts.append((7, row0, 7, row0, "Helvetica-Bold", 8.5, BLACK))
+  aligns.append((7, row0, 7, row0, "LEFT"))
 
-  set_cell("E2", "DOSSIER :", f_bold)
-  ws.merge_cells("F2:H2")
-  set_cell(
-      "F2",
-      clean_na(infos_header.get("dossier"), "2025-260-05985-2025-0247"),
-  )
+  # ---- Rows 1-2 : Laboratoire de Contrôle Externe | DOSSIER / CLIENT ----
+  r = blank_row()
+  r[0] = "Laboratoire de Contrôle Externe"
+  r[4] = "DOSSIER :"
+  r[5] = clean_na(infos_header.get("dossier"), "2025-260-05985-2025-0247")
+  data.append(r)
+  row1 = len(data) - 1
 
-  set_cell("E3", "CLIENT :", f_bold)
-  ws.merge_cells("F3:H3")
-  set_cell("F3", clean_na(infos_header.get("client"), "TGCC"), f_bold)
+  r = blank_row()
+  r[4] = "CLIENT :"
+  r[5] = clean_na(infos_header.get("client"), "TGCC")
+  data.append(r)
+  row2 = len(data) - 1
 
-  # Titre & Normes
-  ws.merge_cells("A4:H4")
-  set_cell(
-      "A4",
-      "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE",
-      f_title_w,
-      fill=fill_dark,
-  )
-  for c in range(1, 9):
-    ws.cell(row=4, column=c).border = b_cell
+  spans.append((0, row1, 3, row2))
+  bg.append((0, row1, 3, row2, DARK))
+  fonts.append((0, row1, 3, row2, "Helvetica-Bold", 9, WHITE))
+  spans += [(5, row1, 7, row1), (5, row2, 7, row2)]
+  fonts.append((4, row1, 4, row1, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((4, row2, 4, row2, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((5, row1, 7, row1, "Helvetica", 8.5, BLACK))
+  fonts.append((5, row2, 7, row2, "Helvetica-Bold", 8.5, BLACK))
 
-  ws.merge_cells("A5:D5")
-  set_cell("A5", "[X] COMPRESSION NF EN 12390-3 (2019)", f_bold)
-  ws.merge_cells("E5:H5")
-  set_cell("E5", "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)", f_bold)
-  for c in range(1, 9):
-    ws.cell(row=5, column=c).border = b_cell
+  # ---- Row 3 : Titre ----
+  r = blank_row()
+  r[0] = "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
+  data.append(r)
+  row3 = len(data) - 1
+  spans.append((0, row3, 7, row3))
+  bg.append((0, row3, 7, row3, DARK))
+  fonts.append((0, row3, 7, row3, "Helvetica-Bold", 11, WHITE))
 
-  ws.merge_cells("A6:F6")
-  set_cell("A6", "Presse : Marque: Controls", f_bold, a_right)
-  ws.merge_cells("G6:H6")
-  set_cell("G6", "Classe : A", f_bold)
-  for c in range(1, 9):
-    ws.cell(row=6, column=c).border = b_cell
+  # ---- Row 4 : Compression / Traction ----
+  r = blank_row()
+  r[0] = "[X] COMPRESSION NF EN 12390-3 (2019)"
+  r[4] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
+  data.append(r)
+  row4 = len(data) - 1
+  spans += [(0, row4, 3, row4), (4, row4, 7, row4)]
+  fonts.append((0, row4, 7, row4, "Helvetica-Bold", 8.5, BLACK))
 
-  # Fiche technique
+  # ---- Row 5 : Presse / Classe ----
+  r = blank_row()
+  r[0] = "Presse : Marque: Controls"
+  r[6] = "Classe : A"
+  data.append(r)
+  row5 = len(data) - 1
+  spans += [(0, row5, 5, row5), (6, row5, 7, row5)]
+  fonts.append((0, row5, 7, row5, "Helvetica-Bold", 8.5, BLACK))
+  aligns.append((0, row5, 5, row5, "RIGHT"))
+
+  # ---- Row 6 : Date / Lieu de prélèvement ----
   date_fab_header = clean_na(infos_header.get("date_coulee"), "-")
-  set_cell("A7", "Date de\nprélèvement", f_bold, fill=fill_label)
-  set_cell("B7", str(date_fab_header), f_bold)
-  ws.merge_cells("C7:D7")
-  set_cell("C7", "Lieu de\nprélèvement", f_bold, fill=fill_label)
-  ws.merge_cells("E7:H7")
-  set_cell(
-      "E7",
+  r = blank_row()
+  r[0] = "Date de\nprélèvement"
+  r[1] = str(date_fab_header)
+  r[2] = "Lieu de\nprélèvement"
+  r[4] = P(
       clean_na(
-          infos_header.get("lieu_prelevement", infos_header.get("ouvrage")),
-          "-",
+          infos_header.get("lieu_prelevement", infos_header.get("ouvrage")), "-"
       ),
+      size=8.5,
+      bold=True,
   )
+  data.append(r)
+  row6 = len(data) - 1
+  spans += [(2, row6, 3, row6), (4, row6, 7, row6)]
+  bg += [(0, row6, 0, row6, LABEL_BG), (2, row6, 3, row6, LABEL_BG)]
+  fonts.append((0, row6, 0, row6, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((1, row6, 1, row6, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((2, row6, 3, row6, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((4, row6, 7, row6, "Helvetica", 8.5, BLACK))
 
-  set_cell("A8", "Chantier", f_bold, fill=fill_label)
-  ws.merge_cells("B8:D8")
-  set_cell(
-      "B8",
+  # ---- Row 7 : Chantier / Type de béton ----
+  r = blank_row()
+  r[0] = "Chantier"
+  r[1] = P(
       clean_na(
           infos_header.get("chantier"),
-          "LGV-Travaux d’exécution de terrassement, ouvrages d’art et rétablissement de communication entre PK 5+500 et PK 10+000-GARE CASA SUD.",
+          "LGV-Travaux d'exécution de terrassement, ouvrages d'art et"
+          " rétablissement de communication entre PK 5+500 et PK"
+          " 10+000-GARE CASA SUD.",
       ),
-      f_small,
+      size=7,
   )
-  ws.merge_cells("E8:F8")
-  set_cell("E8", "Type de béton", f_bold, fill=fill_label)
-  ws.merge_cells("G8:H8")
-  set_cell(
-      "G8",
-      str(clean_na(infos_header.get("classe_beton"), "C35/45")).upper(),
-      f_bold,
-  )
+  r[4] = "Type de béton"
+  r[6] = str(clean_na(infos_header.get("classe_beton"), "C35/45")).upper()
+  data.append(r)
+  row7 = len(data) - 1
+  spans += [(1, row7, 3, row7), (4, row7, 5, row7), (6, row7, 7, row7)]
+  bg += [(0, row7, 0, row7, LABEL_BG), (4, row7, 5, row7, LABEL_BG)]
+  fonts.append((0, row7, 0, row7, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((1, row7, 3, row7, "Helvetica", 7.5, BLACK))
+  fonts.append((4, row7, 5, row7, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((6, row7, 7, row7, "Helvetica-Bold", 8.5, BLACK))
 
-  ws.merge_cells("A9:B9")
-  set_cell(
-      "A9",
-      clean_na(infos_header.get("centrale"), "Centrale à Béton"),
-      f_bold,
-      fill=fill_label,
-  )
-  set_cell("C9", "- Dimensions", align=a_left)
-  ws.merge_cells("D9:H9")
-  set_cell(
-      "D9",
-      clean_na(infos_header.get("forme"), "Cylindrique 150x300"),
-      f_bold,
-  )
+  # ---- Row 8 : Centrale / Dimensions ----
+  r = blank_row()
+  r[0] = clean_na(infos_header.get("centrale"), "Centrale à Béton")
+  r[2] = "- Dimensions"
+  r[3] = clean_na(infos_header.get("forme"), "Cylindrique 150x300")
+  data.append(r)
+  row8 = len(data) - 1
+  spans += [(0, row8, 1, row8), (3, row8, 7, row8)]
+  bg.append((0, row8, 1, row8, LABEL_BG))
+  fonts.append((0, row8, 1, row8, "Helvetica-Bold", 8.5, BLACK))
+  aligns.append((2, row8, 2, row8, "LEFT"))
+  fonts.append((3, row8, 7, row8, "Helvetica-Bold", 8.5, BLACK))
 
-  ws.merge_cells("A10:B10")
-  set_cell(
-      "A10",
-      "Affaissement au cône d'abrams NF EN 12350-2",
-      f_small,
-      fill=fill_label,
-  )
-  set_cell("C10", str(clean_na(infos_header.get("affaissement"), "-")), f_bold)
-  set_cell("D10", "- Mode confection", align=a_left)
-  ws.merge_cells("E10:H10")
-  set_cell("E10", "Par vibration NF EN 12390-2 (2019)", f_bold)
+  # ---- Row 9 : Affaissement / Mode confection ----
+  r = blank_row()
+  r[0] = P("Affaissement au cône d'abrams NF EN 12350-2", size=7)
+  r[2] = str(clean_na(infos_header.get("affaissement"), "-"))
+  r[3] = P("- Mode confection", size=7, align="LEFT")
+  r[4] = "Par vibration NF EN 12390-2 (2019)"
+  data.append(r)
+  row9 = len(data) - 1
+  spans += [(0, row9, 1, row9), (4, row9, 7, row9)]
+  bg.append((0, row9, 1, row9, LABEL_BG))
+  fonts.append((0, row9, 1, row9, "Helvetica", 7.5, BLACK))
+  fonts.append((2, row9, 2, row9, "Helvetica-Bold", 8.5, BLACK))
+  aligns.append((3, row9, 3, row9, "LEFT"))
+  fonts.append((4, row9, 7, row9, "Helvetica-Bold", 8.5, BLACK))
 
-  ws.merge_cells("A11:B11")
-  set_cell("A11", "Température °C", fill=fill_label)
-  set_cell("C11", str(clean_na(infos_header.get("temperature"), "-")), f_bold)
-  set_cell("D11", "- Mode conservation", align=a_left)
-  ws.merge_cells("E11:H11")
-  set_cell(
-      "E11",
-      "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ±"
-      " 2°C",
-      f_bold,
+  # ---- Row 10 : Température / Mode conservation ----
+  r = blank_row()
+  r[0] = "Température °C"
+  r[2] = str(clean_na(infos_header.get("temperature"), "-"))
+  r[3] = P("- Mode conservation", size=7, align="LEFT")
+  r[4] = P(
+      "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C"
+      " ± 2°C",
+      size=7.5,
+      bold=True,
   )
+  data.append(r)
+  row10 = len(data) - 1
+  spans += [(0, row10, 1, row10), (4, row10, 7, row10)]
+  bg.append((0, row10, 1, row10, LABEL_BG))
+  fonts.append((0, row10, 1, row10, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((2, row10, 2, row10, "Helvetica-Bold", 8.5, BLACK))
+  aligns.append((3, row10, 3, row10, "LEFT"))
+  fonts.append((4, row10, 7, row10, "Helvetica-Bold", 7.5, BLACK))
 
+  # ---- Row 11 : Prélèvement effectué par / N° BL ----
   tech = clean_na(
       infos_header.get("technicien_prelevement")
       or infos_header.get("preleve_par")
       or infos_header.get("technicien"),
       "Technicien LPEE",
   )
-  ws.merge_cells("A12:C12")
-  set_cell("A12", f"prélèvement effectué par {tech}", f_small, fill=fill_label)
-  ws.merge_cells("D12:E12")
-  set_cell("D12", "N° de bon de livraison", fill=fill_label)
-  ws.merge_cells("F12:H12")
-  set_cell("F12", default_bl, f_bold)
+  r = blank_row()
+  r[0] = P(f"prélèvement effectué par {tech}", size=7)
+  r[3] = "N° de bon de livraison"
+  r[5] = default_bl
+  data.append(r)
+  row11 = len(data) - 1
+  spans += [(0, row11, 2, row11), (3, row11, 4, row11), (5, row11, 7, row11)]
+  bg += [(0, row11, 2, row11, LABEL_BG), (3, row11, 4, row11, LABEL_BG)]
+  fonts.append((0, row11, 2, row11, "Helvetica", 7.5, BLACK))
+  fonts.append((3, row11, 4, row11, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((5, row11, 7, row11, "Helvetica-Bold", 8.5, BLACK))
 
-  for r in range(7, 13):
-    for c in range(1, 9):
-      ws.cell(row=r, column=c).border = b_cell
+  # ---- Rows 12-13 : entête du tableau de résultats ----
+  r = blank_row()
+  r[0] = "Réf,"
+  r[1] = "Date"
+  r[3] = "Age (jours)"
+  r[4] = "Charge rupture(KN)"
+  r[5] = "Résistance (MPa)"
+  data.append(r)
+  row12 = len(data) - 1
 
-  # Tableau des résultats
-  headers = [
-      ("A13:A14", "Réf,", f_bold),
-      ("B13:C13", "Date", f_bold),
-      ("B14", "Fabri", f_reg),
-      ("C14", "Essai", f_reg),
-      ("D13:D14", "Age (jours)", f_bold),
-      ("E13:E14", "Charge rupture(KN)", f_bold),
-      ("F13:H13", "Résistance (MPa)", f_bold),
-      ("F14", "Compression", f_reg),
-      ("G14", "Traction", f_reg),
-      ("H14", "Moyenne", f_reg),
+  r = blank_row()
+  r[1] = "Fabri"
+  r[2] = "Essai"
+  r[5] = "Compression"
+  r[6] = "Traction"
+  r[7] = "Moyenne"
+  data.append(r)
+  row13 = len(data) - 1
+
+  spans += [
+      (0, row12, 0, row13),
+      (1, row12, 2, row12),
+      (3, row12, 3, row13),
+      (4, row12, 4, row13),
+      (5, row12, 7, row12),
   ]
-  for rng, text, font in headers:
-    if ":" in rng:
-      ws.merge_cells(rng)
-    cell = rng.split(":")[0]
-    set_cell(cell, text, font, fill=fill_table)
+  bg.append((0, row12, 7, row13, TABLE_BG))
+  fonts.append((0, row12, 7, row13, "Helvetica-Bold", 8.5, BLACK))
 
-  for r in range(13, 15):
-    for c in range(1, 9):
-      ws.cell(row=r, column=c).border = b_cell
-
-  row_start = 15
+  # ---- Lignes de résultats (une par éprouvette) ----
+  row_indices_body = []
   groupes_lots = {}
-
-  for idx, item in enumerate(export_data):
-    r = row_start + idx
+  for item in export_data:
     f_kn = float(item.get("force_kn", 0.0) or 0.0)
     is_en_cours = (
         str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
     )
     dt_essai = item.get("date_essai")
-
-    # Calcul dynamique précis de l'âge
     age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
 
-    # Calcul de la date d'essai
     date_essai_affichage = "-"
-    if not is_en_cours and dt_essai and str(dt_essai).strip() not in ["-", "", "None", "NaN"]:
+    if (
+        not is_en_cours
+        and dt_essai
+        and str(dt_essai).strip() not in ["-", "", "None", "NaN"]
+    ):
       date_essai_affichage = str(clean_na(dt_essai, "-"))
     else:
       try:
-        df_obj = datetime.strptime(str(date_fab_header).strip()[:10], "%Y-%m-%d")
-        date_essai_affichage = (df_obj + timedelta(days=int(age_val))).strftime("%Y-%m-%d")
+        df_obj = datetime.strptime(
+            str(date_fab_header).strip()[:10], "%Y-%m-%d"
+        )
+        date_essai_affichage = (
+            df_obj + timedelta(days=int(age_val))
+        ).strftime("%Y-%m-%d")
       except Exception:
         date_essai_affichage = "-"
 
-    set_cell(f"A{r}", str(item.get("repere_eprouvette", "B/01")))
-    set_cell(f"B{r}", str(date_fab_header))
-    set_cell(f"C{r}", date_essai_affichage)
-    set_cell(f"D{r}", age_val)
-
+    r = blank_row()
+    r[0] = str(item.get("repere_eprouvette", "B/01"))
+    r[1] = str(date_fab_header)
+    r[2] = date_essai_affichage
+    r[3] = str(age_val)
     if is_en_cours:
-      set_cell(f"E{r}", "En cours")
-      set_cell(f"F{r}", "En cours")
+      r[4] = "En cours"
+      r[5] = "En cours"
     else:
-      set_cell(f"E{r}", f_kn)
-      ws[f"E{r}"].number_format = "0.0"
-      set_cell(f"F{r}", float(item.get("fc_mpa", 0.0)))
-      ws[f"F{r}"].number_format = "0.0"
-
-    set_cell(f"G{r}", "-")
-    for c in range(1, 9):
-      ws.cell(row=r, column=c).border = b_cell
+      r[4] = f"{f_kn:.1f}"
+      r[5] = f"{float(item.get('fc_mpa', 0.0)):.1f}"
+    r[6] = "-"
+    data.append(r)
+    r_idx = len(data) - 1
+    row_indices_body.append(r_idx)
+    fonts.append((0, r_idx, 7, r_idx, "Helvetica", 8.5, BLACK))
 
     cle = f"{age_val}_{dt_essai}"
     groupes_lots.setdefault(
         cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
-    )["lignes"].append(r)
+    )["lignes"].append(r_idx)
 
-  # Fusion des moyennes & détection de la cellule moyenne à 28 jours
-  a_des_28j, cel_moyenne_28j, est_en_cours_28j = False, None, False
-
-  for data in groupes_lots.values():
-    lignes, age = data["lignes"], data["age"]
+  # Fusion des moyennes (comme les cellules H fusionnées côté Excel)
+  a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
+  for gdata in groupes_lots.values():
+    lignes, age = gdata["lignes"], gdata["age"]
     start_r, end_r = min(lignes), max(lignes)
     if start_r != end_r:
-      ws.merge_cells(f"H{start_r}:H{end_r}")
-
-    if data["en_cours"]:
-      set_cell(f"H{start_r}", "En cours", f_bold)
+      spans.append((7, start_r, 7, end_r))
+    if gdata["en_cours"]:
+      data[start_r][7] = "En cours"
     else:
-      formula = (
-          f"=ROUND(F{start_r}, 1)"
-          if start_r == end_r
-          else f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
-      )
-      set_cell(f"H{start_r}", formula, f_bold)
-      ws[f"H{start_r}"].number_format = "0.0"
-
+      vals = []
+      for li in lignes:
+        try:
+          vals.append(float(data[li][5]))
+        except (ValueError, TypeError):
+          pass
+      moy = round(sum(vals) / len(vals), 1) if vals else 0.0
+      data[start_r][7] = f"{moy:.1f}"
+      if int(age) >= 28:
+        moyenne_28j_val = moy
+    fonts.append((7, start_r, 7, end_r, "Helvetica-Bold", 8.5, BLACK))
     if int(age) >= 28:
       a_des_28j = True
-      cel_moyenne_28j = f"H{start_r}"
-      if data["en_cours"]:
+      if gdata["en_cours"]:
         est_en_cours_28j = True
 
-  # Commentaires & Visas
-  next_r = row_start + len(export_data)
-  set_cell(f"A{next_r}", "Commentaire :", f_bold, a_left, fill=fill_label)
-  ws.merge_cells(f"B{next_r}:H{next_r}")
-
+  # ---- Commentaire de conformité ----
   seuil = next(
       (
           s
@@ -464,63 +509,91 @@ def generer_pv_excel(export_data, infos_header):
       ),
       35.0,
   )
-
-  if not a_des_28j or est_en_cours_28j or not cel_moyenne_28j:
+  if not a_des_28j or est_en_cours_28j or moyenne_28j_val is None:
     comment_valeur = (
         "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
     )
+  elif moyenne_28j_val >= seuil:
+    comment_valeur = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
   else:
-    comment_valeur = (
-        f'=IF(OR(ISBLANK({cel_moyenne_28j}), {cel_moyenne_28j}="En'
-        ' cours"), "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES'
-        f' ULTERIEUREMENT.", IF({cel_moyenne_28j}>={seuil}, "PERFORMANCES'
-        ' MECANIQUES A 28 JOURS SONT CONFORMES", "PERFORMANCES MECANIQUES NON'
-        ' CONFORMES"))'
-    )
+    comment_valeur = "PERFORMANCES MECANIQUES NON CONFORMES"
 
-  set_cell(f"B{next_r}", comment_valeur, f_bold, a_left)
-  for c in range(1, 9):
-    ws.cell(row=next_r, column=c).border = b_cell
+  r = blank_row()
+  r[0] = "Commentaire :"
+  r[1] = P(comment_valeur, size=8.5, bold=True, align="LEFT")
+  data.append(r)
+  row_comment = len(data) - 1
+  spans.append((1, row_comment, 7, row_comment))
+  bg.append((0, row_comment, 0, row_comment, LABEL_BG))
+  fonts.append((0, row_comment, 0, row_comment, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((1, row_comment, 7, row_comment, "Helvetica-Bold", 8.5, BLACK))
+  aligns.append((0, row_comment, 0, row_comment, "LEFT"))
+  aligns.append((1, row_comment, 7, row_comment, "LEFT"))
 
-  # Visas
-  r_titre = next_r + 2
-  r_deb, r_fin = r_titre + 1, r_titre + 4
-  ws.merge_cells(
-      start_row=r_titre, start_column=2, end_row=r_titre, end_column=4
-  )
-  set_cell(ws.cell(row=r_titre, column=2), "Visa Responsable d'essai", f_bold)
-  ws.merge_cells(start_row=r_deb, start_column=2, end_row=r_fin, end_column=4)
-  set_cell(ws.cell(row=r_deb, column=2), "O.IKKEN", f_bold, a_top_center)
+  # ---- Visas ----
+  r = blank_row()
+  r[1] = "Visa Responsable d'essai"
+  r[5] = "Visa Chef du laboratoire"
+  data.append(r)
+  row_visa_titre = len(data) - 1
+  spans += [(1, row_visa_titre, 3, row_visa_titre), (5, row_visa_titre, 7, row_visa_titre)]
+  fonts.append((1, row_visa_titre, 3, row_visa_titre, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((5, row_visa_titre, 7, row_visa_titre, "Helvetica-Bold", 8.5, BLACK))
 
-  ws.merge_cells(
-      start_row=r_titre, start_column=6, end_row=r_titre, end_column=8
-  )
-  set_cell(ws.cell(row=r_titre, column=6), "Visa Chef du laboratoire", f_bold)
-  ws.merge_cells(start_row=r_deb, start_column=6, end_row=r_fin, end_column=8)
-  set_cell(ws.cell(row=r_deb, column=6), "H.BAALLAL", f_bold, a_top_center)
+  r = blank_row()
+  r[1] = "O.IKKEN"
+  r[5] = "H.BAALLAL"
+  data.append(r)
+  row_visa_nom = len(data) - 1
+  spans += [(1, row_visa_nom, 3, row_visa_nom), (5, row_visa_nom, 7, row_visa_nom)]
+  fonts.append((1, row_visa_nom, 3, row_visa_nom, "Helvetica-Bold", 9, BLACK))
+  fonts.append((5, row_visa_nom, 7, row_visa_nom, "Helvetica-Bold", 9, BLACK))
+  valigns += [(1, row_visa_nom, 3, row_visa_nom, "TOP"), (5, row_visa_nom, 7, row_visa_nom, "TOP")]
 
-  # Dimensions
-  heights = {7: 32, 8: 48, 10: 23, 11: 23, 9: 15, 12: 15, 13: 15, 14: 15}
-  for r in range(1, r_fin + 1):
-    ws.row_dimensions[r].height = heights.get(r, 28 if r >= 15 else 16)
+  # ---- Construction de la table ----
+  rows_auto_hauteur = {row6, row7, row9, row10, row11, row_comment}
+  row_heights = []
+  for i in range(len(data)):
+    if i in rows_auto_hauteur:
+      row_heights.append(None)  # calculé automatiquement selon le texte
+    elif i == row_visa_nom:
+      row_heights.append(48)
+    else:
+      row_heights.append(16)
 
-  widths = {
-      "A": 16,
-      "B": 12,
-      "C": 12,
-      "D": 10,
-      "E": 18,
-      "F": 14,
-      "G": 12,
-      "H": 12,
-  }
-  for col, w in widths.items():
-    ws.column_dimensions[col].width = w
+  table = Table(data, colWidths=col_widths, rowHeights=row_heights)
 
-  buf = io.BytesIO()
-  wb.save(buf)
+  style_cmds = [
+      ("GRID", (0, 0), (-1, -1), 0.5, BLACK),
+      ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+      ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+      ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+      ("FONTSIZE", (0, 0), (-1, -1), 8),
+      ("TOPPADDING", (0, 0), (-1, -1), 2),
+      ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+      ("LEFTPADDING", (0, 0), (-1, -1), 2),
+      ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+  ]
+  for (c1, r1, c2, r2) in spans:
+    style_cmds.append(("SPAN", (c1, r1), (c2, r2)))
+  for (c1, r1, c2, r2, color) in bg:
+    style_cmds.append(("BACKGROUND", (c1, r1), (c2, r2), color))
+  for (c1, r1, c2, r2, fname, fsize, fcolor) in fonts:
+    style_cmds.append(("FONTNAME", (c1, r1), (c2, r2), fname))
+    style_cmds.append(("FONTSIZE", (c1, r1), (c2, r2), fsize))
+    style_cmds.append(("TEXTCOLOR", (c1, r1), (c2, r2), fcolor))
+  for (c1, r1, c2, r2, al) in aligns:
+    style_cmds.append(("ALIGN", (c1, r1), (c2, r2), al))
+  for (c1, r1, c2, r2, va) in valigns:
+    style_cmds.append(("VALIGN", (c1, r1), (c2, r2), va))
+
+  table.setStyle(TableStyle(style_cmds))
+
+  doc.build([table])
   buf.seek(0)
   return buf
+
+
 
 
 def exporter_dataframe_excel(df, date_chaine):
@@ -861,16 +934,16 @@ def show(supabase):
             ),
         }
 
-        # Formatage dynamique du nom du fichier : N°Réception_DateFabrication.xlsx
+        # Formatage dynamique du nom du fichier : N°Réception_DateFabrication.pdf
         nom_rec_clean = nettoyer_nom_fichier(ref_ctrl_h)
         date_fab_clean = formater_date_nom_fichier(date_coulee_h)
-        nom_fichier_pv = f"PV_{nom_rec_clean}_{date_fab_clean}.xlsx"
+        nom_fichier_pv = f"PV_{nom_rec_clean}_{date_fab_clean}.pdf"
 
         st.download_button(
             label=f"📄 Télécharger le PV ({nom_fichier_pv})",
-            data=generer_pv_excel(export_data_h, infos_header_h),
+            data=generer_pv_pdf(export_data_h, infos_header_h),
             file_name=nom_fichier_pv,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            mime="application/pdf",
             use_container_width=True,
             type="primary",
             key="btn_download_hist",
