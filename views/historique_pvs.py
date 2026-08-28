@@ -164,7 +164,6 @@ def generer_pv_excel(export_data, infos_header):
   ws.merge_cells("F1:G1")
   set_cell("F1", clean_na(infos_header.get("re_num"), "25/260/LGV/ B/"))
 
-  # --- MODIFICATION CASE H1 : Remplacement de "BETON" par la Référence / N° Réception ---
   ref_h1 = clean_na(
       infos_header.get("num_reception")
       or infos_header.get("ref_controle")
@@ -366,7 +365,7 @@ def generer_pv_excel(export_data, infos_header):
     )["lignes"].append(r)
 
   # Fusion des moyennes & détection de la cellule moyenne à 28 jours
-  a_des_28j, cel_moyenne_28j = False, None
+  a_des_28j, cel_moyenne_28j, est_en_cours_28j = False, None, False
 
   for data in groupes_lots.values():
     lignes, age = data["lignes"], data["age"]
@@ -385,9 +384,11 @@ def generer_pv_excel(export_data, infos_header):
       set_cell(f"H{start_r}", formula, f_bold)
       ws[f"H{start_r}"].number_format = "0.0"
 
-    # --- MODIFICATION DE LA CASE CIBLE DU COMMENTAIRE (28 JOURS) ---
     if str(age).isdigit() and int(age) >= 28:
-      a_des_28j, cel_moyenne_28j = True, f"H{start_r}"
+      a_des_28j = True
+      cel_moyenne_28j = f"H{start_r}"
+      if data["en_cours"]:
+        est_en_cours_28j = True
 
   # Commentaires & Visas
   next_r = row_start + len(export_data)
@@ -409,21 +410,21 @@ def generer_pv_excel(export_data, infos_header):
       35.0,
   )
 
-  # Construction dynamique de la formule Excel pointant exactement vers la case à 28 jours
-  if not a_des_28j or not cel_moyenne_28j:
-    comment_formula = (
+  # Construction sécurisée du commentaire pour éviter le crash de syntaxe XML d'Excel
+  if not a_des_28j or est_en_cours_28j or not cel_moyenne_28j:
+    comment_valeur = (
         "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
     )
   else:
-    comment_formula = (
-        f'=SI(OU(ESTVIDE({cel_moyenne_28j}); {cel_moyenne_28j}="En cours");'
-        ' "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES'
-        f' ULTERIEUREMENT."; SI({cel_moyenne_28j}>={seuil}; "PERFORMANCES'
-        ' MECANIQUES A 28 JOURS SONT CONFORMES"; "PERFORMANCES MECANIQUES NON'
+    comment_valeur = (
+        f'=IF(OR(ISBLANK({cel_moyenne_28j}), {cel_moyenne_28j}="En'
+        ' cours"), "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES'
+        f' ULTERIEUREMENT.", IF({cel_moyenne_28j}>={seuil}, "PERFORMANCES'
+        ' MECANIQUES A 28 JOURS SONT CONFORMES", "PERFORMANCES MECANIQUES NON'
         ' CONFORMES"))'
     )
 
-  set_cell(f"B{next_r}", comment_formula, f_bold, a_left)
+  set_cell(f"B{next_r}", comment_valeur, f_bold, a_left)
   for c in range(1, 9):
     ws.cell(row=next_r, column=c).border = b_cell
 
