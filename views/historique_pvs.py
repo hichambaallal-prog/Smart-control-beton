@@ -364,9 +364,9 @@ def generer_pv_excel(export_data, infos_header):
     # Calcul dynamique précis de l'âge
     age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
 
-    # Calcul de la date d'essai prévue (date fabrication + âge) si non écrasé / en cours
+    # Calcul de la date d'essai (si réalisé: date effective, si en cours: date théorique prévisionnelle = date coulée + âge)
     date_essai_affichage = "-"
-    if not is_en_cours and dt_essai and str(dt_essai).strip() != "-":
+    if not is_en_cours and dt_essai and str(dt_essai).strip() not in ["-", "", "None", "NaN"]:
       date_essai_affichage = str(clean_na(dt_essai, "-"))
     else:
       try:
