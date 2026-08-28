@@ -1,7 +1,7 @@
 import io
 import re
 import unicodedata
-from datetime import date
+from datetime import datetime, date
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
@@ -90,6 +90,33 @@ def extraire_num_bl(*sources):
         if v_str.upper() not in invalid:
           return v_str
   return "-"
+
+
+def calculer_age_jours(date_fab, date_ess, age_defaut=None):
+  """Calcule l'âge en jours entre deux dates ou nettoie la valeur existante."""
+  try:
+    if date_fab and date_ess and str(date_ess).strip().lower() != "en cours":
+      df = datetime.strptime(str(date_fab).strip()[:10], "%Y-%m-%d")
+      de = datetime.strptime(str(date_ess).strip()[:10], "%Y-%m-%d")
+      diff = (de - df).days
+      if diff >= 0:
+        return diff
+  except Exception:
+    pass
+
+  if age_defaut is not None:
+    val_clean = (
+        str(age_defaut)
+        .lower()
+        .replace("jours", "")
+        .replace("jour", "")
+        .replace("j", "")
+        .strip()
+    )
+    if val_clean.isdigit():
+      return int(val_clean)
+
+  return 28
 
 
 # ==============================================================================
@@ -209,8 +236,9 @@ def generer_pv_excel(export_data, infos_header):
     ws.cell(row=6, column=c).border = b_cell
 
   # Fiche technique
+  date_fab_header = clean_na(infos_header.get("date_coulee"), "-")
   set_cell("A7", "Date de\nprélèvement", f_bold, fill=fill_label)
-  set_cell("B7", str(clean_na(infos_header.get("date_coulee"), "-")), f_bold)
+  set_cell("B7", str(date_fab_header), f_bold)
   ws.merge_cells("C7:D7")
   set_cell("C7", "Lieu de\nprélèvement", f_bold, fill=fill_label)
   ws.merge_cells("E7:H7")
@@ -330,19 +358,12 @@ def generer_pv_excel(export_data, infos_header):
         str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
     )
     dt_essai = item.get("date_essai")
-    age_val = (
-        int(
-            str(item.get("age", 7))
-            .replace("j", "")
-            .replace("jours", "")
-            .strip()
-        )
-        if str(item.get("age", 7)).isdigit()
-        else item.get("age", 7)
-    )
+
+    # Calcul dynamique précis de l'âge
+    age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
 
     set_cell(f"A{r}", str(item.get("repere_eprouvette", "B/01")))
-    set_cell(f"B{r}", str(clean_na(infos_header.get("date_coulee"), "-")))
+    set_cell(f"B{r}", str(date_fab_header))
     set_cell(f"C{r}", "En cours" if is_en_cours else str(clean_na(dt_essai, "-")))
     set_cell(f"D{r}", age_val)
 
@@ -359,7 +380,7 @@ def generer_pv_excel(export_data, infos_header):
     for c in range(1, 9):
       ws.cell(row=r, column=c).border = b_cell
 
-    cle = f"{item.get('age')}_{dt_essai}"
+    cle = f"{age_val}_{dt_essai}"
     groupes_lots.setdefault(
         cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
     )["lignes"].append(r)
@@ -384,7 +405,7 @@ def generer_pv_excel(export_data, infos_header):
       set_cell(f"H{start_r}", formula, f_bold)
       ws[f"H{start_r}"].number_format = "0.0"
 
-    if str(age).isdigit() and int(age) >= 28:
+    if int(age) >= 28:
       a_des_28j = True
       cel_moyenne_28j = f"H{start_r}"
       if data["en_cours"]:
@@ -410,7 +431,6 @@ def generer_pv_excel(export_data, infos_header):
       35.0,
   )
 
-  # Construction sécurisée du commentaire pour éviter le crash de syntaxe XML d'Excel
   if not a_des_28j or est_en_cours_28j or not cel_moyenne_28j:
     comment_valeur = (
         "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
@@ -736,6 +756,8 @@ def show(supabase):
         info_b_h = unique_parents.get(b_id_h) or {}
         essais_h = obtenir_historique_betonnage(supabase, b_id_h) or lot_hist
 
+        date_coulee_h = info_b_h.get("date_coulee") or sample_h.get("date_coulee")
+
         export_data_h = []
         for item in essais_h:
           sec = float(item.get("section") or 176.71)
@@ -746,6 +768,12 @@ def show(supabase):
           )
           ref_p = str(item.get("ref_controle") or "").strip()
           rep_s = str(item.get("repere_eprouvette", f"/{item['id']}")).strip()
+          dt_essai_item = item.get("date_ecrasement", "-")
+
+          # Calcul dynamique de l'âge spécifique pour chaque ligne
+          age_real = calculer_age_jours(
+              date_coulee_h, dt_essai_item, item.get("age")
+          )
 
           export_data_h.append({
               "repere_eprouvette": f"{ref_p}{rep_s}" if ref_p else rep_s,
@@ -753,12 +781,8 @@ def show(supabase):
               "section": sec,
               "force_kn": f_kn,
               "fc_mpa": fc,
-              "date_essai": item.get("date_ecrasement", "-"),
-              "age": (
-                  str(item.get("age", "28"))
-                  .replace(" jours", "")
-                  .replace("j", "")
-              ),
+              "date_essai": dt_essai_item,
+              "age": age_real,
               "statut": "En cours" if f_kn == 0 else "Réalisé",
           })
 
@@ -778,8 +802,7 @@ def show(supabase):
             "ouvrage": ouv_h,
             "lieu_prelevement": ouv_h,
             "classe_beton": sample_h.get("classe_beton", "C35/45"),
-            "date_coulee": info_b_h.get("date_coulee")
-            or sample_h.get("date_coulee"),
+            "date_coulee": date_coulee_h,
             "affaissement": (
                 info_b_h.get("affaissement") or info_b_h.get("slump")
             ),
