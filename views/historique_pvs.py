@@ -163,7 +163,15 @@ def generer_pv_excel(export_data, infos_header):
   set_cell("E1", "RE N° :", f_bold)
   ws.merge_cells("F1:G1")
   set_cell("F1", clean_na(infos_header.get("re_num"), "25/260/LGV/ B/"))
-  set_cell("H1", "BETON", f_bold)
+
+  # --- MODIFICATION CASE H1 : Remplacement de "BETON" par la Référence / N° Réception ---
+  ref_h1 = clean_na(
+      infos_header.get("num_reception")
+      or infos_header.get("ref_controle")
+      or infos_header.get("reference"),
+      "B/406",
+  )
+  set_cell("H1", ref_h1, f_bold)
 
   set_cell("E2", "DOSSIER :", f_bold)
   ws.merge_cells("F2:H2")
@@ -315,7 +323,6 @@ def generer_pv_excel(export_data, infos_header):
 
   row_start = 15
   groupes_lots = {}
-  a_des_28j, cel_moyenne_28j = False, None
 
   for idx, item in enumerate(export_data):
     r = row_start + idx
@@ -358,7 +365,9 @@ def generer_pv_excel(export_data, infos_header):
         cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
     )["lignes"].append(r)
 
-  # Fusion des moyennes
+  # Fusion des moyennes & détection de la cellule moyenne à 28 jours
+  a_des_28j, cel_moyenne_28j = False, None
+
   for data in groupes_lots.values():
     lignes, age = data["lignes"], data["age"]
     start_r, end_r = min(lignes), max(lignes)
@@ -375,18 +384,16 @@ def generer_pv_excel(export_data, infos_header):
       )
       set_cell(f"H{start_r}", formula, f_bold)
       ws[f"H{start_r}"].number_format = "0.0"
-      if str(age).isdigit() and int(age) >= 28:
-        a_des_28j, cel_moyenne_28j = True, f"H{start_r}"
+
+    # --- MODIFICATION DE LA CASE CIBLE DU COMMENTAIRE (28 JOURS) ---
+    if str(age).isdigit() and int(age) >= 28:
+      a_des_28j, cel_moyenne_28j = True, f"H{start_r}"
 
   # Commentaires & Visas
   next_r = row_start + len(export_data)
   set_cell(f"A{next_r}", "Commentaire :", f_bold, a_left, fill=fill_label)
   ws.merge_cells(f"B{next_r}:H{next_r}")
 
-  obs_defaut = (
-      infos_header.get("observations")
-      or "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
-  )
   seuil = next(
       (
           s
@@ -402,16 +409,20 @@ def generer_pv_excel(export_data, infos_header):
       35.0,
   )
 
-  comment_formula = (
-      "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
-      if not a_des_28j or not cel_moyenne_28j
-      else (
-          f'=IF(OR(ISBLANK({cel_moyenne_28j}), {cel_moyenne_28j}="En cours"), '
-          '"PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT.", '
-          f'IF({cel_moyenne_28j}>={seuil}, "{obs_defaut}", "PERFORMANCES'
-          ' MECANIQUES NON CONFORMES"))'
-      )
-  )
+  # Construction dynamique de la formule Excel pointant exactement vers la case à 28 jours
+  if not a_des_28j or not cel_moyenne_28j:
+    comment_formula = (
+        "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
+    )
+  else:
+    comment_formula = (
+        f'=SI(OU(ESTVIDE({cel_moyenne_28j}); {cel_moyenne_28j}="En cours");'
+        ' "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES'
+        f' ULTERIEUREMENT."; SI({cel_moyenne_28j}>={seuil}; "PERFORMANCES'
+        ' MECANIQUES A 28 JOURS SONT CONFORMES"; "PERFORMANCES MECANIQUES NON'
+        ' CONFORMES"))'
+    )
+
   set_cell(f"B{next_r}", comment_formula, f_bold, a_left)
   for c in range(1, 9):
     ws.cell(row=next_r, column=c).border = b_cell
@@ -575,7 +586,6 @@ def show(supabase):
 
     df_all = pd.DataFrame(res_all.data)
 
-    # Dictionnaire mémoire des parents
     unique_b_ids = [
         b_id for b_id in df_all["betonnage_id"].unique() if pd.notnull(b_id)
     ]
@@ -584,7 +594,6 @@ def show(supabase):
         for b_id in unique_b_ids
     }
 
-    # Helper tolérant pour les statuts / booléens
     def est_valide_val(v):
       if isinstance(v, bool):
         return v
@@ -601,21 +610,16 @@ def show(supabase):
         return "valide" in v_norm
       return False
 
-    # -------------------------------------------------------------------------
-    # FILTRE AMÉLIORÉ : PVs ÉCRASÉS ET VALIDÉS
-    # -------------------------------------------------------------------------
     def verifier_pv_valide_et_signe(row):
       b_id = row.get("betonnage_id")
       parent = unique_parents.get(b_id) or {}
 
-      # 1. Force appliquée (écrasement effectué > 0)
       f_kn = row.get("force_kn")
       try:
         a_force = pd.notnull(f_kn) and float(f_kn) > 0
       except (ValueError, TypeError):
         a_force = False
 
-      # 2. Statut validé (recherche parent ET ligne d'essai)
       statut_valide = (
           est_valide_val(parent.get("statut_pv"))
           or est_valide_val(parent.get("validation_admin"))
@@ -625,15 +629,11 @@ def show(supabase):
 
       return a_force and statut_valide
 
-    # Filtrage des enregistrements
     mask_valides = df_all.apply(verifier_pv_valide_et_signe, axis=1)
     df_valides = df_all[mask_valides].copy()
 
     st.markdown("##### 📥 Re-télécharger un Procès-Verbal")
 
-    # -------------------------------------------------------------------------
-    # DIAGNOSTIC PERMANENT : lots validés côté admin mais absents de la liste
-    # -------------------------------------------------------------------------
     b_ids_dans_liste = (
         set(df_valides["betonnage_id"].dropna().unique())
         if not df_valides.empty
@@ -665,56 +665,21 @@ def show(supabase):
       ):
         st.caption(
             "Un PV validé n'apparaît dans la liste de téléchargement que si"
-            " au moins une éprouvette de ce lot a une **Force (kN) > 0**"
-            " (le visa n'est plus une condition bloquante). Ces lots sont"
-            " marqués validés côté admin mais aucune éprouvette du lot n'a"
-            " encore de force enregistrée :"
+            " au moins une éprouvette de ce lot a une **Force (kN) > 0**. Ces"
+            " lots sont marqués validés côté admin mais aucune éprouvette du"
+            " lot n'a encore de force enregistrée :"
         )
         st.dataframe(
-            pd.DataFrame(lots_manquants), use_container_width=True,
+            pd.DataFrame(lots_manquants),
+            use_container_width=True,
             hide_index=True,
         )
 
     if df_valides.empty:
       st.info(
-          "ℹ️ Aucun Procès-Verbal **validé** n'est disponible pour"
-          " le téléchargement."
+          "ℹ️ Aucun Procès-Verbal **validé** n'est disponible pour le"
+          " téléchargement."
       )
-      with st.expander(
-          "🔧 Diagnostic : pourquoi aucun PV ne s'affiche ici ?"
-      ):
-        st.caption(
-            "Valeurs brutes lues en base pour les 15 dernières lignes, sur"
-            " les colonnes que le filtre 'validé' vérifie. Si une"
-            " colonne affiche systématiquement `None` alors que vous avez"
-            " bien validé/signé le PV concerné, c'est que le formulaire de"
-            " validation écrit sous un autre nom de colonne — il faudra"
-            " l'ajouter à la liste vérifiée ci-dessus."
-        )
-        cols_diag = [
-            "statut_pv",
-            "validation_admin",
-            "visa_chef",
-            "visa_admin",
-            "visa_responsable",
-            "visa_resp",
-        ]
-        diag_rows = []
-        for _, row in df_all.head(15).iterrows():
-          b_id = row.get("betonnage_id")
-          parent = unique_parents.get(b_id) or {}
-          d = {
-              "id": row.get("id"),
-              "betonnage_id": b_id,
-              "force_kn": row.get("force_kn"),
-          }
-          for c in cols_diag:
-            d[f"{c} (ligne)"] = row.get(c)
-            d[f"{c} (parent)"] = parent.get(c)
-          diag_rows.append(d)
-        st.dataframe(
-            pd.DataFrame(diag_rows), use_container_width=True, hide_index=True
-        )
     else:
       c_r1, c_r2 = st.columns(2)
       recherche_pv = c_r1.text_input(
@@ -756,9 +721,7 @@ def show(supabase):
       ]
 
       if not pvs_filtrés:
-        st.warning(
-            "Aucun PV validé ne correspond à votre recherche."
-        )
+        st.warning("Aucun PV validé ne correspond à votre recherche.")
       else:
         choix_pv = st.selectbox(
             "Sélectionnez le PV à consulter :",
@@ -781,9 +744,7 @@ def show(supabase):
               or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0)
           )
           ref_p = str(item.get("ref_controle") or "").strip()
-          rep_s = str(
-              item.get("repere_eprouvette", f"/{item['id']}")
-          ).strip()
+          rep_s = str(item.get("repere_eprouvette", f"/{item['id']}")).strip()
 
           export_data_h.append({
               "repere_eprouvette": f"{ref_p}{rep_s}" if ref_p else rep_s,
@@ -802,11 +763,16 @@ def show(supabase):
 
         num_bl_h = extraire_num_bl(sample_h, info_b_h, choix_pv)
         ouv_h = info_b_h.get("ouvrage") or sample_h.get("ouvrage")
+        ref_ctrl_h = determiner_ref_controle(
+            supabase, b_id_h, info_b_h, sample_h
+        )
 
         infos_header_h = {
             "re_num": "25/260/LGV/ B/",
             "dossier": "2025-260-05985-2025-0247",
             "client": "TGCC",
+            "num_reception": ref_ctrl_h,
+            "ref_controle": ref_ctrl_h,
             "num_bl": num_bl_h,
             "ouvrage": ouv_h,
             "lieu_prelevement": ouv_h,
@@ -828,7 +794,6 @@ def show(supabase):
             "observations": (
                 info_b_h.get("observations_admin")
                 or sample_h.get("observations")
-                or "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
             ),
             "technicien_prelevement": (
                 info_b_h.get("technicien_prelevement")
@@ -838,7 +803,6 @@ def show(supabase):
             ),
         }
 
-        # Bouton de téléchargement accessible directement
         st.download_button(
             label="📄 Télécharger le PV (Excel Format LPEE)",
             data=generer_pv_excel(export_data_h, infos_header_h),
@@ -851,16 +815,16 @@ def show(supabase):
             key="btn_download_hist",
         )
 
-    # -------------------------------------------------------------------------
-    # TABLEAU GLOBAL DE TOUTE LA BASE DE DONNÉES
-    # -------------------------------------------------------------------------
+    # Base de données globale
     st.markdown("---")
     st.markdown("##### 📊 Base de données globale")
 
-    # Calcul/récupération de la référence de contrôle pour chaque ligne
     df_all["ref_controle"] = df_all.apply(
         lambda r: determiner_ref_controle(
-            supabase, r.get("betonnage_id"), unique_parents.get(r.get("betonnage_id")), r.to_dict()
+            supabase,
+            r.get("betonnage_id"),
+            unique_parents.get(r.get("betonnage_id")),
+            r.to_dict(),
         ),
         axis=1,
     )
