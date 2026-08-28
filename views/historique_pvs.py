@@ -1,7 +1,7 @@
 import io
 import re
 import unicodedata
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
@@ -191,7 +191,7 @@ def generer_pv_excel(export_data, infos_header):
 
   ws.merge_cells("F1:G1")
 
-  set_cell("F1", clean_na(infos_header.get("re_num"), "25/260/LGV/"), align=a_right)
+  set_cell("F1", clean_na(infos_header.get("re_num"), "25/260/LGV/ B/"), align=a_right)
 
   ref_h1 = clean_na(
       infos_header.get("num_reception")
@@ -364,9 +364,20 @@ def generer_pv_excel(export_data, infos_header):
     # Calcul dynamique précis de l'âge
     age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
 
+    # Calcul de la date d'essai prévue (date fabrication + âge) si non écrasé / en cours
+    date_essai_affichage = "-"
+    if not is_en_cours and dt_essai and str(dt_essai).strip() != "-":
+      date_essai_affichage = str(clean_na(dt_essai, "-"))
+    else:
+      try:
+        df_obj = datetime.strptime(str(date_fab_header).strip()[:10], "%Y-%m-%d")
+        date_essai_affichage = (df_obj + timedelta(days=int(age_val))).strftime("%Y-%m-%d")
+      except Exception:
+        date_essai_affichage = "-"
+
     set_cell(f"A{r}", str(item.get("repere_eprouvette", "B/01")))
     set_cell(f"B{r}", str(date_fab_header))
-    set_cell(f"C{r}", "En cours" if is_en_cours else str(clean_na(dt_essai, "-")))
+    set_cell(f"C{r}", date_essai_affichage)
     set_cell(f"D{r}", age_val)
 
     if is_en_cours:
