@@ -1,7 +1,7 @@
 import io
 import re
 import unicodedata
-from datetime import date, datetime, timedelta
+from datetime import datetime, date, timedelta
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
@@ -129,7 +129,9 @@ def nettoyer_nom_fichier(chaine):
   """Remplace les caractères interdits pour les noms de fichiers OS."""
   if not chaine:
     return "PV"
+  # Remplace les slashes, anti-slashes et caractères spéciaux par des tirets
   clean = re.sub(r'[\\/*?:"<>|]', "-", str(chaine).strip())
+  # Supprime les espaces multiples
   return re.sub(r"\s+", "_", clean)
 
 
@@ -145,13 +147,11 @@ def formater_date_nom_fichier(dt_str):
 
 
 # ==============================================================================
-# 2. GÉNÉRATION DU PROCÈS-VERBAL PDF (FORMAT LPEE AJUSTÉ EN HAUTEUR)
+# 2. GÉNÉRATION DU PROCÈS-VERBAL PDF (FORMAT LPEE)
 # ==============================================================================
 def generer_pv_pdf(export_data, infos_header):
-  """Génère le PV d'écrasement en PDF et étire dynamiquement les lignes
-
-  d'éprouvettes et la zone de visa afin de couvrir toute la page A4.
-  """
+  """Génère le PV d'écrasement en PDF, avec la même mise en page (mêmes
+  sections, mêmes libellés, même grille) que l'ancienne version Excel."""
   buf = io.BytesIO()
   left_m = right_m = 0.3 * inch
   top_m = bottom_m = 0.4 * inch
@@ -164,11 +164,8 @@ def generer_pv_pdf(export_data, infos_header):
       bottomMargin=bottom_m,
   )
 
-  # Calcul des dimensions utilisables
   page_width = A4[0] - left_m - right_m
-  total_height = A4[1] - top_m - bottom_m
-
-  base_widths = [16, 12, 12, 10, 18, 14, 12, 12]  # proportions A..H
+  base_widths = [16, 12, 12, 10, 18, 14, 12, 12]  # proportions A..H (comme Excel)
   total_units = sum(base_widths)
   col_widths = [page_width * (w / total_units) for w in base_widths]
 
@@ -179,6 +176,10 @@ def generer_pv_pdf(export_data, infos_header):
   BLACK = colors.black
 
   def P(text, size=7.5, bold=False, align="CENTER", color=BLACK):
+    """Cellule 'Paragraph' : contrairement à une simple chaîne de
+    caractères, elle passe à la ligne automatiquement si le texte est trop
+    long pour la largeur de la colonne (indispensable pour le Chantier,
+    l'affaissement, etc. dont le texte dépasse largement une ligne)."""
     align_map = {"CENTER": TA_CENTER, "LEFT": TA_LEFT, "RIGHT": TA_RIGHT}
     style = ParagraphStyle(
         name="cell",
@@ -467,7 +468,7 @@ def generer_pv_pdf(export_data, infos_header):
         cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
     )["lignes"].append(r_idx)
 
-  # Fusion des moyennes
+  # Fusion des moyennes (comme les cellules H fusionnées côté Excel)
   a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
   for gdata in groupes_lots.values():
     lignes, age = gdata["lignes"], gdata["age"]
@@ -535,16 +536,9 @@ def generer_pv_pdf(export_data, infos_header):
   r[5] = "Visa Chef du laboratoire"
   data.append(r)
   row_visa_titre = len(data) - 1
-  spans += [
-      (1, row_visa_titre, 3, row_visa_titre),
-      (5, row_visa_titre, 7, row_visa_titre),
-  ]
-  fonts.append(
-      (1, row_visa_titre, 3, row_visa_titre, "Helvetica-Bold", 8.5, BLACK)
-  )
-  fonts.append(
-      (5, row_visa_titre, 7, row_visa_titre, "Helvetica-Bold", 8.5, BLACK)
-  )
+  spans += [(1, row_visa_titre, 3, row_visa_titre), (5, row_visa_titre, 7, row_visa_titre)]
+  fonts.append((1, row_visa_titre, 3, row_visa_titre, "Helvetica-Bold", 8.5, BLACK))
+  fonts.append((5, row_visa_titre, 7, row_visa_titre, "Helvetica-Bold", 8.5, BLACK))
 
   r = blank_row()
   r[1] = "O.IKKEN"
@@ -554,67 +548,18 @@ def generer_pv_pdf(export_data, infos_header):
   spans += [(1, row_visa_nom, 3, row_visa_nom), (5, row_visa_nom, 7, row_visa_nom)]
   fonts.append((1, row_visa_nom, 3, row_visa_nom, "Helvetica-Bold", 9, BLACK))
   fonts.append((5, row_visa_nom, 7, row_visa_nom, "Helvetica-Bold", 9, BLACK))
-  valigns += [
-      (1, row_visa_nom, 3, row_visa_nom, "TOP"),
-      (5, row_visa_nom, 7, row_visa_nom, "TOP"),
-  ]
+  valigns += [(1, row_visa_nom, 3, row_visa_nom, "TOP"), (5, row_visa_nom, 7, row_visa_nom, "TOP")]
 
-  # ==========================================================================
-  # CALCUL DYNAMIQUE ET ÉTIREMENT PROPORTIONNEL DE LA HAUTEUR DES LIGNES
-  # ==========================================================================
-  # Hauteurs de base prévues
-  fixed_row_heights = {
-      0: 20,
-      1: 16,
-      2: 16,
-      3: 20,
-      4: 16,
-      5: 16,
-      6: 22,  # Auto-expandable si texte long
-      7: 28,  # Chantier multi-ligne
-      8: 16,
-      9: 18,
-      10: 20,
-      11: 18,
-      12: 16,
-      13: 16,
-      row_comment: 20,
-      row_visa_titre: 16,
-  }
-
-  base_body_height = 18  # Hauteur min par défaut pour une éprouvette
-  base_visa_nom_height = 45  # Hauteur min pour le carré de signature
-
-  # 1. Calcul de la hauteur fixe totale consommée par les en-têtes & commentaires
-  fixed_sum = sum(fixed_row_heights.values())
-  min_body_sum = len(row_indices_body) * base_body_height
-  min_total_needed = fixed_sum + min_body_sum + base_visa_nom_height
-
-  # 2. Distribution de l'espace restant s'il y a du vide
-  remaining_space = total_height - min_total_needed
-
-  if remaining_space > 0:
-    # On donne 80% du vide restant aux éprouvettes et 20% à la zone de visa
-    extra_body_space = remaining_space * 0.80
-    extra_visa_space = remaining_space * 0.20
-
-    body_row_height = base_body_height + (
-        extra_body_space / max(len(row_indices_body), 1)
-    )
-    visa_nom_height = base_visa_nom_height + extra_visa_space
-  else:
-    body_row_height = base_body_height
-    visa_nom_height = base_visa_nom_height
-
-  # 3. Assemblage du tableau final avec les hauteurs dynamiques
+  # ---- Construction de la table ----
+  rows_auto_hauteur = {row6, row7, row9, row10, row11, row_comment}
   row_heights = []
   for i in range(len(data)):
-    if i in row_indices_body:
-      row_heights.append(body_row_height)
+    if i in rows_auto_hauteur:
+      row_heights.append(None)  # calculé automatiquement selon le texte
     elif i == row_visa_nom:
-      row_heights.append(visa_nom_height)
+      row_heights.append(48)
     else:
-      row_heights.append(fixed_row_heights.get(i, 16))
+      row_heights.append(16)
 
   table = Table(data, colWidths=col_widths, rowHeights=row_heights)
 
@@ -629,17 +574,17 @@ def generer_pv_pdf(export_data, infos_header):
       ("LEFTPADDING", (0, 0), (-1, -1), 2),
       ("RIGHTPADDING", (0, 0), (-1, -1), 2),
   ]
-  for c1, r1, c2, r2 in spans:
+  for (c1, r1, c2, r2) in spans:
     style_cmds.append(("SPAN", (c1, r1), (c2, r2)))
-  for c1, r1, c2, r2, color in bg:
+  for (c1, r1, c2, r2, color) in bg:
     style_cmds.append(("BACKGROUND", (c1, r1), (c2, r2), color))
-  for c1, r1, c2, r2, fname, fsize, fcolor in fonts:
+  for (c1, r1, c2, r2, fname, fsize, fcolor) in fonts:
     style_cmds.append(("FONTNAME", (c1, r1), (c2, r2), fname))
     style_cmds.append(("FONTSIZE", (c1, r1), (c2, r2), fsize))
     style_cmds.append(("TEXTCOLOR", (c1, r1), (c2, r2), fcolor))
-  for c1, r1, c2, r2, al in aligns:
+  for (c1, r1, c2, r2, al) in aligns:
     style_cmds.append(("ALIGN", (c1, r1), (c2, r2), al))
-  for c1, r1, c2, r2, va in valigns:
+  for (c1, r1, c2, r2, va) in valigns:
     style_cmds.append(("VALIGN", (c1, r1), (c2, r2), va))
 
   table.setStyle(TableStyle(style_cmds))
@@ -647,6 +592,8 @@ def generer_pv_pdf(export_data, infos_header):
   doc.build([table])
   buf.seek(0)
   return buf
+
+
 
 
 def exporter_dataframe_excel(df, date_chaine):
@@ -930,6 +877,7 @@ def show(supabase):
           rep_s = str(item.get("repere_eprouvette", f"/{item['id']}")).strip()
           dt_essai_item = item.get("date_ecrasement", "-")
 
+          # Calcul dynamique de l'âge spécifique pour chaque ligne
           age_real = calculer_age_jours(
               date_coulee_h, dt_essai_item, item.get("age")
           )
@@ -986,6 +934,7 @@ def show(supabase):
             ),
         }
 
+        # Formatage dynamique du nom du fichier : N°Réception_DateFabrication.pdf
         nom_rec_clean = nettoyer_nom_fichier(ref_ctrl_h)
         date_fab_clean = formater_date_nom_fichier(date_coulee_h)
         nom_fichier_pv = f"PV_{nom_rec_clean}_{date_fab_clean}.pdf"
