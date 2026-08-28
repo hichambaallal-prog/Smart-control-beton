@@ -1122,11 +1122,6 @@ def show(supabase):
 
         if can_edit:
             # --- Correction en masse des dates déjà en base (données historiques) ---
-            # Le calcul automatique (ci-dessous) ne s'applique qu'aux MODIFICATIONS
-            # futures faites depuis ce tableau. Pour corriger d'un coup les
-            # éprouvettes déjà enregistrées avec une date d'écrasement incohérente
-            # (ex : échéance changée de 7 à 28 jours sans que la date ait suivi à
-            # l'époque), ce bouton recalcule et corrige tout en une fois.
             with st.expander("🔧 Corriger en masse les dates d'écrasement incohérentes", expanded=False):
                 st.caption(
                     "Recalcule `Date Écrasement Prévue = Date Coulée + Échéance Visée` "
@@ -1218,11 +1213,6 @@ def show(supabase):
                     df_display_prog = df_edit_prog[cols_ed].copy()
 
                     # --- Aperçu live : "Date Écrasement Prévue" = Date Coulée + Échéance ---
-                    # On applique d'abord les éditions non-encore-enregistrées de
-                    # l'utilisateur (stockées par Streamlit dans session_state sous
-                    # la clé du data_editor) avant de recalculer, pour que la date
-                    # affichée se mette à jour DÈS qu'on change l'échéance dans le
-                    # tableau — sans attendre le clic sur "Enregistrer".
                     etat_editeur_prog = st.session_state.get("editor_modification_phase1", {})
                     for idx_pos, changements in etat_editeur_prog.get("edited_rows", {}).items():
                         if idx_pos < len(df_display_prog):
@@ -1240,7 +1230,7 @@ def show(supabase):
                                 dt_c_apercu = datetime.strptime(str(coulee_val)[:10], "%Y-%m-%d").date()
                                 df_display_prog.iat[idx_pos, col_idx_ecras] = str(dt_c_apercu + timedelta(days=nb_j_apercu))
                             except (ValueError, TypeError):
-                                pass  # Date Coulée invalide/absente : on laisse la valeur enregistrée telle quelle
+                                pass
 
                     df_prog_modifiee = st.data_editor(
                         df_display_prog,
@@ -1277,9 +1267,6 @@ def show(supabase):
                                 ech_str = str(r_m.get("echeance", "")).strip()
                                 dt_coulee_str = str(r_m.get("date_coulee", "")).strip()
 
-                                # Règle stricte et systématique, appliquée ligne par
-                                # ligne (pas de calcul vectoriel pandas fragile) :
-                                # Date Écrasement Prévue = Date Coulée + Échéance Visée.
                                 nb_j = extraire_nb_jours(ech_str, default=28)
                                 try:
                                     dt_c = datetime.strptime(dt_coulee_str[:10], "%Y-%m-%d").date()
