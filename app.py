@@ -36,25 +36,46 @@ st.set_page_config(
 # ==========================================
 # 1bis. CAPTURE DES PARAMÈTRES QR CODE (ex: ?rec=...&beton_id=...)
 # ==========================================
+# C'est ICI qu'il faut lire l'URL, et pas dans views/suivi_controle_beton.py :
+# ce module est importé (pas exécuté directement), donc son bloc
+# "if __name__ == '__main__':" ne s'exécute jamais dans l'app déployée.
 _query_params = st.query_params
 _qr_rec = _query_params.get("rec") or _query_params.get("num_reception")
 _qr_bid = _query_params.get("beton_id") or _query_params.get("id")
 _qr_ep = _query_params.get("ep")
 
 if _qr_rec or _qr_bid:
-  if _qr_rec:
-    st.session_state["pending_qr_rec"] = str(_qr_rec).strip()
-  if _qr_bid:
-    st.session_state["pending_qr_bid"] = str(_qr_bid).strip()
-  if _qr_ep:
-    st.session_state["pending_qr_ep"] = str(_qr_ep).strip()
+    if _qr_rec:
+        st.session_state["pending_qr_rec"] = str(_qr_rec).strip()
+    if _qr_bid:
+        st.session_state["pending_qr_bid"] = str(_qr_bid).strip()
+    if _qr_ep:
+        st.session_state["pending_qr_ep"] = str(_qr_ep).strip()
 
-  st.session_state["qr_page_applied"] = False
-  st.query_params.clear()
+    # (Ré)armer la redirection automatique vers la page "Suivi Contrôle Béton"
+    st.session_state["qr_page_applied"] = False
+
+    # Nettoyer l'URL : sans ça, ce bloc s'exécuterait à nouveau à CHAQUE clic
+    # / rerun et forcerait la page à chaque interaction (ce qui empêcherait
+    # toute navigation manuelle une fois arrivé sur la bonne page).
+    st.query_params.clear()
 
 # ==========================================
-# 1ter. "SE SOUVENIR DE MOI" — COOKIE VIA COMPOSANT
+# 1ter. "SE SOUVENIR DE MOI" — COOKIE VIA COMPOSANT (rapide, sans rechargement)
 # ==========================================
+# Permet de rester connecté sur le même appareil/navigateur, y compris après
+# un scan QR Code qui ouvre une nouvelle session Streamlit (donc un
+# session_state vide) : sans cookie, il faudrait ressaisir le mot de passe
+# à CHAQUE scan.
+#
+# NOTE : une version précédente lisait/écrivait le cookie via un
+# rechargement complet de la page (fiable, mais lent : ~30-40s à chaque
+# scan QR). On revient donc au composant (rapide, pas de rechargement),
+# avec deux corrections de timing pour fiabiliser sur Safari/iOS :
+#  1) un premier passage "à vide" forcé pour laisser le composant le temps
+#     de récupérer les cookies déjà présents avant toute vérification,
+#  2) une courte pause après l'écriture d'un nouveau cookie, avant de
+#     recharger la vue, pour laisser le temps au navigateur de l'enregistrer.
 REMEMBER_SECRET_KEY = os.environ.get(
     "REMEMBER_SECRET_KEY", "lpee_ctr_csb_remember_me_2026_a_changer"
 )
@@ -63,20 +84,33 @@ REMEMBER_COOKIE_NAME = "remember_data"
 
 
 def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
-  import hashlib
-  import hmac as hmac_lib
-
-  payload = f"{username}:{role}:{bool(can_edit)}:{issued_at_iso}"
-  return hmac_lib.new(
-      REMEMBER_SECRET_KEY.encode(), payload.encode(), hashlib.sha256
-  ).hexdigest()
+    """Jeton signé auto-suffisant (indépendant de la base utilisateurs),
+    pour fonctionner avec les 3 chemins de connexion possibles (compte
+    nommé, mot de passe maître admin2026, mot de passe maître ctr2026).
+    L'horodatage de connexion (issued_at_iso) est inclus dans la signature
+    afin de pouvoir vérifier côté serveur que la session ne dépasse pas
+    REMEMBER_SESSION_DUREE, indépendamment de l'expiration du cookie
+    navigateur (qu'un changement d'horloge sur l'appareil pourrait fausser)."""
+    import hashlib
+    import hmac as hmac_lib
+    payload = f"{username}:{role}:{bool(can_edit)}:{issued_at_iso}"
+    return hmac_lib.new(
+        REMEMBER_SECRET_KEY.encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()
 
 
 cookie_manager = stx.CookieManager(key="lpee_ctr_csb_cookie_manager")
 
+# Premier passage forcé : sur Safari/iOS notamment, le composant (chargé
+# dans un iframe) a besoin d'un premier aller-retour avant de renvoyer les
+# cookies réellement présents. Sans ce passage, la vérification "se
+# souvenir de moi" plus bas risquerait de s'exécuter avec une valeur encore
+# vide et donc d'afficher l'écran de connexion à tort.
 if "_cookies_bootstrap_ok" not in st.session_state:
-  st.session_state["_cookies_bootstrap_ok"] = True
-  st.rerun()
+    st.session_state["_cookies_bootstrap_ok"] = True
+    st.rerun()
+
+
 
 # Injection PWA dans le HEAD du document principal
 pwa_code = """
@@ -158,6 +192,7 @@ class LPEEPDFReport(FPDF):
 def generate_pdf_report(
     title: str, data_rows: list, headers: list = None
 ) -> bytes:
+  """Génère un document PDF binaire prêt pour st.download_button."""
   pdf = LPEEPDFReport()
   pdf.alias_nb_pages()
   pdf.add_page()
@@ -193,7 +228,7 @@ def generate_pdf_report(
 
 
 # ==========================================
-# 3. CONNEXION SUPABASE, USERS & AUDIT ISO 17025
+# 3. CONNEXION SUPABASE & GESTION BDD USERS
 # ==========================================
 try:
   SUPABASE_URL = st.secrets.get(
@@ -239,6 +274,7 @@ DEFAULT_USERS = {
 
 
 def load_users():
+  """Charge en temps réel les utilisateurs depuis Supabase."""
   users = DEFAULT_USERS.copy()
   if supabase:
     try:
@@ -256,6 +292,7 @@ def load_users():
 
 
 def save_user_db(username, password, role, can_edit):
+  """Enregistre ou met à jour un utilisateur dans Supabase."""
   if not supabase:
     return False, "Client Supabase non configuré."
   try:
@@ -271,6 +308,7 @@ def save_user_db(username, password, role, can_edit):
 
 
 def delete_user_db(username):
+  """Supprime un utilisateur de Supabase."""
   if not supabase:
     return False, "Client Supabase non configuré."
   try:
@@ -280,60 +318,11 @@ def delete_user_db(username):
     return False, str(e)
 
 
-def update_essai_with_reason(
-    supabase_client,
-    record_id,
-    new_values,
-    reason,
-    table_name="suivi_controle_beton",
-):
-  """Met à jour un contrôle en transmettant le motif d'audit à Supabase pour conformité ISO 17025."""
-  if not supabase_client:
-    return False, "Client Supabase indisponible."
-  try:
-    supabase_client.rpc("set_config_reason", {"reason": reason}).execute()
-    res = (
-        supabase_client.table(table_name)
-        .update(new_values)
-        .eq("id", record_id)
-        .execute()
-    )
-    return True, res
-  except Exception as e:
-    return False, str(e)
-
-
-def afficher_historique_audit(record_id):
-  """Affiche l'historique d'audit (Audit Trail) pour une entrée donnée."""
-  if not supabase:
-    st.error("Client Supabase indisponible.")
-    return
-  try:
-    logs = (
-        supabase.table("audit_logs")
-        .select("*")
-        .eq("record_id", record_id)
-        .order("changed_at", desc=True)
-        .execute()
-    )
-
-    st.write("### Historique des modifications (Audit Trail)")
-    if logs.data:
-      for log in logs.data:
-        st.json({
-            "Date/Heure": log.get("changed_at"),
-            "Action": log.get("action"),
-            "Utilisateur ID": log.get("changed_by"),
-            "Motif": log.get("reason"),
-            "Données précédentes": log.get("old_data"),
-            "Nouvelles données": log.get("new_data"),
-        })
-    else:
-      st.info("Aucun enregistrement d'audit trouvé pour ce contrôle.")
-  except Exception as e:
-    st.error(f"Erreur lors de la récupération des journaux d'audit : {e}")
-
-
+# Chargement paresseux : on ne fait l'appel réseau Supabase que lorsque
+# c'est réellement nécessaire (connexion manuelle ou auto-connexion réussie
+# via cookie, plus bas). Le faire ici de façon systématique coûtait un
+# aller-retour réseau inutile sur CHAQUE nouveau scan QR, y compris sur le
+# passage "jetable" qui précède la vérification du cookie.
 st.session_state.setdefault("users_db", {})
 
 if "user" not in st.session_state:
@@ -357,22 +346,13 @@ if st.session_state["user"] is None:
       remembered_issued_at = payload.get("t")
       remembered_token = payload.get("k")
 
-      jeton_valide = (
-          bool(remembered_token)
-          and _generer_jeton_souvenir(
-              remembered_user,
-              remembered_role,
-              remembered_can_edit,
-              remembered_issued_at,
-          )
-          == remembered_token
-      )
+      jeton_valide = bool(remembered_token) and _generer_jeton_souvenir(
+          remembered_user, remembered_role, remembered_can_edit, remembered_issued_at
+      ) == remembered_token
       session_expiree = True
       if jeton_valide:
         issued_at_dt = datetime.datetime.fromisoformat(remembered_issued_at)
-        session_expiree = (
-            datetime.datetime.utcnow() - issued_at_dt
-        ) > REMEMBER_SESSION_DUREE
+        session_expiree = (datetime.datetime.utcnow() - issued_at_dt) > REMEMBER_SESSION_DUREE
 
       if jeton_valide and not session_expiree:
         st.session_state["user"] = {
@@ -396,9 +376,7 @@ if st.session_state["user"] is None:
     st.title("🔐 Accès Restreint - LPEE")
     st.caption("Veuillez saisir vos identifiants pour accéder à la plateforme.")
 
-    if st.session_state.get("pending_qr_rec") or st.session_state.get(
-        "pending_qr_bid"
-    ):
+    if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
       st.info(
           "🎯 **Scan QR Code détecté !** Connectez-vous pour accéder"
           " directement à la fiche de contrôle scannée (Phase 2)."
@@ -417,33 +395,28 @@ if st.session_state["user"] is None:
 
       def _connecter_et_memoriser(username, role, can_edit):
         st.session_state["user"] = {
-            "username": username,
-            "role": role,
-            "can_edit": can_edit,
+            "username": username, "role": role, "can_edit": can_edit,
         }
         st.session_state["role"] = role
         st.session_state["can_edit"] = can_edit
         if se_souvenir:
           issued_at_iso = datetime.datetime.utcnow().isoformat()
-          token = _generer_jeton_souvenir(
-              username, role, can_edit, issued_at_iso
-          )
+          token = _generer_jeton_souvenir(username, role, can_edit, issued_at_iso)
           payload_json = json.dumps({
-              "u": username,
-              "r": role,
-              "e": bool(can_edit),
-              "t": issued_at_iso,
-              "k": token,
+              "u": username, "r": role, "e": bool(can_edit),
+              "t": issued_at_iso, "k": token,
           })
           expiration = datetime.datetime.now() + REMEMBER_SESSION_DUREE
           cookie_manager.set(
-              REMEMBER_COOKIE_NAME,
-              payload_json,
-              key="set_remember_data",
-              expires_at=expiration,
+              REMEMBER_COOKIE_NAME, payload_json,
+              key="set_remember_data", expires_at=expiration,
           )
+          # Laisser le temps au navigateur (Safari/iOS en particulier) de
+          # réellement écrire le cookie avant que le rerun ci-dessous ne
+          # démonte le composant qui le gère.
           time.sleep(0.4)
         st.rerun()
+
 
       if submit_btn:
         fresh_users = load_users()
@@ -599,15 +572,16 @@ with st.sidebar:
   st.session_state.setdefault("selected_page", None)
 
   qr_en_attente = bool(
-      st.session_state.get("pending_qr_rec")
-      or st.session_state.get("pending_qr_bid")
+      st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid")
   )
-  forcer_page_qr = qr_en_attente and not st.session_state.get(
-      "qr_page_applied", False
-  )
+  forcer_page_qr = qr_en_attente and not st.session_state.get("qr_page_applied", False)
   if forcer_page_qr:
     if "Suivi Contrôle Béton" in available_pages:
       st.session_state["selected_page"] = "Suivi Contrôle Béton"
+      # Nouvelle clé => Streamlit traite le widget comme neuf et applique
+      # obligatoirement l'index demandé (contrairement à un simple
+      # pré-remplissage de session_state sur une clé déjà utilisée, qui peut
+      # être ignoré si le widget a déjà un état côté navigateur).
       st.session_state["page_widget_seed"] += 1
     else:
       st.warning(
@@ -668,6 +642,10 @@ with st.sidebar:
     st.session_state["user"] = None
     st.session_state["role"] = None
     st.session_state["can_edit"] = False
+    # NOTE : le cookie "se souvenir de moi" n'est PAS supprimé ici. Tant que
+    # la fenêtre de 4h (REMEMBER_SESSION_DUREE) n'est pas écoulée, revenir
+    # sur l'application reconnectera automatiquement sans redemander le mot
+    # de passe. Passé les 4h, le cookie expire et le mot de passe est requis.
     st.rerun()
 
 
@@ -858,70 +836,6 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
               st.rerun()
             else:
               st.error(f"❌ Erreur Supabase :\n\n`{err}`")
-
-  st.markdown("---")
-
-  # --- FORMULAIRE D'AUDIT / MODIFICATION D'ESSAI CONFORME ISO 17025 ---
-  with st.expander(
-      "📋 Modification contrôlée d'un essai (Audit ISO 17025)", expanded=False
-  ):
-    st.caption(
-        "Conformément à l'ISO 17025, toute modification d'une donnée de"
-        " contrôle enregistre automatiquement l'auteur, le motif et la valeur"
-        " modifiée dans le journal d'audit (`audit_logs`)."
-    )
-    with st.form("form_audit_iso17025"):
-      iso_record_id = st.text_input(
-          "ID du contrôle (UUID ou identifiant unique)", key="iso_rec_id"
-      )
-      iso_resistance = st.number_input(
-          "Nouvelle valeur de résistance (MPa)",
-          min_value=0.0,
-          step=0.1,
-          key="iso_fc_val",
-      )
-      iso_reason = st.text_area(
-          "Motif obligatoire de la modification (ex: Erreur de frappe lors de"
-          " la saisie)",
-          key="iso_reason_txt",
-      )
-
-      submit_iso = st.form_submit_button(
-          "Enregistrer avec traçabilité Audit",
-          type="primary",
-          use_container_width=True,
-      )
-
-      if submit_iso:
-        if not iso_record_id.strip():
-          st.error("❌ Veuillez saisir l'ID du contrôle.")
-        elif not iso_reason.strip():
-          st.error(
-              "⛔ Conformité ISO 17025 : La saisie d'un motif explicite est"
-              " obligatoire."
-          )
-        else:
-          ok, err = update_essai_with_reason(
-              supabase,
-              iso_record_id.strip(),
-              {"resistance_mpa": iso_resistance},
-              iso_reason.strip(),
-          )
-          if ok:
-            st.success(
-                "✅ Modification enregistrée avec succès dans la base et"
-                " journalisée dans 'audit_logs'."
-            )
-          else:
-            st.error(f"❌ Erreur lors de la mise à jour : {err}")
-
-    st.markdown("---")
-    st.subheader("🔍 Consultation du journal d'audit")
-    search_audit_id = st.text_input(
-        "Saisir l'ID du contrôle à consulter", key="search_audit_id"
-    )
-    if search_audit_id.strip():
-      afficher_historique_audit(search_audit_id.strip())
 
   st.markdown("---")
 
