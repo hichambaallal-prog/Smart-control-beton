@@ -12,6 +12,7 @@ def show(supabase):
     role = st.session_state.get("role", "")
     can_edit = st.session_state.get("can_edit", False) or (user_info.get("can_edit", False))
     is_admin = (role == "admin")
+    is_baallal_admin = str(username).strip().upper() == "BAALLAL" and is_admin
     
     # ---------------------------------------------------------
     # 1. FORMULAIRE DE SAISIE
@@ -355,7 +356,8 @@ def show(supabase):
                             except Exception as e:
                                 st.error(f"Erreur de suppression : {e}")
 
-                afficher_historique_modifications(supabase, "suivi_betonnage", rec_id)
+                if is_baallal_admin:
+                    afficher_historique_modifications(supabase, "suivi_betonnage", rec_id)
 
         else:
             st.info("Aucune donnée enregistrée pour le moment.")
