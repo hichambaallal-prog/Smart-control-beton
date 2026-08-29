@@ -149,9 +149,17 @@ def formater_date_nom_fichier(dt_str):
 # ==============================================================================
 # 2. GÉNÉRATION DU PROCÈS-VERBAL PDF (FORMAT LPEE)
 # ==============================================================================
+@st.cache_data(show_spinner=False)
 def generer_pv_pdf(export_data, infos_header):
   """Génère le PV d'écrasement en PDF, avec la même mise en page (mêmes
-  sections, mêmes libellés, même grille) que l'ancienne version Excel."""
+  sections, mêmes libellés, même grille) que l'ancienne version Excel.
+
+  Mis en cache (st.cache_data) : sans ça, Streamlit régénère ce PDF à
+  CHAQUE rerun du script — y compris pour une simple frappe dans un champ
+  de recherche ailleurs sur la page — alors que le résultat est
+  strictement identique tant que le PV sélectionné (et ses données) ne
+  change pas. Le cache est automatiquement invalidé dès que les données
+  d'entrée changent réellement (nouveau PV, force corrigée, etc.)."""
   buf = io.BytesIO()
   left_m = right_m = 0.3 * inch
   top_m = bottom_m = 0.4 * inch
@@ -207,7 +215,7 @@ def generer_pv_pdf(export_data, infos_header):
   r = blank_row()
   r[0] = "LPEE / CTR CSB"
   r[4] = "RE N° :"
-  r[5] = clean_na(infos_header.get("re_num"), "25/260/LGV/")
+  r[5] = clean_na(infos_header.get("re_num"), "25/260/LGV/ B/")
   ref_h1 = clean_na(
       infos_header.get("num_reception")
       or infos_header.get("ref_controle")
@@ -250,7 +258,7 @@ def generer_pv_pdf(export_data, infos_header):
 
   # ---- Row 3 : Titre ----
   r = blank_row()
-  r[0] = "RAPPORT D'ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
+  r[0] = "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
   data.append(r)
   row3 = len(data) - 1
   spans.append((0, row3, 7, row3))
@@ -260,7 +268,7 @@ def generer_pv_pdf(export_data, infos_header):
   # ---- Row 4 : Compression / Traction ----
   r = blank_row()
   r[0] = "[X] COMPRESSION NF EN 12390-3 (2019)"
-  r[4] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2023)"
+  r[4] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
   data.append(r)
   row4 = len(data) - 1
   spans += [(0, row4, 3, row4), (4, row4, 7, row4)]
@@ -624,7 +632,7 @@ def generer_pv_pdf(export_data, infos_header):
 
   doc.build([table])
   buf.seek(0)
-  return buf
+  return buf.getvalue()
 
 
 
@@ -671,6 +679,28 @@ def obtenir_infos_betonnage_parent(supabase, betonnage_id):
     )
     return res.data[0] if res.data else {}
   except Exception:
+    return {}
+
+
+def obtenir_infos_betonnage_parents_bulk(supabase, betonnage_ids):
+  """Charge en UNE seule requête les fiches parentes de plusieurs lots à la
+  fois, au lieu d'une requête réseau par lot. C'est la principale cause de
+  lenteur à l'ouverture de cette page : avec des dizaines de lots
+  distincts, la version précédente déclenchait autant d'allers-retours
+  réseau séquentiels rien que pour préparer l'affichage."""
+  ids_valides = sorted({int(b) for b in betonnage_ids if pd.notnull(b)})
+  if not ids_valides:
+    return {}
+  try:
+    res = (
+        supabase.table("suivi_betonnage")
+        .select("*")
+        .in_("id", ids_valides)
+        .execute()
+    )
+    return {p["id"]: p for p in (res.data or [])}
+  except Exception as e:
+    st.warning(f"Note : chargement groupé des fiches parentes impossible ({e}).")
     return {}
 
 
@@ -750,10 +780,7 @@ def show(supabase):
     unique_b_ids = [
         b_id for b_id in df_all["betonnage_id"].unique() if pd.notnull(b_id)
     ]
-    unique_parents = {
-        b_id: obtenir_infos_betonnage_parent(supabase, b_id)
-        for b_id in unique_b_ids
-    }
+    unique_parents = obtenir_infos_betonnage_parents_bulk(supabase, unique_b_ids)
 
     def est_valide_val(v):
       if isinstance(v, bool):
@@ -933,7 +960,7 @@ def show(supabase):
         )
 
         infos_header_h = {
-            "re_num": "25/260/LGV/",
+            "re_num": "25/260/LGV/ B/",
             "dossier": "2025-260-05985-2025-0247",
             "client": "TGCC",
             "num_reception": ref_ctrl_h,
