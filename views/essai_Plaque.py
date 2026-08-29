@@ -24,6 +24,7 @@ def show(supabase):
     # Détection administrateur pour la suppression
     user_role = str(st.session_state.get("role", "")).upper()
     is_admin = st.session_state.get("is_admin", False) or user_role == "ADMIN"
+    is_baallal_admin = current_user.strip() == "BAALLAL" and is_admin
 
     # Autoriser l'édition pour tous les utilisateurs connectés à l'application
     can_edit = True
@@ -217,7 +218,8 @@ def show(supabase):
                 key="admin_select_plaque_id"
             )
 
-            afficher_historique_modifications(supabase, "essais_plaque", selected_id)
+            if is_baallal_admin:
+                afficher_historique_modifications(supabase, "essais_plaque", selected_id)
 
             if is_admin:
                 act_col1, act_col2 = st.columns(2)
