@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
+from audit_log import enregistrer_modification, afficher_historique_modifications
 
 def show(supabase):
     st.title("🏗️ Suivi et Contrôle Qualité Béton")
@@ -109,7 +110,16 @@ def show(supabase):
                 }
                 
                 try:
-                    supabase.table("suivi_betonnage").insert(data).execute()
+                    res_ins = supabase.table("suivi_betonnage").insert(data).execute()
+                    if res_ins.data:
+                        nouvel_id = res_ins.data[0].get("id")
+                        enregistrer_modification(
+                            supabase,
+                            table_concernee="suivi_betonnage",
+                            enregistrement_id=nouvel_id,
+                            action="CREATION",
+                            nouvelles_valeurs=data,
+                        )
                     st.success("Enregistrement réussi !")
                     st.rerun()
                 except Exception as e:
@@ -289,7 +299,7 @@ def show(supabase):
                                     st.error(f"❌ Le N° BL **{new_bl_clean}** est déjà utilisé par un autre enregistrement.")
                                 else:
                                     try:
-                                        supabase.table("suivi_betonnage").update({
+                                        nouvelles_valeurs_beton = {
                                             "date_livraison": str(new_date_livraison),
                                             "technicien": new_technicien,
                                             "bl_num": new_bl_clean,
@@ -306,8 +316,20 @@ def show(supabase):
                                             "prelevement": new_prelevement,
                                             "nb_eprouvettes": 0 if new_prelevement == "NON" else int(new_nb_eprouvettes),
                                             "observations": new_observations
-                                        }).eq("id", rec_id).execute()
-                                        
+                                        }
+                                        anciennes_valeurs_beton = {
+                                            k: selected_item.get(k) for k in nouvelles_valeurs_beton
+                                        }
+                                        supabase.table("suivi_betonnage").update(nouvelles_valeurs_beton).eq("id", rec_id).execute()
+                                        enregistrer_modification(
+                                            supabase,
+                                            table_concernee="suivi_betonnage",
+                                            enregistrement_id=rec_id,
+                                            action="MODIFICATION",
+                                            anciennes_valeurs=anciennes_valeurs_beton,
+                                            nouvelles_valeurs=nouvelles_valeurs_beton,
+                                        )
+
                                         st.success("Modifications enregistrées avec succès !")
                                         st.rerun()
                                     except Exception as e:
@@ -319,11 +341,21 @@ def show(supabase):
                         st.markdown("##### ⚠️ Suppression")
                         if st.button("🗑️ Supprimer définitivement ce contrôle", type="primary", key=f"btn_supprimer_admin_{rec_id}"):
                             try:
+                                enregistrer_modification(
+                                    supabase,
+                                    table_concernee="suivi_betonnage",
+                                    enregistrement_id=rec_id,
+                                    action="SUPPRESSION",
+                                    anciennes_valeurs={k: v for k, v in selected_item.items() if k != "id"},
+                                    commentaire="Suppression définitive de l'enregistrement",
+                                )
                                 supabase.table("suivi_betonnage").delete().eq("id", rec_id).execute()
                                 st.success("Enregistrement supprimé avec succès.")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erreur de suppression : {e}")
+
+                afficher_historique_modifications(supabase, "suivi_betonnage", rec_id)
 
         else:
             st.info("Aucune donnée enregistrée pour le moment.")
