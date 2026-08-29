@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime
+from audit_log import enregistrer_modification, afficher_historique_modifications
 
 def show(supabase):
     st.title("🚜 Essai à la Plaque (NF P 94-117-1)")
@@ -136,11 +137,29 @@ def show(supabase):
                     safe_payload = payload
 
                 if editing_item:
+                    anciennes_valeurs_plaque = {k: editing_item.get(k) for k in safe_payload}
                     supabase.table("essais_plaque").update(safe_payload).eq("id", editing_item["id"]).execute()
+                    enregistrer_modification(
+                        supabase,
+                        table_concernee="essais_plaque",
+                        enregistrement_id=editing_item["id"],
+                        action="MODIFICATION",
+                        anciennes_valeurs=anciennes_valeurs_plaque,
+                        nouvelles_valeurs=safe_payload,
+                    )
                     st.success(f"✅ Essai #{editing_item['id']} mis à jour avec succès !")
                     st.session_state["edit_plaque_item"] = None
                 else:
-                    supabase.table("essais_plaque").insert(safe_payload).execute()
+                    res_ins_plaque = supabase.table("essais_plaque").insert(safe_payload).execute()
+                    if res_ins_plaque.data:
+                        nouvel_id_plaque = res_ins_plaque.data[0].get("id")
+                        enregistrer_modification(
+                            supabase,
+                            table_concernee="essais_plaque",
+                            enregistrement_id=nouvel_id_plaque,
+                            action="CREATION",
+                            nouvelles_valeurs=safe_payload,
+                        )
                     st.success("✅ Essai enregistré avec succès !")
 
                 st.rerun()
@@ -198,6 +217,8 @@ def show(supabase):
                 key="admin_select_plaque_id"
             )
 
+            afficher_historique_modifications(supabase, "essais_plaque", selected_id)
+
             if is_admin:
                 act_col1, act_col2 = st.columns(2)
                 with act_col1:
@@ -210,6 +231,15 @@ def show(supabase):
                 with act_col2:
                     if st.button("🗑️ Supprimer cet essai", type="primary", use_container_width=True):
                         try:
+                            item_a_supprimer = next((item for item in res.data if item["id"] == selected_id), None)
+                            enregistrer_modification(
+                                supabase,
+                                table_concernee="essais_plaque",
+                                enregistrement_id=selected_id,
+                                action="SUPPRESSION",
+                                anciennes_valeurs={k: v for k, v in (item_a_supprimer or {}).items() if k != "id"},
+                                commentaire="Suppression définitive de l'essai",
+                            )
                             supabase.table("essais_plaque").delete().eq("id", selected_id).execute()
                             st.success(f"🗑️ Essai #{selected_id} supprimé avec succès.")
                             st.rerun()
