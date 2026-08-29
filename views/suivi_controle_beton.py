@@ -887,7 +887,8 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                 except Exception as e:
                     st.error(f"❌ Erreur lors de la mise à jour du statut : {e}")
 
-    afficher_historique_modifications(supabase, "suivi_betonnage", b_id_sel)
+    if est_admin:
+        afficher_historique_modifications(supabase, "suivi_betonnage", b_id_sel)
 
 
 # =========================================================
@@ -1817,35 +1818,36 @@ def show(supabase):
                             st.balloons()
                             st.success(f"✅ Lot de {succes_lot} éprouvettes mis à jour / validé !")
 
-                with st.expander("🕓 Historique des modifications de ce lot (traçabilité ISO 17025)"):
-                    try:
-                        ids_lot = [int(i) for i in df_actuel["ID"].tolist()]
-                        res_hist_lot = (
-                            supabase.table("journal_modifications_iso17025")
-                            .select("*")
-                            .eq("table_concernee", "suivi_controle_beton")
-                            .in_("enregistrement_id", [str(i) for i in ids_lot])
-                            .order("horodatage", desc=True)
-                            .execute()
-                        )
-                        lignes_hist = res_hist_lot.data or []
-                    except Exception as e:
-                        lignes_hist = []
-                        st.warning(f"Historique indisponible : {e}")
+                if is_baallal_admin:
+                    with st.expander("🕓 Historique des modifications de ce lot (traçabilité ISO 17025)"):
+                        try:
+                            ids_lot = [int(i) for i in df_actuel["ID"].tolist()]
+                            res_hist_lot = (
+                                supabase.table("journal_modifications_iso17025")
+                                .select("*")
+                                .eq("table_concernee", "suivi_controle_beton")
+                                .in_("enregistrement_id", [str(i) for i in ids_lot])
+                                .order("horodatage", desc=True)
+                                .execute()
+                            )
+                            lignes_hist = res_hist_lot.data or []
+                        except Exception as e:
+                            lignes_hist = []
+                            st.warning(f"Historique indisponible : {e}")
 
-                    if lignes_hist:
-                        df_hist_lot = pd.DataFrame([{
-                            "Date/Heure": str(l.get("horodatage", "-"))[:19].replace("T", " "),
-                            "Éprouvette (ID)": l.get("enregistrement_id"),
-                            "Utilisateur": l.get("utilisateur", "-"),
-                            "Action": l.get("action", "-"),
-                            "Champ": l.get("champ_modifie") or "-",
-                            "Ancienne valeur": l.get("ancienne_valeur") or "-",
-                            "Nouvelle valeur": l.get("nouvelle_valeur") or "-",
-                        } for l in lignes_hist])
-                        st.dataframe(df_hist_lot, use_container_width=True, hide_index=True)
-                    else:
-                        st.caption("Aucune modification enregistrée pour ce lot.")
+                        if lignes_hist:
+                            df_hist_lot = pd.DataFrame([{
+                                "Date/Heure": str(l.get("horodatage", "-"))[:19].replace("T", " "),
+                                "Éprouvette (ID)": l.get("enregistrement_id"),
+                                "Utilisateur": l.get("utilisateur", "-"),
+                                "Action": l.get("action", "-"),
+                                "Champ": l.get("champ_modifie") or "-",
+                                "Ancienne valeur": l.get("ancienne_valeur") or "-",
+                                "Nouvelle valeur": l.get("nouvelle_valeur") or "-",
+                            } for l in lignes_hist])
+                            st.dataframe(df_hist_lot, use_container_width=True, hide_index=True)
+                        else:
+                            st.caption("Aucune modification enregistrée pour ce lot.")
 
     # =========================================================
     # PHASE 3 : VALIDATION ADMIN (PVs)
