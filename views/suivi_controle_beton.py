@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 import qrcode
+from audit_log import enregistrer_modification, afficher_historique_modifications
 
 try:
     from supabase import create_client, Client
@@ -717,6 +718,8 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                 "Résistance (MPa)": fc,
                 "Opérateur": ep.get("technicien", "-"),
                 "_section": sec,
+                "_force_orig": f_kn,
+                "_fc_orig": fc,
             })
         st.session_state[df_key] = pd.DataFrame(rows_val)
         st.session_state[f"{df_key}_len"] = len(ep_sel_list)
@@ -751,6 +754,8 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         column_config={
             "ID": None,
             "_section": None,
+            "_force_orig": None,
+            "_fc_orig": None,
             "Repère": st.column_config.TextColumn("Repère", disabled=True),
             "Échéance": st.column_config.TextColumn("Échéance", disabled=True),
             "Date Écrasement": st.column_config.TextColumn("Date Écrasement", disabled=True),
@@ -819,6 +824,12 @@ def afficher_module_validation_admin(supabase, est_admin=False):
 
             if submit_val:
                 nouveau_statut = "✅ Validé & Signé" if "Valider" in statut_decision else "❌ Rejeté / En Révision"
+                anciennes_val_pv = {
+                    "statut_pv": info_b_sel.get("statut_pv"),
+                    "visa_resp": info_b_sel.get("visa_resp"),
+                    "visa_chef": info_b_sel.get("visa_chef"),
+                    "observations_admin": info_b_sel.get("observations_admin"),
+                }
                 update_payload = {
                     "statut_pv": nouveau_statut,
                     "visa_resp": resp_essai,
@@ -828,15 +839,43 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                 }
                 try:
                     supabase.table("suivi_betonnage").update(update_payload).eq("id", b_id_sel).execute()
+                    enregistrer_modification(
+                        supabase,
+                        table_concernee="suivi_betonnage",
+                        enregistrement_id=b_id_sel,
+                        action="VALIDATION",
+                        anciennes_valeurs=anciennes_val_pv,
+                        nouvelles_valeurs={
+                            "statut_pv": nouveau_statut,
+                            "visa_resp": resp_essai,
+                            "visa_chef": chef_labo,
+                            "observations_admin": comm_admin,
+                        },
+                    )
 
                     df_edit = st.session_state.get(df_key)
                     if df_edit is not None:
                         for _, r in df_edit.iterrows():
                             try:
-                                supabase.table("suivi_controle_beton").update({
+                                ep_id_maj = int(r["ID"])
+                                anciennes_force = {
+                                    "force_kn": float(r.get("_force_orig", r["Force (kN)"])),
+                                    "fc_mpa": float(r.get("_fc_orig", r["Résistance (MPa)"])),
+                                }
+                                nouvelles_force = {
                                     "force_kn": float(r["Force (kN)"]),
                                     "fc_mpa": float(r["Résistance (MPa)"]),
-                                }).eq("id", int(r["ID"])).execute()
+                                }
+                                supabase.table("suivi_controle_beton").update(nouvelles_force).eq("id", ep_id_maj).execute()
+                                enregistrer_modification(
+                                    supabase,
+                                    table_concernee="suivi_controle_beton",
+                                    enregistrement_id=ep_id_maj,
+                                    action="MODIFICATION",
+                                    anciennes_valeurs=anciennes_force,
+                                    nouvelles_valeurs=nouvelles_force,
+                                    commentaire="Correction de force par l'administrateur lors de la validation du PV",
+                                )
                             except Exception as e_row:
                                 st.warning(f"⚠️ Éprouvette {r.get('Repère', '-')} : mise à jour de la force impossible ({e_row}).")
 
@@ -847,6 +886,8 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Erreur lors de la mise à jour du statut : {e}")
+
+    afficher_historique_modifications(supabase, "suivi_betonnage", b_id_sel)
 
 
 # =========================================================
@@ -1270,6 +1311,7 @@ def show(supabase):
                                 break
 
                         if not bloque_mod:
+                            orig_par_id_p1 = {ep["id"]: ep for ep in eprouvettes_enregistrees}
                             nb_succes = 0
                             for _, r_m in df_prog_modifiee.iterrows():
                                 ep_id, b_id = int(r_m["id"]), r_m.get("betonnage_id")
@@ -1295,7 +1337,17 @@ def show(supabase):
                                     "date_ecrasement": dt_ecrasement_calc,
                                 }
                                 try:
+                                    orig_row_p1 = orig_par_id_p1.get(ep_id, {})
                                     supabase.table("suivi_controle_beton").update(pay).eq("id", ep_id).execute()
+                                    enregistrer_modification(
+                                        supabase,
+                                        table_concernee="suivi_controle_beton",
+                                        enregistrement_id=ep_id,
+                                        action="MODIFICATION",
+                                        anciennes_valeurs={k: orig_row_p1.get(k) for k in pay},
+                                        nouvelles_valeurs=pay,
+                                        commentaire="Ajustement de programmation (Phase 1)",
+                                    )
                                     if b_id:
                                         try: supabase.table("suivi_betonnage").update({"num_reception": ref_ctrl}).eq("id", b_id).execute()
                                         except Exception: pass
@@ -1412,7 +1464,18 @@ def show(supabase):
                             "ref_controle": ref_controle_p, "repere_eprouvette": rep, "forme": forme_p, "section": float(sect_def)
                         }
                         try:
-                            if supabase.table("suivi_controle_beton").insert(pay).execute().data: succes_cnt += 1
+                            res_ins_prog = supabase.table("suivi_controle_beton").insert(pay).execute()
+                            if res_ins_prog.data:
+                                succes_cnt += 1
+                                nouvel_id_prog = res_ins_prog.data[0].get("id")
+                                enregistrer_modification(
+                                    supabase,
+                                    table_concernee="suivi_controle_beton",
+                                    enregistrement_id=nouvel_id_prog,
+                                    action="CREATION",
+                                    nouvelles_valeurs=pay,
+                                    commentaire="Programmation d'une nouvelle éprouvette",
+                                )
                         except Exception as err: st.error(f"Erreur pour {rep} : {err}")
 
                     if succes_cnt > 0:
@@ -1613,9 +1676,21 @@ def show(supabase):
                             sec_q = float(eprouvette_ciblee.get("section") or 176.71)
                             fc_q = round((force_rapide * 10.0) / sec_q, 1) if sec_q > 0 and force_rapide > 0 else 0.0
                             try:
-                                supabase.table("suivi_controle_beton").update({
-                                    "force_kn": force_rapide, "fc_mpa": fc_q,
-                                }).eq("id", eprouvette_ciblee["id"]).execute()
+                                anciennes_q = {
+                                    "force_kn": float(eprouvette_ciblee.get("force_kn") or 0.0),
+                                    "fc_mpa": float(eprouvette_ciblee.get("fc_mpa") or 0.0),
+                                }
+                                nouvelles_q = {"force_kn": force_rapide, "fc_mpa": fc_q}
+                                supabase.table("suivi_controle_beton").update(nouvelles_q).eq("id", eprouvette_ciblee["id"]).execute()
+                                enregistrer_modification(
+                                    supabase,
+                                    table_concernee="suivi_controle_beton",
+                                    enregistrement_id=eprouvette_ciblee["id"],
+                                    action="MODIFICATION",
+                                    anciennes_valeurs=anciennes_q,
+                                    nouvelles_valeurs=nouvelles_q,
+                                    commentaire="Saisie rapide via scan QR",
+                                )
                                 st.success(f"✅ Enregistré : Éprouvette {eprouvette_ciblee.get('repere_eprouvette')} → {force_rapide} kN / {fc_q} MPa")
                                 st.session_state.pop(f"df_lot_{choix_lot}", None)
                                 st.balloons()
@@ -1645,6 +1720,8 @@ def show(supabase):
                             "ID": ep["id"], "🏷️ Référence de Contrôle": str(ep.get("ref_controle") or ref_controle_courante).strip(),
                             "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"), "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
                             "_section": sec, "Force (kN)": f_kn, "Résistance Fc (MPa)": fc, "Moyenne Resistance Fc (MPa)": 0.0,
+                            "_force_orig": f_kn, "_ref_orig": str(ep.get("ref_controle") or ref_controle_courante).strip(),
+                            "_repere_orig": ep.get("repere_eprouvette", f"/{ep['id']}"),
                         })
                     df_init = pd.DataFrame(rows_list)
                     valides_init = df_init[df_init["Résistance Fc (MPa)"] > 0]
@@ -1677,6 +1754,9 @@ def show(supabase):
                         "Repère": st.column_config.TextColumn("Repère", disabled=not mode_admin),
                         "Forme d'éprouvette": st.column_config.TextColumn("Forme d'éprouvette", disabled=True),
                         "_section": None,
+                        "_force_orig": None,
+                        "_ref_orig": None,
+                        "_repere_orig": None,
                         "Force (kN)": st.column_config.NumberColumn("⚡ Force (kN)", min_value=0.0, max_value=3000.0, step=0.1, format="%.1f"),
                         "Résistance Fc (MPa)": st.column_config.NumberColumn("💥 Résistance Fc (MPa)", disabled=True, format="%.1f"),
                         "Moyenne Resistance Fc (MPa)": st.column_config.NumberColumn("📊 Moyenne Resistance Fc (MPa)", disabled=True, format="%.1f"),
@@ -1709,7 +1789,26 @@ def show(supabase):
                                 "technicien": tech_global, "observations": obs_globale,
                             }
                             try:
-                                supabase.table("suivi_controle_beton").update(upd).eq("id", int(row["ID"])).execute()
+                                ep_id_row = int(row["ID"])
+                                anciennes_ep = {
+                                    "ref_controle": row.get("_ref_orig", upd["ref_controle"]),
+                                    "repere_eprouvette": row.get("_repere_orig", upd["repere_eprouvette"]),
+                                    "force_kn": float(row.get("_force_orig", upd["force_kn"])),
+                                }
+                                supabase.table("suivi_controle_beton").update(upd).eq("id", ep_id_row).execute()
+                                enregistrer_modification(
+                                    supabase,
+                                    table_concernee="suivi_controle_beton",
+                                    enregistrement_id=ep_id_row,
+                                    action="MODIFICATION",
+                                    anciennes_valeurs=anciennes_ep,
+                                    nouvelles_valeurs={
+                                        "ref_controle": upd["ref_controle"],
+                                        "repere_eprouvette": upd["repere_eprouvette"],
+                                        "force_kn": upd["force_kn"],
+                                    },
+                                    commentaire=f"Saisie d'écrasement — opérateur : {tech_global}",
+                                )
                                 succes_lot += 1
                             except Exception as e:
                                 st.error(f"Erreur sur l'éprouvette {row['Repère']} : {e}")
@@ -1717,6 +1816,36 @@ def show(supabase):
                         if succes_lot == len(df_actuel):
                             st.balloons()
                             st.success(f"✅ Lot de {succes_lot} éprouvettes mis à jour / validé !")
+
+                with st.expander("🕓 Historique des modifications de ce lot (traçabilité ISO 17025)"):
+                    try:
+                        ids_lot = [int(i) for i in df_actuel["ID"].tolist()]
+                        res_hist_lot = (
+                            supabase.table("journal_modifications_iso17025")
+                            .select("*")
+                            .eq("table_concernee", "suivi_controle_beton")
+                            .in_("enregistrement_id", [str(i) for i in ids_lot])
+                            .order("horodatage", desc=True)
+                            .execute()
+                        )
+                        lignes_hist = res_hist_lot.data or []
+                    except Exception as e:
+                        lignes_hist = []
+                        st.warning(f"Historique indisponible : {e}")
+
+                    if lignes_hist:
+                        df_hist_lot = pd.DataFrame([{
+                            "Date/Heure": str(l.get("horodatage", "-"))[:19].replace("T", " "),
+                            "Éprouvette (ID)": l.get("enregistrement_id"),
+                            "Utilisateur": l.get("utilisateur", "-"),
+                            "Action": l.get("action", "-"),
+                            "Champ": l.get("champ_modifie") or "-",
+                            "Ancienne valeur": l.get("ancienne_valeur") or "-",
+                            "Nouvelle valeur": l.get("nouvelle_valeur") or "-",
+                        } for l in lignes_hist])
+                        st.dataframe(df_hist_lot, use_container_width=True, hide_index=True)
+                    else:
+                        st.caption("Aucune modification enregistrée pour ce lot.")
 
     # =========================================================
     # PHASE 3 : VALIDATION ADMIN (PVs)
