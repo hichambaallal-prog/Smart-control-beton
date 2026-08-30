@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import time
+from pathlib import Path
 from fpdf import FPDF
 from PIL import Image
 import streamlit as st
@@ -36,9 +37,6 @@ st.set_page_config(
 # ==========================================
 # 1bis. CAPTURE DES PARAMÈTRES QR CODE (ex: ?rec=...&beton_id=...)
 # ==========================================
-# C'est ICI qu'il faut lire l'URL, et pas dans views/suivi_controle_beton.py :
-# ce module est importé (pas exécuté directement), donc son bloc
-# "if __name__ == '__main__':" ne s'exécute jamais dans l'app déployée.
 _query_params = st.query_params
 _qr_rec = _query_params.get("rec") or _query_params.get("num_reception")
 _qr_bid = _query_params.get("beton_id") or _query_params.get("id")
@@ -52,30 +50,12 @@ if _qr_rec or _qr_bid:
     if _qr_ep:
         st.session_state["pending_qr_ep"] = str(_qr_ep).strip()
 
-    # (Ré)armer la redirection automatique vers la page "Suivi Contrôle Béton"
     st.session_state["qr_page_applied"] = False
-
-    # Nettoyer l'URL : sans ça, ce bloc s'exécuterait à nouveau à CHAQUE clic
-    # / rerun et forcerait la page à chaque interaction (ce qui empêcherait
-    # toute navigation manuelle une fois arrivé sur la bonne page).
     st.query_params.clear()
 
 # ==========================================
-# 1ter. "SE SOUVENIR DE MOI" — COOKIE VIA COMPOSANT (rapide, sans rechargement)
+# 1ter. "SE SOUVENIR DE MOI" — COOKIE VIA COMPOSANT
 # ==========================================
-# Permet de rester connecté sur le même appareil/navigateur, y compris après
-# un scan QR Code qui ouvre une nouvelle session Streamlit (donc un
-# session_state vide) : sans cookie, il faudrait ressaisir le mot de passe
-# à CHAQUE scan.
-#
-# NOTE : une version précédente lisait/écrivait le cookie via un
-# rechargement complet de la page (fiable, mais lent : ~30-40s à chaque
-# scan QR). On revient donc au composant (rapide, pas de rechargement),
-# avec deux corrections de timing pour fiabiliser sur Safari/iOS :
-#  1) un premier passage "à vide" forcé pour laisser le composant le temps
-#     de récupérer les cookies déjà présents avant toute vérification,
-#  2) une courte pause après l'écriture d'un nouveau cookie, avant de
-#     recharger la vue, pour laisser le temps au navigateur de l'enregistrer.
 REMEMBER_SECRET_KEY = os.environ.get(
     "REMEMBER_SECRET_KEY", "lpee_ctr_csb_remember_me_2026_a_changer"
 )
@@ -84,13 +64,7 @@ REMEMBER_COOKIE_NAME = "remember_data"
 
 
 def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
-    """Jeton signé auto-suffisant (indépendant de la base utilisateurs),
-    pour fonctionner avec les 3 chemins de connexion possibles (compte
-    nommé, mot de passe maître admin2026, mot de passe maître ctr2026).
-    L'horodatage de connexion (issued_at_iso) est inclus dans la signature
-    afin de pouvoir vérifier côté serveur que la session ne dépasse pas
-    REMEMBER_SESSION_DUREE, indépendamment de l'expiration du cookie
-    navigateur (qu'un changement d'horloge sur l'appareil pourrait fausser)."""
+    """Jeton signé auto-suffisant."""
     import hashlib
     import hmac as hmac_lib
     payload = f"{username}:{role}:{bool(can_edit)}:{issued_at_iso}"
@@ -101,18 +75,12 @@ def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
 
 cookie_manager = stx.CookieManager(key="lpee_ctr_csb_cookie_manager")
 
-# Premier passage forcé : sur Safari/iOS notamment, le composant (chargé
-# dans un iframe) a besoin d'un premier aller-retour avant de renvoyer les
-# cookies réellement présents. Sans ce passage, la vérification "se
-# souvenir de moi" plus bas risquerait de s'exécuter avec une valeur encore
-# vide et donc d'afficher l'écran de connexion à tort.
 if "_cookies_bootstrap_ok" not in st.session_state:
     st.session_state["_cookies_bootstrap_ok"] = True
     st.rerun()
 
 
-
-# Injection PWA dans le HEAD du document principal
+# Injection PWA dans le HEAD du document principal (Chemins relatifs fixés)
 pwa_code = """
 <script>
 const parentDoc = window.parent.document;
@@ -120,7 +88,7 @@ const parentDoc = window.parent.document;
 if (!parentDoc.querySelector('link[rel="manifest"]')) {
     const manifestLink = parentDoc.createElement('link');
     manifestLink.rel = 'manifest';
-    manifestLink.href = '/manifest.json';
+    manifestLink.href = './manifest.json';
     parentDoc.head.appendChild(manifestLink);
 }
 
@@ -132,7 +100,7 @@ if (!parentDoc.querySelector('meta[name="theme-color"]')) {
 }
 
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js')
+    navigator.serviceWorker.register('./sw.js')
         .then((reg) => console.log('Service Worker PWA enregistré !', reg))
         .catch((err) => console.error('Erreur Service Worker PWA :', err));
 }
@@ -318,11 +286,6 @@ def delete_user_db(username):
     return False, str(e)
 
 
-# Chargement paresseux : on ne fait l'appel réseau Supabase que lorsque
-# c'est réellement nécessaire (connexion manuelle ou auto-connexion réussie
-# via cookie, plus bas). Le faire ici de façon systématique coûtait un
-# aller-retour réseau inutile sur CHAQUE nouveau scan QR, y compris sur le
-# passage "jetable" qui précède la vérification du cookie.
 st.session_state.setdefault("users_db", {})
 
 if "user" not in st.session_state:
@@ -411,9 +374,6 @@ if st.session_state["user"] is None:
               REMEMBER_COOKIE_NAME, payload_json,
               key="set_remember_data", expires_at=expiration,
           )
-          # Laisser le temps au navigateur (Safari/iOS en particulier) de
-          # réellement écrire le cookie avant que le rerun ci-dessous ne
-          # démonte le composant qui le gère.
           time.sleep(0.4)
         st.rerun()
 
@@ -496,6 +456,7 @@ with st.sidebar:
         "Suivi Contrôle Béton",
         "Historique Complet & PVs",
         "Suivi de Bétonnage",
+        "Saisie Terrain (Hors-Ligne)",
         "Essai à la Plaque",
         "Synthèse Béton",
         "Synthèse Plaque",
@@ -503,7 +464,7 @@ with st.sidebar:
   elif current_role == "restricted_betonnage":
     st.info("Rôle : **OPÉRATEUR BÉTONNAGE**")
     st.markdown("---")
-    available_pages = ["Suivi de Bétonnage"]
+    available_pages = ["Suivi de Bétonnage", "Saisie Terrain (Hors-Ligne)"]
   elif current_role == "admin":
     st.info("Rôle : **ADMINISTRATEUR**")
     st.markdown("---")
@@ -513,6 +474,7 @@ with st.sidebar:
         "Essai à la Plaque",
         "Synthèse Plaque",
         "Suivi de Bétonnage",
+        "Saisie Terrain (Hors-Ligne)",
         "Suivi Contrôle Béton",
         "Historique Complet & PVs",
         "Synthèse Béton",
@@ -578,10 +540,6 @@ with st.sidebar:
   if forcer_page_qr:
     if "Suivi Contrôle Béton" in available_pages:
       st.session_state["selected_page"] = "Suivi Contrôle Béton"
-      # Nouvelle clé => Streamlit traite le widget comme neuf et applique
-      # obligatoirement l'index demandé (contrairement à un simple
-      # pré-remplissage de session_state sur une clé déjà utilisée, qui peut
-      # être ignoré si le widget a déjà un état côté navigateur).
       st.session_state["page_widget_seed"] += 1
     else:
       st.warning(
@@ -642,10 +600,6 @@ with st.sidebar:
     st.session_state["user"] = None
     st.session_state["role"] = None
     st.session_state["can_edit"] = False
-    # NOTE : le cookie "se souvenir de moi" n'est PAS supprimé ici. Tant que
-    # la fenêtre de 4h (REMEMBER_SESSION_DUREE) n'est pas écoulée, revenir
-    # sur l'application reconnectera automatiquement sans redemander le mot
-    # de passe. Passé les 4h, le cookie expire et le mot de passe est requis.
     st.rerun()
 
 
@@ -692,6 +646,20 @@ if page == "Accueil":
 
     Utilisez le menu de navigation latéral pour accéder aux différents modules de consultation et de suivi.
     """)
+
+elif page == "Saisie Terrain (Hors-Ligne)":
+  st.title("🏗️ Saisie Terrain Bétonnage")
+  st.caption("Formulaire autonome fonctionnant avec ou sans connexion internet.")
+
+  html_file_path = Path(__file__).parent / "static" / "offline_betonnage.html"
+
+  if html_file_path.exists():
+    with open(html_file_path, "r", encoding="utf-8") as f:
+      html_content = f.read()
+
+    components.html(html_content, height=1100, scrolling=True)
+  else:
+    st.error("❌ Le fichier `static/offline_betonnage.html` est introuvable.")
 
 elif page == "Gestion Utilisateurs" and current_role == "admin":
   st.title("👥 Gestion des Utilisateurs & Mots de Passe")
