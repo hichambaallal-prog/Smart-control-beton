@@ -626,7 +626,7 @@ window.addEventListener("load", async () => {
   if (navigator.onLine) synchroniser();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw-betonnage.js")
+    navigator.serviceWorker.register("./sw-betonnage.js")
       .then((reg) => console.log("Service Worker (hors-ligne) enregistré", reg))
       .catch((err) => console.error("Erreur Service Worker :", err));
   }
