@@ -4,7 +4,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Suivi de Bétonnage — Mode Hors-Ligne</title>
-<link rel="manifest" href="/manifest.json" />
 <meta name="theme-color" content="#0066cc" />
 <style>
   :root {
@@ -307,8 +306,8 @@
 // =====================================================================
 // CONFIGURATION — à adapter avec vos propres identifiants Supabase
 // =====================================================================
-const SUPABASE_URL = "https://yqijsvxyrdymcnqluipa.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1";
+const SUPABASE_URL = "https://votre-projet.supabase.co";
+const SUPABASE_ANON_KEY = "VOTRE_CLE_PUBLISHABLE_ICI";
 const TABLE = "suivi_betonnage";
 
 // =====================================================================
@@ -626,7 +625,7 @@ window.addEventListener("load", async () => {
   if (navigator.onLine) synchroniser();
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw-betonnage.js")
+    navigator.serviceWorker.register("/app/static/sw-betonnage.js")
       .then((reg) => console.log("Service Worker (hors-ligne) enregistré", reg))
       .catch((err) => console.error("Erreur Service Worker :", err));
   }
