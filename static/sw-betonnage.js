@@ -4,9 +4,8 @@
 // Il ne touche jamais aux requêtes POST envoyées vers Supabase — celles-ci
 // passent directement, sans interception ni mise en cache.
 
-const CACHE_NAME = "betonnage-offline-v1";
 const FICHIERS_A_METTRE_EN_CACHE = [
-  "/offline_betonnage.html",
+  "./offline_betonnage.html",
 ];
 
 self.addEventListener("install", (event) => {
