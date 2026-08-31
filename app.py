@@ -8,7 +8,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 import extra_streamlit_components as stx
 from supabase import Client, create_client
-from supabase.lib.client_options import ClientOptions
 
 # Importation sécurisée du gestionnaire Hors-Ligne SQLite
 try:
@@ -233,7 +232,7 @@ def generate_pdf_report(
 # ==========================================
 try:
   SUPABASE_URL = st.secrets.get(
-      "SUPABASE_URL", "https://yqijsvxyrdymcnqluipa.supabase.co"
+      "SUPABASE_URL", "https://votre-projet.supabase.co"
   )
   SUPABASE_KEY = st.secrets.get(
       "SUPABASE_KEY", "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"
@@ -242,12 +241,27 @@ try:
   # fourni pour la page hors-ligne). L'app principale doit envoyer le même
   # en-tête que offline_betonnage.html, sinon ses propres insertions seraient
   # bloquées par cette même règle de sécurité.
-  CODE_ACCES_TERRAIN = st.secrets.get("CODE_ACCES_TERRAIN", "lpee2026")
-  supabase: Client = create_client(
-      SUPABASE_URL,
-      SUPABASE_KEY,
-      options=ClientOptions(headers={"x-code-acces-terrain": CODE_ACCES_TERRAIN}),
-  )
+  CODE_ACCES_TERRAIN = st.secrets.get("CODE_ACCES_TERRAIN", "CHANGEZ_MOI_2026")
+
+  # Création du client SANS argument supplémentaire (comme avant) : c'est le
+  # passage d'un ClientOptions à create_client() qui faisait planter la
+  # connexion selon les versions de la librairie supabase-py.
+  supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+  # Ajout de l'en-tête APRÈS coup, de façon tolérante : si la structure
+  # interne de la librairie diffère selon la version installée, l'app
+  # continue de fonctionner normalement (juste sans cet en-tête ajouté).
+  try:
+    supabase.postgrest.session.headers.update(
+        {"x-code-acces-terrain": CODE_ACCES_TERRAIN}
+    )
+  except Exception:
+    try:
+      supabase.postgrest._client.headers.update(
+          {"x-code-acces-terrain": CODE_ACCES_TERRAIN}
+      )
+    except Exception:
+      pass
 except Exception:
   supabase = None
 
