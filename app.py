@@ -200,7 +200,7 @@ def generate_pdf_report(
 # ==========================================
 try:
   SUPABASE_URL = st.secrets.get(
-      "SUPABASE_URL", "https://votre-projet.supabase.co"
+      "SUPABASE_URL", "https://yqijsvxyrdymcnqluipa.supabase.co"
   )
   SUPABASE_KEY = st.secrets.get(
       "SUPABASE_KEY", "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"
