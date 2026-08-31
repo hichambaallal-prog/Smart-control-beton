@@ -1,12 +1,15 @@
-const CACHE_NAME = 'Smart-control-beton-v1';
+const CACHE_NAME = 'Smart-control-beton-v2';
+
+// 1. Lister précisément le fichier HTML et ses dépendances
 const urlsToCache = [
-  '/',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png'
+  './',
+  './index.html', // ou le nom de votre fichier HTML autonome
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
-// Installation du Service Worker
+// Installation du Service Worker et mise en cache
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -32,14 +35,20 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Gestion des requêtes réseau (Priorité réseau + exclusion WebSockets Streamlit)
+// Gestion des requêtes : Priorité au Cache (Cache-First)
 self.addEventListener('fetch', (event) => {
-  // Ne pas intercepter les requêtes internes et WebSockets de Streamlit
+  // Ignorer la communication Streamlit en ligne
   if (event.request.url.includes('_stcore') || event.request.url.includes('stream')) {
     return;
   }
 
+  // Chercher d'abord dans le cache local, puis basculer sur le réseau
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse; // Retourne immédiatement la version hors-ligne
+      }
+      return fetch(event.request);
+    })
   );
 });
