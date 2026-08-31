@@ -6,7 +6,7 @@
 
 const CACHE_NAME = "betonnage-offline-v1";
 const FICHIERS_A_METTRE_EN_CACHE = [
-  "/app/static/offline_betonnage.html",
+  "offline_betonnage.html",
 ];
 
 self.addEventListener("install", (event) => {
