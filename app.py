@@ -8,6 +8,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import extra_streamlit_components as stx
 from supabase import Client, create_client
+from supabase.lib.client_options import ClientOptions
 
 # Importation sécurisée du gestionnaire Hors-Ligne SQLite
 try:
@@ -237,7 +238,16 @@ try:
   SUPABASE_KEY = st.secrets.get(
       "SUPABASE_KEY", "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"
   )
-  supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+  # Code partagé exigé par la politique RLS sur suivi_betonnage (voir le SQL
+  # fourni pour la page hors-ligne). L'app principale doit envoyer le même
+  # en-tête que offline_betonnage.html, sinon ses propres insertions seraient
+  # bloquées par cette même règle de sécurité.
+  CODE_ACCES_TERRAIN = st.secrets.get("CODE_ACCES_TERRAIN", "CHANGEZ_MOI_2026")
+  supabase: Client = create_client(
+      SUPABASE_URL,
+      SUPABASE_KEY,
+      options=ClientOptions(headers={"x-code-acces-terrain": CODE_ACCES_TERRAIN}),
+  )
 except Exception:
   supabase = None
 
