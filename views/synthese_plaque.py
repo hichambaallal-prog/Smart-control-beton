@@ -4,6 +4,7 @@ from datetime import datetime, date
 import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+import projets_config
 
 def generate_excel_a4(df_filtered, filter_title="Synthèse Générale"):
     """
@@ -268,8 +269,14 @@ def show(supabase):
         st.error("❌ Connexion Supabase indisponible.")
         return
 
+    projet_id_actif = projets_config.projet_actif(st.session_state.get("user") or {})
+    if not projet_id_actif:
+        st.error("⚠️ Aucun projet ne vous est autorisé. Contactez un administrateur.")
+        return
+    st.caption(f"📁 Projet actif : **{projets_config.nom_projet(projet_id_actif)}**")
+
     try:
-        res = supabase.table("essais_plaque").select("*").order("date_essai", desc=True).execute()
+        res = supabase.table("essais_plaque").select("*").eq("projet_id", projet_id_actif).order("date_essai", desc=True).execute()
         data = res.data if res else []
     except Exception as e:
         st.error(f"Erreur lors de la connexion à la base de données : {e}")
@@ -412,7 +419,7 @@ def show(supabase):
                                     "ev1": new_ev1,
                                     "ev2": new_ev2,
                                     "k": new_k
-                                }).eq("id", selected_item["id"]).execute()
+                                }).eq("id", selected_item["id"]).eq("projet_id", projet_id_actif).execute()
                                 st.success("Données mises à jour avec succès !")
                                 st.rerun()
                             except Exception as e:
@@ -422,7 +429,7 @@ def show(supabase):
                 st.markdown("##### ⚠️ Suppression")
                 if st.button("🗑️ Supprimer définitivement", type="primary"):
                     try:
-                        supabase.table("essais_plaque").delete().eq("id", selected_item["id"]).execute()
+                        supabase.table("essais_plaque").delete().eq("id", selected_item["id"]).eq("projet_id", projet_id_actif).execute()
                         st.success("Enregistrement supprimé avec succès.")
                         st.rerun()
                     except Exception as e:
