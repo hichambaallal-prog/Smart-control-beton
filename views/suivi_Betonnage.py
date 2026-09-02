@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from audit_log import enregistrer_modification, afficher_historique_modifications
+import projets_config
 
 def show(supabase):
     st.title("🏗️ Suivi et Contrôle Qualité Béton")
@@ -13,6 +14,14 @@ def show(supabase):
     can_edit = st.session_state.get("can_edit", False) or (user_info.get("can_edit", False))
     is_admin = (role == "admin")
     is_baallal_admin = str(username).strip().upper() == "BAALLAL" and is_admin
+
+    # Projet actif : toutes les lectures/écritures de cette page sont
+    # limitées à ce projet, pour garantir l'étanchéité entre chantiers.
+    projet_id_actif = projets_config.projet_actif(user_info)
+    if not projet_id_actif:
+        st.error("⚠️ Aucun projet ne vous est autorisé. Contactez un administrateur.")
+        return
+    st.caption(f"📁 Projet actif : **{projets_config.nom_projet(projet_id_actif)}**")
     
     # ---------------------------------------------------------
     # 1. FORMULAIRE DE SAISIE
@@ -84,8 +93,8 @@ def show(supabase):
         if not bl_clean:
             st.error("⚠️ Le numéro BL ne peut pas être vide.")
         else:
-            # Vérification si le N° BL existe déjà en base
-            check_bl = supabase.table("suivi_betonnage").select("id").eq("bl_num", bl_clean).execute()
+            # Vérification si le N° BL existe déjà en base (au sein de ce projet)
+            check_bl = supabase.table("suivi_betonnage").select("id").eq("bl_num", bl_clean).eq("projet_id", projet_id_actif).execute()
             
             if check_bl.data:
                 st.error(f"❌ Le N° BL **{bl_clean}** existe déjà. Impossible d'ajouter un doublon !")
@@ -107,7 +116,8 @@ def show(supabase):
                     "prelevement": prelevement,
                     "nb_eprouvettes": 0 if prelevement == "NON" else int(nb_eprouvettes),
                     "observations": observations,
-                    "technicien": technicien
+                    "technicien": technicien,
+                    "projet_id": projet_id_actif,
                 }
                 
                 try:
@@ -133,7 +143,7 @@ def show(supabase):
     st.subheader("📊 Historique")
     
     try:
-        res = supabase.table("suivi_betonnage").select("*").order("id", desc=True).execute()
+        res = supabase.table("suivi_betonnage").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
         if res.data:
             df = pd.DataFrame(res.data)
             
@@ -294,7 +304,7 @@ def show(supabase):
                             if st.form_submit_button("💾 Enregistrer toutes les modifications"):
                                 new_bl_clean = new_bl.strip()
                                 
-                                check_bl_edit = supabase.table("suivi_betonnage").select("id").eq("bl_num", new_bl_clean).neq("id", rec_id).execute()
+                                check_bl_edit = supabase.table("suivi_betonnage").select("id").eq("bl_num", new_bl_clean).eq("projet_id", projet_id_actif).neq("id", rec_id).execute()
                                 
                                 if check_bl_edit.data:
                                     st.error(f"❌ Le N° BL **{new_bl_clean}** est déjà utilisé par un autre enregistrement.")
