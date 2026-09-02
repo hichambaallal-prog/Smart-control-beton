@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime
 from audit_log import enregistrer_modification, afficher_historique_modifications
+import projets_config
 
 def show(supabase):
     st.title("🚜 Essai à la Plaque (NF P 94-117-1)")
@@ -28,6 +29,15 @@ def show(supabase):
 
     # Autoriser l'édition pour tous les utilisateurs connectés à l'application
     can_edit = True
+
+    # Projet actif : toutes les lectures/écritures de cette page sont
+    # limitées à ce projet, pour garantir l'étanchéité entre chantiers.
+    user_info_projet = st.session_state.get("user") or {}
+    projet_id_actif = projets_config.projet_actif(user_info_projet)
+    if not projet_id_actif:
+        st.error("⚠️ Aucun projet ne vous est autorisé. Contactez un administrateur.")
+        return
+    st.caption(f"📁 Projet actif : **{projets_config.nom_projet(projet_id_actif)}**")
 
     # ---------------------------------------------------------
     # 1. GESTION DU MOTEUR D'ÉDITION / MODIFICATION
@@ -136,10 +146,13 @@ def show(supabase):
                     safe_payload = {k: v for k, v in payload.items() if k in valid_columns}
                 else:
                     safe_payload = payload
+                # Toujours inclus, même si absent des colonnes déjà vues par
+                # l'échantillon ci-dessus (table encore vide par exemple).
+                safe_payload["projet_id"] = projet_id_actif
 
                 if editing_item:
                     anciennes_valeurs_plaque = {k: editing_item.get(k) for k in safe_payload}
-                    supabase.table("essais_plaque").update(safe_payload).eq("id", editing_item["id"]).execute()
+                    supabase.table("essais_plaque").update(safe_payload).eq("id", editing_item["id"]).eq("projet_id", projet_id_actif).execute()
                     enregistrer_modification(
                         supabase,
                         table_concernee="essais_plaque",
@@ -181,7 +194,7 @@ def show(supabase):
     st.subheader("📋 Historique des Essais Enregistrés")
 
     try:
-        res = supabase.table("essais_plaque").select("*").order("id", desc=True).execute()
+        res = supabase.table("essais_plaque").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
         if res.data and len(res.data) > 0:
             
             clean_rows = []
@@ -242,7 +255,7 @@ def show(supabase):
                                 anciennes_valeurs={k: v for k, v in (item_a_supprimer or {}).items() if k != "id"},
                                 commentaire="Suppression définitive de l'essai",
                             )
-                            supabase.table("essais_plaque").delete().eq("id", selected_id).execute()
+                            supabase.table("essais_plaque").delete().eq("id", selected_id).eq("projet_id", projet_id_actif).execute()
                             st.success(f"🗑️ Essai #{selected_id} supprimé avec succès.")
                             st.rerun()
                         except Exception as e:
