@@ -8,7 +8,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 import extra_streamlit_components as stx
 from supabase import Client, create_client
-import projets_config
 
 # Importation sécurisée du gestionnaire Hors-Ligne SQLite
 try:
@@ -84,21 +83,17 @@ REMEMBER_SESSION_DUREE = datetime.timedelta(hours=4)
 REMEMBER_COOKIE_NAME = "remember_data"
 
 
-def _generer_jeton_souvenir(username, role, can_edit, projets_autorises, issued_at_iso):
+def _generer_jeton_souvenir(username, role, can_edit, issued_at_iso):
     """Jeton signé auto-suffisant (indépendant de la base utilisateurs),
     pour fonctionner avec les 3 chemins de connexion possibles (compte
     nommé, mot de passe maître admin2026, mot de passe maître ctr2026).
     L'horodatage de connexion (issued_at_iso) est inclus dans la signature
     afin de pouvoir vérifier côté serveur que la session ne dépasse pas
     REMEMBER_SESSION_DUREE, indépendamment de l'expiration du cookie
-    navigateur (qu'un changement d'horloge sur l'appareil pourrait fausser).
-    Les projets autorisés sont inclus dans la signature : sans ça, on
-    pourrait modifier le cookie côté navigateur pour s'octroyer l'accès à
-    un autre projet sans que la signature ne s'invalide."""
+    navigateur (qu'un changement d'horloge sur l'appareil pourrait fausser)."""
     import hashlib
     import hmac as hmac_lib
-    projets_str = ",".join(sorted(projets_autorises or []))
-    payload = f"{username}:{role}:{bool(can_edit)}:{projets_str}:{issued_at_iso}"
+    payload = f"{username}:{role}:{bool(can_edit)}:{issued_at_iso}"
     return hmac_lib.new(
         REMEMBER_SECRET_KEY.encode(), payload.encode(), hashlib.sha256
     ).hexdigest()
@@ -237,7 +232,7 @@ def generate_pdf_report(
 # ==========================================
 try:
   SUPABASE_URL = st.secrets.get(
-      "SUPABASE_URL", "https://votre-projet.supabase.co"
+      "SUPABASE_URL", "https://yqijsvxyrdymcnqluipa.supabase.co"
   )
   SUPABASE_KEY = st.secrets.get(
       "SUPABASE_KEY", "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1"
@@ -246,7 +241,7 @@ try:
   # fourni pour la page hors-ligne). L'app principale doit envoyer le même
   # en-tête que offline_betonnage.html, sinon ses propres insertions seraient
   # bloquées par cette même règle de sécurité.
-  CODE_ACCES_TERRAIN = st.secrets.get("CODE_ACCES_TERRAIN", "CHANGEZ_MOI_2026")
+  CODE_ACCES_TERRAIN = st.secrets.get("CODE_ACCES_TERRAIN", "lpee2026")
 
   # Création du client SANS argument supplémentaire (comme avant) : c'est le
   # passage d'un ClientOptions à create_client() qui faisait planter la
@@ -271,38 +266,33 @@ except Exception:
   supabase = None
 
 DEFAULT_USERS = {
-    "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True, "projets_autorises": ["LGV_CASA_SUD"]},
-    "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": True, "projets_autorises": ["LGV_CASA_SUD"]},
+    "BAALLAL": {"password": "arwa2020", "role": "admin", "can_edit": True},
+    "AMINA": {"password": "amina2026", "role": "laboratoire", "can_edit": True},
     "HANINE": {
         "password": "hanine2026",
         "role": "laboratoire",
         "can_edit": False,
-        "projets_autorises": ["LGV_CASA_SUD"],
     },
-    "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False, "projets_autorises": ["LGV_CASA_SUD"]},
+    "IKKEN": {"password": "ikken2026", "role": "laboratoire", "can_edit": False},
     "HAMDANI": {
         "password": "hamdani2026",
         "role": "laboratoire",
         "can_edit": False,
-        "projets_autorises": ["LGV_CASA_SUD"],
     },
     "ADAM": {
         "password": "ctr2026",
         "role": "restricted_betonnage",
         "can_edit": False,
-        "projets_autorises": ["LGV_CASA_SUD"],
     },
     "LAHCEN": {
         "password": "ctr2026",
         "role": "restricted_betonnage",
         "can_edit": False,
-        "projets_autorises": ["LGV_CASA_SUD"],
     },
     "ELIDRISSI": {
         "password": "ctr2026",
         "role": "restricted_betonnage",
         "can_edit": False,
-        "projets_autorises": ["LGV_CASA_SUD"],
     },
 }
 
@@ -315,21 +305,17 @@ def load_users():
       res = supabase.table("app_users").select("*").execute()
       if res.data:
         for row in res.data:
-          projets_bruts = row.get("projets_autorises") or ""
           users[row["username"]] = {
               "password": row["password"],
               "role": row["role"],
               "can_edit": row.get("can_edit", False),
-              "projets_autorises": [
-                  p.strip() for p in projets_bruts.split(",") if p.strip()
-              ],
           }
     except Exception:
       pass
   return users
 
 
-def save_user_db(username, password, role, can_edit, projets_autorises=None):
+def save_user_db(username, password, role, can_edit):
   """Enregistre ou met à jour un utilisateur dans Supabase."""
   if not supabase:
     return False, "Client Supabase non configuré."
@@ -339,7 +325,6 @@ def save_user_db(username, password, role, can_edit, projets_autorises=None):
         "password": password,
         "role": role,
         "can_edit": can_edit,
-        "projets_autorises": ",".join(projets_autorises or []),
     }).execute()
     return True, None
   except Exception as e:
@@ -382,13 +367,11 @@ if st.session_state["user"] is None:
       remembered_user = payload.get("u")
       remembered_role = payload.get("r")
       remembered_can_edit = bool(payload.get("e"))
-      remembered_projets = payload.get("p") or []
       remembered_issued_at = payload.get("t")
       remembered_token = payload.get("k")
 
       jeton_valide = bool(remembered_token) and _generer_jeton_souvenir(
-          remembered_user, remembered_role, remembered_can_edit,
-          remembered_projets, remembered_issued_at
+          remembered_user, remembered_role, remembered_can_edit, remembered_issued_at
       ) == remembered_token
       session_expiree = True
       if jeton_valide:
@@ -400,7 +383,6 @@ if st.session_state["user"] is None:
             "username": remembered_user,
             "role": remembered_role,
             "can_edit": remembered_can_edit,
-            "projets_autorises": remembered_projets,
         }
         st.session_state["role"] = remembered_role
         st.session_state["can_edit"] = remembered_can_edit
@@ -435,21 +417,18 @@ if st.session_state["user"] is None:
           "Se connecter", use_container_width=True, type="primary"
       )
 
-      def _connecter_et_memoriser(username, role, can_edit, projets_autorises):
+      def _connecter_et_memoriser(username, role, can_edit):
         st.session_state["user"] = {
             "username": username, "role": role, "can_edit": can_edit,
-            "projets_autorises": projets_autorises,
         }
         st.session_state["role"] = role
         st.session_state["can_edit"] = can_edit
         if se_souvenir:
           issued_at_iso = datetime.datetime.utcnow().isoformat()
-          token = _generer_jeton_souvenir(
-              username, role, can_edit, projets_autorises, issued_at_iso
-          )
+          token = _generer_jeton_souvenir(username, role, can_edit, issued_at_iso)
           payload_json = json.dumps({
               "u": username, "r": role, "e": bool(can_edit),
-              "p": projets_autorises, "t": issued_at_iso, "k": token,
+              "t": issued_at_iso, "k": token,
           })
           expiration = datetime.datetime.now() + REMEMBER_SESSION_DUREE
           cookie_manager.set(
@@ -473,21 +452,13 @@ if st.session_state["user"] is None:
         ):
           user_role = fresh_users[username_input]["role"]
           can_edit = fresh_users[username_input]["can_edit"]
-          user_projets = fresh_users[username_input].get("projets_autorises", [])
-          _connecter_et_memoriser(username_input, user_role, can_edit, user_projets)
+          _connecter_et_memoriser(username_input, user_role, can_edit)
         elif password_input == "admin2026":
           username = username_input if username_input else "ADMIN"
-          # L'admin voit tous les projets (cf. projets_config.liste_projets_utilisateur) :
-          # la liste explicite n'est donc pas nécessaire ici, mais on la
-          # renseigne quand même pour la cohérence du jeton signé.
-          _connecter_et_memoriser(username, "admin", True, list(projets_config.PROJETS.keys()))
+          _connecter_et_memoriser(username, "admin", True)
         elif password_input == "ctr2026":
           username = username_input if username_input else "USER"
-          # Mot de passe "maître" générique historique : par prudence, il ne
-          # donne accès qu'au projet d'origine, jamais automatiquement aux
-          # nouveaux projets (qui nécessitent un compte nommé explicitement
-          # autorisé, via Gestion Utilisateurs).
-          _connecter_et_memoriser(username, "user", False, [projets_config.PROJET_PAR_DEFAUT])
+          _connecter_et_memoriser(username, "user", False)
         else:
           st.error("❌ Nom d'utilisateur ou mot de passe incorrect.")
   st.stop()
@@ -535,8 +506,6 @@ with st.sidebar:
   current_role = st.session_state["role"]
 
   st.markdown(f"👤 **{current_username}**")
-
-  projets_config.afficher_selecteur_projet(st.session_state["user"])
 
   if current_role in ["laboratoire", "technicien"]:
     if current_username == "HANINE":
@@ -756,11 +725,6 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
   )
 
   ROLES_LIST = ["laboratoire", "restricted_betonnage", "admin", "user"]
-  PROJETS_LIST = list(projets_config.PROJETS.keys())
-  PROJETS_LABELS = {
-      p: f"{projets_config.PROJETS[p]['nom']} ({projets_config.PROJETS[p]['client']})"
-      for p in PROJETS_LIST
-  }
 
   col_add, col_edit, col_del = st.columns(3)
 
@@ -771,17 +735,6 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
         new_password = st.text_input("Mot de passe", type="password")
         new_role = st.selectbox("Rôle", ROLES_LIST)
         new_can_edit = st.checkbox("Droit de modification (can_edit)")
-        new_projets_labels = st.multiselect(
-            "📁 Projets autorisés",
-            options=[PROJETS_LABELS[p] for p in PROJETS_LIST],
-            default=[PROJETS_LABELS[projets_config.PROJET_PAR_DEFAUT]],
-            help="L'utilisateur ne pourra voir/saisir des données que pour"
-                 " le(s) projet(s) coché(s) ici (sans effet pour un rôle admin,"
-                 " qui voit toujours tous les projets).",
-        )
-        new_projets = [
-            p for p in PROJETS_LIST if PROJETS_LABELS[p] in new_projets_labels
-        ]
         submit_add = st.form_submit_button(
             "Ajouter l'utilisateur", use_container_width=True, type="primary"
         )
@@ -793,11 +746,9 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
             st.error("❌ Le mot de passe ne peut pas être vide.")
           elif new_username in st.session_state["users_db"]:
             st.warning(f"⚠️ L'utilisateur **{new_username}** existe déjà.")
-          elif not new_projets and new_role != "admin":
-            st.error("❌ Sélectionnez au moins un projet autorisé.")
           else:
             success, err = save_user_db(
-                new_username, new_password, new_role, new_can_edit, new_projets
+                new_username, new_password, new_role, new_can_edit
             )
             if success:
               st.session_state["users_db"] = load_users()
@@ -840,20 +791,6 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
           mod_can_edit = st.checkbox(
               "Droit de modification (can_edit)", value=current_data["can_edit"]
           )
-          mod_projets_labels = st.multiselect(
-              "📁 Projets autorisés",
-              options=[PROJETS_LABELS[p] for p in PROJETS_LIST],
-              default=[
-                  PROJETS_LABELS[p]
-                  for p in current_data.get("projets_autorises", [])
-                  if p in PROJETS_LABELS
-              ],
-              help="Sans effet pour un rôle admin, qui voit toujours tous"
-                   " les projets.",
-          )
-          mod_projets = [
-              p for p in PROJETS_LIST if PROJETS_LABELS[p] in mod_projets_labels
-          ]
 
           submit_edit = st.form_submit_button(
               "Enregistrer", use_container_width=True
@@ -869,8 +806,6 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
               st.error(
                   f"❌ Le nom d'utilisateur **{mod_username}** existe déjà."
               )
-            elif not mod_projets and mod_role != "admin":
-              st.error("❌ Sélectionnez au moins un projet autorisé.")
             else:
               updated_password = (
                   mod_password
@@ -879,7 +814,7 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
               )
 
               success, err = save_user_db(
-                  mod_username, updated_password, mod_role, mod_can_edit, mod_projets
+                  mod_username, updated_password, mod_role, mod_can_edit
               )
               if success:
                 if mod_username != selected_user:
@@ -931,18 +866,11 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
   st.session_state["users_db"] = load_users()
   data_users = []
   for user, details in st.session_state["users_db"].items():
-    projets_de_lutilisateur = (
-        "Tous (admin)" if details["role"] == "admin"
-        else ", ".join(
-            projets_config.nom_projet(p) for p in details.get("projets_autorises", [])
-        ) or "—"
-    )
     data_users.append({
         "Utilisateur": user,
         "Mot de Passe": details["password"],
         "Rôle": details["role"],
         "Droit de modification (can_edit)": details["can_edit"],
-        "Projets autorisés": projets_de_lutilisateur,
     })
 
   st.dataframe(data_users, use_container_width=True)
