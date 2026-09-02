@@ -10,6 +10,7 @@ from openpyxl.utils import get_column_letter
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import projets_config
 
 # =========================================================
 # UTILITAIRES D'EXTRACTION NUMÉRIQUE & FCK
@@ -1255,9 +1256,11 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
 
 
 def load_and_process_controle_data(supabase):
+  projet_id_actif = projets_config.projet_actif(st.session_state.get("user") or {})
   res_ecrasement = (
       supabase.table("suivi_controle_beton")
       .select("*")
+      .eq("projet_id", projet_id_actif)
       .order("id", desc=True)
       .execute()
   )
@@ -1270,7 +1273,7 @@ def load_and_process_controle_data(supabase):
   if df_raw.empty:
     return pd.DataFrame()
 
-  res_betonnage = supabase.table("suivi_betonnage").select("*").execute()
+  res_betonnage = supabase.table("suivi_betonnage").select("*").eq("projet_id", projet_id_actif).execute()
   df_betonnage = (
       pd.DataFrame(res_betonnage.data)
       if res_betonnage and res_betonnage.data
@@ -1516,6 +1519,12 @@ def compute_statistics_df(df_display):
 def show(supabase):
   st.title("📊 Module de Synthèses du Béton")
 
+  projet_id_actif = projets_config.projet_actif(st.session_state.get("user") or {})
+  if not projet_id_actif:
+    st.error("⚠️ Aucun projet ne vous est autorisé. Contactez un administrateur.")
+    return
+  st.caption(f"📁 Projet actif : **{projets_config.nom_projet(projet_id_actif)}**")
+
   main_tab_betonnage, main_tab_controle = st.tabs([
       "🏗️ Synthèse de Suivi de Bétonnage",
       "🧪 Synthèse de Contrôle Béton",
@@ -1537,6 +1546,7 @@ def show(supabase):
         res = (
             supabase.table("suivi_betonnage")
             .select("*")
+            .eq("projet_id", projet_id_actif)
             .eq("date_livraison", str(selected_date))
             .execute()
         )
@@ -1698,6 +1708,7 @@ def show(supabase):
         res_m = (
             supabase.table("suivi_betonnage")
             .select("*")
+            .eq("projet_id", projet_id_actif)
             .gte("date_livraison", date_debut)
             .lte("date_livraison", date_fin)
             .execute()
