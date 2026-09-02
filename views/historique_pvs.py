@@ -13,6 +13,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
+import projets_config
 
 
 # ==============================================================================
@@ -764,10 +765,17 @@ def show(supabase):
 
   st.subheader("📋 Historique Général & Consultation des PVs")
 
+  projet_id_actif = projets_config.projet_actif(user_info)
+  if not projet_id_actif:
+    st.error("⚠️ Aucun projet ne vous est autorisé. Contactez un administrateur.")
+    return
+  st.caption(f"📁 Projet actif : **{projets_config.nom_projet(projet_id_actif)}**")
+
   try:
     res_all = (
         supabase.table("suivi_controle_beton")
         .select("*")
+        .eq("projet_id", projet_id_actif)
         .order("id", desc=True)
         .execute()
     )
