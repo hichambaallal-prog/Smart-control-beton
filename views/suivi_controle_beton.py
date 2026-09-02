@@ -11,6 +11,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import qrcode
 from audit_log import enregistrer_modification, afficher_historique_modifications
+import projets_config
 
 try:
     from supabase import create_client, Client
@@ -636,13 +637,19 @@ def _format_ep_row(ep, date_ref=None):
 def afficher_module_validation_admin(supabase, est_admin=False):
     """Affiche le module d'approbation administrative et de signature des PVs."""
     st.subheader("🛡️ 3. Validation & Consultation des PVs")
+
+    projet_id_actif = projets_config.projet_actif(st.session_state.get("user") or {})
+    if not projet_id_actif:
+        st.error("⚠️ Aucun projet ne vous est autorisé. Contactez un administrateur.")
+        return
+
     if est_admin:
         st.info("💡 **Espace Administrateur BAALLAL** : vérifiez la conformité des écrasements et validez/signalez officiellement les PVs.")
     else:
         st.info("👁️ **Mode consultation** : cette phase est ouverte aux utilisateurs connectés. La validation officielle, le rejet, la signature et la modification des résultats sont réservés à l'administrateur BAALLAL.")
 
     try:
-        res = supabase.table("suivi_controle_beton").select("*").not_.is_("force_kn", "null").gt("force_kn", 0).order("id", desc=True).execute()
+        res = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).not_.is_("force_kn", "null").gt("force_kn", 0).order("id", desc=True).execute()
         essais_realises = res.data or []
     except Exception as e:
         st.error(f"❌ Erreur de chargement des essais réalisés : {e}")
@@ -920,6 +927,12 @@ def show(supabase):
         role_user == "admin" or st.session_state.get("is_admin", False)
     )
 
+    projet_id_actif = projets_config.projet_actif(user_info)
+    if not projet_id_actif:
+        st.error("⚠️ Aucun projet ne vous est autorisé. Contactez un administrateur.")
+        return
+    st.caption(f"📁 Projet actif : **{projets_config.nom_projet(projet_id_actif)}**")
+
     mode_admin = False
     if is_baallal_admin:
         st.sidebar.markdown("---")
@@ -957,7 +970,7 @@ def show(supabase):
 
     betonnages_preleves = []
     try:
-        res_b = supabase.table("suivi_betonnage").select("*").order("id", desc=True).execute()
+        res_b = supabase.table("suivi_betonnage").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
         if res_b.data:
             betonnages_preleves = [b for b in res_b.data if b.get("prelevement") and str(b.get("prelevement")).upper().startswith("OUI")]
     except Exception as e:
@@ -1177,7 +1190,7 @@ def show(supabase):
                 )
                 if st.button("🔧 Recalculer et corriger toutes les dates d'écrasement", key="btn_fix_toutes_dates_ecrasement"):
                     try:
-                        res_fix = supabase.table("suivi_controle_beton").select("*").execute()
+                        res_fix = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).execute()
                         toutes_eprouvettes = res_fix.data or []
                     except Exception as e:
                         toutes_eprouvettes = []
@@ -1217,7 +1230,7 @@ def show(supabase):
 
             with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
                 try:
-                    res_p = supabase.table("suivi_controle_beton").select("*").order("id", desc=True).execute()
+                    res_p = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
                     eprouvettes_enregistrees = res_p.data or []
                 except Exception as e:
                     eprouvettes_enregistrees = []
@@ -1366,7 +1379,7 @@ def show(supabase):
 
         prog_counts = {}
         try:
-            res_deja = supabase.table("suivi_controle_beton").select("betonnage_id").execute()
+            res_deja = supabase.table("suivi_controle_beton").select("betonnage_id").eq("projet_id", projet_id_actif).execute()
             for r in (res_deja.data or []):
                 b_id_v = r.get("betonnage_id")
                 if b_id_v: prog_counts[b_id_v] = prog_counts.get(b_id_v, 0) + 1
@@ -1462,7 +1475,8 @@ def show(supabase):
                         pay = {
                             "betonnage_id": b_id, "num_bl": num_bl_p, "ouvrage": ouvrage_p, "classe_beton": classe_beton_p,
                             "date_coulee": str(date_coulee_p), "echeance": echeance_p, "date_ecrasement": str(date_ecrasement_prevue),
-                            "ref_controle": ref_controle_p, "repere_eprouvette": rep, "forme": forme_p, "section": float(sect_def)
+                            "ref_controle": ref_controle_p, "repere_eprouvette": rep, "forme": forme_p, "section": float(sect_def),
+                            "projet_id": projet_id_actif,
                         }
                         try:
                             res_ins_prog = supabase.table("suivi_controle_beton").insert(pay).execute()
@@ -1510,7 +1524,7 @@ def show(supabase):
 
         # Retards
         try:
-            res_retards = supabase.table("suivi_controle_beton").select("*").lte("date_ecrasement", today_str).or_("force_kn.is.null,force_kn.eq.0").order("date_ecrasement", desc=False).execute()
+            res_retards = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).lte("date_ecrasement", today_str).or_("force_kn.is.null,force_kn.eq.0").order("date_ecrasement", desc=False).execute()
             retards_list = res_retards.data or []
         except Exception as e:
             retards_list = []
@@ -1533,8 +1547,8 @@ def show(supabase):
 
         # Jour et Semaine
         try:
-            eprouvettes_date_sel = supabase.table("suivi_controle_beton").select("*").eq("date_ecrasement", date_filtre_str).order("id", desc=False).execute().data or []
-            eprouvettes_semaine = supabase.table("suivi_controle_beton").select("*").gte("date_ecrasement", str(debut_semaine)).lte("date_ecrasement", str(fin_semaine)).order("date_ecrasement", desc=False).execute().data or []
+            eprouvettes_date_sel = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).eq("date_ecrasement", date_filtre_str).order("id", desc=False).execute().data or []
+            eprouvettes_semaine = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).gte("date_ecrasement", str(debut_semaine)).lte("date_ecrasement", str(fin_semaine)).order("date_ecrasement", desc=False).execute().data or []
         except Exception as e:
             eprouvettes_date_sel, eprouvettes_semaine = [], []
             st.warning(f"Note chargement planning : {e}")
@@ -1559,12 +1573,13 @@ def show(supabase):
 
         try:
             if mode_admin:
-                res_att = supabase.table("suivi_controle_beton").select("*").order("id", desc=False).execute()
+                res_att = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).order("id", desc=False).execute()
                 eprouvettes_en_attente = res_att.data or []
             else:
                 res_att = (
                     supabase.table("suivi_controle_beton")
                     .select("*")
+                    .eq("projet_id", projet_id_actif)
                     .or_("force_kn.is.null,force_kn.eq.0")
                     .order("id", desc=False)
                     .execute()
