@@ -1377,6 +1377,60 @@ def show(supabase):
                             if nb_succes > 0:
                                 st.success(f"✅ {nb_succes} programmation(s) mise(s) à jour avec recalcul automatique de la date d'écrasement !")
                                 st.rerun()
+
+                    st.markdown("---")
+                    st.markdown("##### 🗑️ Supprimer une ou plusieurs éprouvettes programmées par erreur")
+                    st.caption(
+                        "Utile si tu as saisi le mauvais nombre d'éprouvettes lors de la"
+                        " programmation (ex : 12 attendues, mais des éprouvettes en trop"
+                        " ont été ajoutées par erreur)."
+                    )
+                    options_suppr = {
+                        f"#{ep['id']} — {ep.get('ref_controle', '-')} / {ep.get('repere_eprouvette', '-')}"
+                        f" ({ep.get('echeance', '-')}, prévu le {ep.get('date_ecrasement', '-')})": ep["id"]
+                        for ep in eprouvettes_enregistrees
+                    }
+                    choix_suppr = st.multiselect(
+                        "Sélectionner la ou les éprouvette(s) à supprimer définitivement",
+                        options=list(options_suppr.keys()),
+                        key="multiselect_suppr_prog",
+                    )
+                    if choix_suppr:
+                        st.warning(
+                            f"⚠️ {len(choix_suppr)} éprouvette(s) sélectionnée(s) pour"
+                            " suppression **définitive**. Cette action est irréversible."
+                        )
+                        confirmer_suppr = st.checkbox(
+                            "Je confirme vouloir supprimer définitivement ces éprouvettes",
+                            key="confirm_suppr_prog",
+                        )
+                        if st.button(
+                            "🗑️ Supprimer les éprouvettes sélectionnées",
+                            type="primary",
+                            disabled=not confirmer_suppr,
+                            key="btn_suppr_prog",
+                        ):
+                            orig_par_id_suppr = {ep["id"]: ep for ep in eprouvettes_enregistrees}
+                            nb_suppr = 0
+                            for label in choix_suppr:
+                                ep_id_suppr = options_suppr[label]
+                                try:
+                                    ep_avant_suppr = orig_par_id_suppr.get(ep_id_suppr, {})
+                                    supabase.table("suivi_controle_beton").delete().eq("id", ep_id_suppr).execute()
+                                    enregistrer_modification(
+                                        supabase,
+                                        table_concernee="suivi_controle_beton",
+                                        enregistrement_id=ep_id_suppr,
+                                        action="SUPPRESSION",
+                                        anciennes_valeurs={k: v for k, v in ep_avant_suppr.items() if k != "id"},
+                                        commentaire="Suppression d'une éprouvette programmée par erreur (Phase 1)",
+                                    )
+                                    nb_suppr += 1
+                                except Exception as err_suppr:
+                                    st.error(f"Erreur lors de la suppression de {label} : {err_suppr}")
+                            if nb_suppr > 0:
+                                st.success(f"✅ {nb_suppr} éprouvette(s) supprimée(s).")
+                                st.rerun()
         else:
             st.info("🔒 **Accès restreint :** La modification nécessite le droit `can_edit`.")
 
