@@ -93,7 +93,7 @@ def extraire_nb_jours(echeance_str, default=28):
 
 
 def convertir_projet_id(valeur):
-    """Scurise la valeur de projet_id pour éviter l'erreur de conversion int()."""
+    """Sécurise la valeur de projet_id pour éviter l'erreur de conversion int()."""
     if str(valeur).isdigit():
         return int(valeur)
     return str(valeur)
@@ -990,42 +990,81 @@ def show(supabase):
                 beton_p = options_beton[choix_label_p]
                 b_id = beton_p.get("id")
 
-                nb_ep_prelevees = beton_p.get("nb_eprouvettes") or 12
-                st.info(f"📊 **Information Prélèvement :** La fiche de bétonnage sélectionnée comprend un total de **{nb_ep_prelevees} éprouvettes** confectionnées.")
+                # --- 1. CALCUL ET VERIFICATION DE LA CAPACITE / DU SOLDE D'ÉPROUVETTES ---
+                nb_ep_prelevees = int(beton_p.get("nb_eprouvettes") or 12)
 
-                col_type, col_ech = st.columns(2)
-                type_essai_p = col_type.selectbox("🧪 Type d'Essai", ["Compression", "Traction par fendage"], key=f"p_type_essai_{b_id}")
-                echeance_p = col_ech.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], key=f"p_echeance_{b_id}")
+                # Récupération de toutes les éprouvettes déjà programmées pour cette fiche
+                try:
+                    res_ep_exist = supabase.table("suivi_controle_beton").select("id, echeance").eq("betonnage_id", int(b_id)).execute()
+                    eprouvettes_programmées_exist = res_ep_exist.data or []
+                except Exception as e:
+                    eprouvettes_programmées_exist = []
 
-                date_coulee_p = datetime.strptime(extraire_date_coulee(beton_p), "%Y-%m-%d").date()
-                nb_j = extraire_nb_jours(echeance_p)
-                date_ecrasement_prevue = date_coulee_p + timedelta(days=nb_j)
+                nb_ep_consommees = len(eprouvettes_programmées_exist)
+                nb_ep_restantes = max(0, nb_ep_prelevees - nb_ep_consommees)
+                echeances_deja_programmees = {str(item.get("echeance")).strip() for item in eprouvettes_programmées_exist if item.get("echeance")}
 
-                nb_eprouvettes_p = st.number_input("Nombre d'éprouvettes à programmer", min_value=1, max_value=12, value=min(3, int(nb_ep_prelevees)), key=f"p_nb_ep_{b_id}")
-                forme_p = st.selectbox("Forme", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
+                # Affichage des métriques d'état
+                col_m1, col_m2, col_m3 = st.columns(3)
+                col_m1.metric("Éprouvettes Confectionnées", nb_ep_prelevees)
+                col_m2.metric("Éprouvettes Déjà Programmées", nb_ep_consommees)
+                col_m3.metric("Éprouvettes Restantes", nb_ep_restantes)
 
-                if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True):
-                    try:
-                        for i in range(int(nb_eprouvettes_p)):
-                            pay = {
-                                "betonnage_id": int(b_id),
-                                "type_essai": str(type_essai_p),
-                                "num_bl": str(extraire_num_bl(beton_p)),
-                                "ouvrage": str(beton_p.get("ouvrage", "")),
-                                "classe_beton": str(beton_p.get("classe_beton", "")),
-                                "date_coulee": str(date_coulee_p),
-                                "echeance": str(echeance_p),
-                                "date_ecrasement": str(date_ecrasement_prevue),
-                                "ref_controle": str(beton_p.get("num_reception", "")),
-                                "repere_eprouvette": f"/{i+1}",
-                                "forme": str(forme_p),
-                                "projet_id": convertir_projet_id(projet_id_actif),
-                            }
-                            supabase.table("suivi_controle_beton").insert(pay).execute()
-                        st.success("✅ Éprouvettes programmées avec succès !")
-                        st.rerun()
-                    except Exception as err:
-                        st.error(f"❌ Erreur lors de l'insertion dans Supabase : {err}")
+                if nb_ep_restantes <= 0:
+                    st.error("⚠️ La capacité totale d'éprouvettes pour cette fiche de bétonnage a été atteinte. Impossible d'ajouter de nouvelles programmations.")
+                else:
+                    col_type, col_ech = st.columns(2)
+                    type_essai_p = col_type.selectbox("🧪 Type d'Essai", ["Compression", "Traction par fendage"], key=f"p_type_essai_{b_id}")
+                    
+                    echeances_disponibles = ["3 jours", "7 jours", "28 jours", "90 jours"]
+                    echeance_p = col_ech.selectbox("Âge / Échéance visée", echeances_disponibles, key=f"p_echeance_{b_id}")
+
+                    # --- 2. CONTROLE DES DOUBLONS DE LOT / ÉCHEANCE ---
+                    if str(echeance_p).strip() in echeances_deja_programmees:
+                        st.warning(f"❌ L'échéance **{echeance_p}** a DEJÀ été programmée pour ce lot/prélèvement. Saisie en double non autorisée.")
+                    else:
+                        date_coulee_p = datetime.strptime(extraire_date_coulee(beton_p), "%Y-%m-%d").date()
+                        nb_j = extraire_nb_jours(echeance_p)
+                        date_ecrasement_prevue = date_coulee_p + timedelta(days=nb_j)
+
+                        # --- 3. BORNAGE DYNAMIQUE DE LA SAISIE (MAX = EP. RESTANTES) ---
+                        default_val_input = min(3, nb_ep_restantes)
+                        nb_eprouvettes_p = st.number_input(
+                            f"Nombre d'éprouvettes à programmer (Max autorisés: {nb_ep_restantes})",
+                            min_value=1,
+                            max_value=int(nb_ep_restantes),
+                            value=int(default_val_input),
+                            key=f"p_nb_ep_{b_id}"
+                        )
+                        forme_p = st.selectbox("Forme", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
+
+                        if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True):
+                            if int(nb_eprouvettes_p) > nb_ep_restantes:
+                                st.error(f"❌ Vous tentez de programmer {nb_eprouvettes_p} éprouvettes, mais il n'en reste que {nb_ep_restantes} disponibles !")
+                            else:
+                                try:
+                                    start_index = nb_ep_consommees + 1
+                                    for i in range(int(nb_eprouvettes_p)):
+                                        index_eprouvette = start_index + i
+                                        pay = {
+                                            "betonnage_id": int(b_id),
+                                            "type_essai": str(type_essai_p),
+                                            "num_bl": str(extraire_num_bl(beton_p)),
+                                            "ouvrage": str(beton_p.get("ouvrage", "")),
+                                            "classe_beton": str(beton_p.get("classe_beton", "")),
+                                            "date_coulee": str(date_coulee_p),
+                                            "echeance": str(echeance_p),
+                                            "date_ecrasement": str(date_ecrasement_prevue),
+                                            "ref_controle": str(beton_p.get("num_reception", "")),
+                                            "repere_eprouvette": f"/{index_eprouvette}",
+                                            "forme": str(forme_p),
+                                            "projet_id": convertir_projet_id(projet_id_actif),
+                                        }
+                                        supabase.table("suivi_controle_beton").insert(pay).execute()
+                                    st.success(f"✅ {nb_eprouvettes_p} éprouvette(s) programmée(s) avec succès !")
+                                    st.rerun()
+                                except Exception as err:
+                                    st.error(f"❌ Erreur lors de l'insertion dans Supabase : {err}")
 
     # =========================================================
     # PHASE 2 : PLANNING & SAISIE DES ÉCRASEMENTS
