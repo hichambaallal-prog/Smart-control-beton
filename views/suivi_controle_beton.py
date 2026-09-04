@@ -31,11 +31,6 @@ OPTIONS_ONGLETS = [
 # FONCTIONS UTILITAIRES : CALCUL DE RÉSISTANCE ET EXTRACTION DATES
 # ==============================================================================
 def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindrique 150x300"):
-    """
-    Calcule la résistance en MPa selon le type d'essai :
-    - Compression (NF EN 12390-3) : Fc = Force (N) / Section (mm²)
-    - Traction par fendage (NF EN 12390-6) : Fct = (2 * Force) / (pi * L * d)
-    """
     try:
         f_kn = float(force_kn or 0.0)
     except (ValueError, TypeError):
@@ -50,7 +45,7 @@ def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindriq
         d, L, sec = 160.0, 320.0, 20106.19
     elif "100x200" in str(forme):
         d, L, sec = 100.0, 200.0, 7853.98
-    else:  # Cylindrique 150x300 par défaut
+    else:
         d, L, sec = 150.0, 300.0, 17671.46
 
     if type_essai == "Traction par fendage":
@@ -93,7 +88,6 @@ def extraire_nb_jours(echeance_str, default=28):
 
 
 def convertir_projet_id(valeur):
-    """Sécurise la valeur de projet_id pour éviter l'erreur de conversion int()."""
     if str(valeur).isdigit():
         return int(valeur)
     return str(valeur)
@@ -283,7 +277,6 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(row=4, column=c).fill = fill_dark
         ws.cell(row=4, column=c).border = border_cell
 
-    # Détection du type d'essai prédominant
     a_fendage = any(str(item.get("type_essai", "")).strip() == "Traction par fendage" for item in export_data)
     ws.merge_cells("A5:D5")
     ws["A5"] = f"[{' ' if a_fendage else 'X'}] COMPRESSION NF EN 12390-3 (2019)"
@@ -634,10 +627,6 @@ def _format_ep_row(ep, date_ref=None):
 
 
 def executer_update_eprouvette(supabase, ep_id, update_payload):
-    """
-    Exécute une mise à jour d'éprouvette en retirant les clés obsolètes si elles
-    ne figurent pas dans la structure de la table Supabase (ex: PGRST204 date_essai).
-    """
     try:
         return supabase.table("suivi_controle_beton").update(update_payload).eq("id", ep_id).execute()
     except Exception as e:
@@ -946,31 +935,58 @@ def show(supabase):
                     eprouvettes_enregistrees = []
 
                 if eprouvettes_enregistrees:
-                    df_display_prog = pd.DataFrame(eprouvettes_enregistrees)
+                    df_key_phase1 = "df_phase1_modification"
                     
-                    if "type_essai" not in df_display_prog.columns:
-                        df_display_prog["type_essai"] = "Compression"
+                    if df_key_phase1 not in st.session_state or len(st.session_state[df_key_phase1]) != len(eprouvettes_enregistrees):
+                        df_display_prog = pd.DataFrame(eprouvettes_enregistrees)
+                        if "type_essai" not in df_display_prog.columns:
+                            df_display_prog["type_essai"] = "Compression"
+                        cols_ed = [c for c in ["id", "ref_controle", "repere_eprouvette", "type_essai", "echeance", "date_ecrasement", "date_coulee", "ouvrage"] if c in df_display_prog.columns]
+                        st.session_state[df_key_phase1] = df_display_prog[cols_ed].copy()
 
-                    cols_ed = [c for c in ["id", "ref_controle", "repere_eprouvette", "type_essai", "echeance", "date_ecrasement", "date_coulee", "ouvrage"] if c in df_display_prog.columns]
+                    editor_phase1_key = f"editor_{df_key_phase1}"
 
-                    df_prog_modifiee = st.data_editor(
-                        df_display_prog[cols_ed],
+                    # --- RECALCUL INTERACTIF DÈS LA MODIFICATION D'UNE ÉCHEANCE OU DATE DE COULÉE ---
+                    def _recalculer_date_ecrasement_mod_interactive():
+                        editor_state = st.session_state.get(editor_phase1_key, {})
+                        for row_idx, updated_cols in editor_state.get("edited_rows", {}).items():
+                            if "echeance" in updated_cols or "date_coulee" in updated_cols:
+                                nouv_ech = updated_cols.get("echeance", st.session_state[df_key_phase1].at[row_idx, "echeance"])
+                                nouv_coul = updated_cols.get("date_coulee", st.session_state[df_key_phase1].at[row_idx, "date_coulee"])
+                                
+                                st.session_state[df_key_phase1].at[row_idx, "echeance"] = nouv_ech
+                                st.session_state[df_key_phase1].at[row_idx, "date_coulee"] = nouv_coul
+                                
+                                str_coul = str(nouv_coul).strip()
+                                if str_coul and str_coul not in ["-", "None", "NaN", ""]:
+                                    try:
+                                        d_coul = datetime.strptime(str_coul[:10], "%Y-%m-%d").date()
+                                        nb_j = extraire_nb_jours(nouv_ech)
+                                        st.session_state[df_key_phase1].at[row_idx, "date_ecrasement"] = str(d_coul + timedelta(days=nb_j))
+                                    except Exception:
+                                        pass
+
+                    st.data_editor(
+                        st.session_state[df_key_phase1],
                         column_config={
                             "id": st.column_config.NumberColumn("ID", disabled=True),
                             "type_essai": st.column_config.SelectboxColumn("Type d'essai", options=["Compression", "Traction par fendage"]),
                             "echeance": st.column_config.SelectboxColumn("Échéance Visée", options=["3 jours", "7 jours", "28 jours", "90 jours"]),
-                            "date_ecrasement": st.column_config.TextColumn("Date Écrasement", help="Recalculée automatiquement selon l'échéance à l'enregistrement"),
+                            "date_ecrasement": st.column_config.TextColumn("Date Écrasement", help="Recalculée automatiquement dès le changement d'échéance"),
                         },
-                        use_container_width=True, hide_index=True, key="editor_modification_phase1",
+                        use_container_width=True,
+                        hide_index=True,
+                        key=editor_phase1_key,
+                        on_change=_recalculer_date_ecrasement_mod_interactive,
                     )
 
                     if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", key="btn_save_mod_prog"):
                         try:
-                            for _, r_m in df_prog_modifiee.iterrows():
+                            df_mod = st.session_state[df_key_phase1]
+                            for _, r_m in df_mod.iterrows():
                                 nouvelle_echeance = str(r_m.get("echeance", "")).strip()
                                 str_date_coulee = str(r_m.get("date_coulee", "")).strip()
 
-                                # --- RECALCUL AUTOMATIQUE DE LA DATE D'ÉCRASEMENT EN FONCTION DE L'ÉCHÉANCE ---
                                 date_ecrasement_calculee = str(r_m.get("date_ecrasement", "")).strip()
                                 if str_date_coulee and str_date_coulee not in ["-", "None", "NaN", ""]:
                                     try:
@@ -989,7 +1005,9 @@ def show(supabase):
                                     "date_ecrasement": date_ecrasement_calculee,
                                 }
                                 executer_update_eprouvette(supabase, int(r_m["id"]), pay)
-                            st.success("✅ Modifications enregistrées et dates d'écrasement recalculées avec succès !")
+                                
+                            st.session_state.pop(df_key_phase1, None)
+                            st.success("✅ Modifications enregistrées et dates d'écrasement mises à jour dans la base !")
                             st.rerun()
                         except Exception as err:
                             st.error(f"❌ Erreur de mise à jour dans la base de données : {err}")
@@ -1004,10 +1022,8 @@ def show(supabase):
                 beton_p = options_beton[choix_label_p]
                 b_id = beton_p.get("id")
 
-                # --- 1. CALCUL ET VERIFICATION DE LA CAPACITE / DU SOLDE D'ÉPROUVETTES ---
                 nb_ep_prelevees = int(beton_p.get("nb_eprouvettes") or 12)
 
-                # Récupération de toutes les éprouvettes déjà programmées pour cette fiche
                 try:
                     res_ep_exist = supabase.table("suivi_controle_beton").select("id, echeance").eq("betonnage_id", int(b_id)).execute()
                     eprouvettes_programmées_exist = res_ep_exist.data or []
@@ -1018,7 +1034,6 @@ def show(supabase):
                 nb_ep_restantes = max(0, nb_ep_prelevees - nb_ep_consommees)
                 echeances_deja_programmees = {str(item.get("echeance")).strip() for item in eprouvettes_programmées_exist if item.get("echeance")}
 
-                # Affichage des métriques d'état
                 col_m1, col_m2, col_m3 = st.columns(3)
                 col_m1.metric("Éprouvettes Confectionnées", nb_ep_prelevees)
                 col_m2.metric("Éprouvettes Déjà Programmées", nb_ep_consommees)
@@ -1033,7 +1048,6 @@ def show(supabase):
                     echeances_disponibles = ["3 jours", "7 jours", "28 jours", "90 jours"]
                     echeance_p = col_ech.selectbox("Âge / Échéance visée", echeances_disponibles, key=f"p_echeance_{b_id}")
 
-                    # --- 2. CONTROLE DES DOUBLONS DE LOT / ÉCHEANCE ---
                     if str(echeance_p).strip() in echeances_deja_programmees:
                         st.warning(f"❌ L'échéance **{echeance_p}** a DEJÀ été programmée pour ce lot/prélèvement. Saisie en double non autorisée.")
                     else:
@@ -1041,7 +1055,6 @@ def show(supabase):
                         nb_j = extraire_nb_jours(echeance_p)
                         date_ecrasement_prevue = date_coulee_p + timedelta(days=nb_j)
 
-                        # --- 3. BORNAGE DYNAMIQUE DE LA SAISIE (MAX = EP. RESTANTES) ---
                         default_val_input = min(3, nb_ep_restantes)
                         nb_eprouvettes_p = st.number_input(
                             f"Nombre d'éprouvettes à programmer (Max autorisés: {nb_ep_restantes})",
