@@ -267,9 +267,25 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((0, row3, 7, row3, "Helvetica-Bold", 11, WHITE))
 
   # ---- Row 4 : Compression / Traction ----
+  # Les cases sont cochées uniquement si le PV contient réellement le type d'essai.
+  types_pv = {
+      normaliser_type_essai(item.get("type_essai"))
+      for item in export_data
+  }
+  has_compression = "Compression" in types_pv
+  has_traction = "Traction par fendage" in types_pv
+
   r = blank_row()
-  r[0] = "[X] COMPRESSION NF EN 12390-3 (2019)"
-  r[4] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
+  r[0] = (
+      "[X] COMPRESSION NF EN 12390-3 (2019)"
+      if has_compression else
+      "[ ] COMPRESSION NF EN 12390-3 (2019)"
+  )
+  r[4] = (
+      "[X] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
+      if has_traction else
+      "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
+  )
   data.append(r)
   row4 = len(data) - 1
   spans += [(0, row4, 3, row4), (4, row4, 7, row4)]
@@ -427,8 +443,12 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((0, row12, 7, row13, "Helvetica-Bold", 8.5, BLACK))
 
   # ---- Lignes de résultats (une par éprouvette) ----
+  # IMPORTANT : le regroupement d'une moyenne se fait par AGE + DATE + TYPE
+  # d'essai. Ainsi, une série à 28 j en compression ne peut jamais être
+  # mélangée avec une série à 28 j en traction par fendage.
   row_indices_body = []
   groupes_lots = {}
+
   for item in export_data:
     f_kn = float(item.get("force_kn", 0.0) or 0.0)
     is_en_cours = (
@@ -436,6 +456,19 @@ def generer_pv_pdf(export_data, infos_header):
     )
     dt_essai = item.get("date_essai")
     age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
+    type_essai = normaliser_type_essai(item.get("type_essai"))
+    forme_item = item.get("forme", infos_header.get("forme", "Cylindrique 150x300"))
+    section_item = item.get("section")
+
+    # Recalcul de la résistance selon le type d'essai.
+    # On ne reprend pas aveuglément fc_mpa : cela évite qu'une traction soit
+    # affichée par erreur dans la colonne Compression.
+    resistance_mpa = calculer_resistance_mpa(
+        f_kn,
+        type_essai=type_essai,
+        forme=forme_item,
+        section=section_item,
+    )
 
     date_essai_affichage = "-"
     if (
@@ -460,48 +493,87 @@ def generer_pv_pdf(export_data, infos_header):
     r[1] = str(date_fab_header)
     r[2] = date_essai_affichage
     r[3] = str(age_val)
+
     if is_en_cours:
       r[4] = "En cours"
-      r[5] = "En cours"
+      if type_essai == "Traction par fendage":
+        r[6] = "En cours"
+      else:
+        r[5] = "En cours"
     else:
       r[4] = f"{f_kn:.1f}"
-      r[5] = f"{float(item.get('fc_mpa', 0.0)):.1f}"
-    r[6] = "-"
+      if type_essai == "Traction par fendage":
+        r[6] = f"{resistance_mpa:.1f}"
+      else:
+        r[5] = f"{resistance_mpa:.1f}"
+
     data.append(r)
     r_idx = len(data) - 1
     row_indices_body.append(r_idx)
     fonts.append((0, r_idx, 7, r_idx, "Helvetica", 8.5, BLACK))
 
-    cle = f"{age_val}_{dt_essai}"
+    # Chaque lot de moyenne est indépendant pour compression et traction.
+    # La date est conservée pour ne pas mélanger deux séries distinctes.
+    cle = (int(age_val), str(dt_essai), type_essai)
     groupes_lots.setdefault(
-        cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
-    )["lignes"].append(r_idx)
+        cle,
+        {
+            "lignes": [],
+            "en_cours": False,
+            "age": int(age_val),
+            "type_essai": type_essai,
+        },
+    )
+    groupes_lots[cle]["lignes"].append(r_idx)
+    if is_en_cours:
+      groupes_lots[cle]["en_cours"] = True
 
-  # Fusion des moyennes (comme les cellules H fusionnées côté Excel)
-  a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
+  # Fusion des moyennes : une moyenne distincte pour chaque lot,
+  # chaque âge et chaque type d'essai.
+  a_des_28j = False
+  moyenne_28j_compression = None
+  moyenne_28j_traction = None
+  en_cours_28j_compression = False
+  en_cours_28j_traction = False
+
   for gdata in groupes_lots.values():
-    lignes, age = gdata["lignes"], gdata["age"]
+    lignes = gdata["lignes"]
+    age = gdata["age"]
+    type_essai = gdata["type_essai"]
     start_r, end_r = min(lignes), max(lignes)
+
     if start_r != end_r:
       spans.append((7, start_r, 7, end_r))
+
     if gdata["en_cours"]:
       data[start_r][7] = "En cours"
     else:
       vals = []
+      col_resultat = 6 if type_essai == "Traction par fendage" else 5
       for li in lignes:
         try:
-          vals.append(float(data[li][5]))
+          vals.append(float(data[li][col_resultat]))
         except (ValueError, TypeError):
           pass
+
       moy = round(sum(vals) / len(vals), 1) if vals else 0.0
       data[start_r][7] = f"{moy:.1f}"
+
       if int(age) >= 28:
-        moyenne_28j_val = moy
+        if type_essai == "Traction par fendage":
+          moyenne_28j_traction = moy
+        else:
+          moyenne_28j_compression = moy
+
     fonts.append((7, start_r, 7, end_r, "Helvetica-Bold", 8.5, BLACK))
+
     if int(age) >= 28:
       a_des_28j = True
       if gdata["en_cours"]:
-        est_en_cours_28j = True
+        if type_essai == "Traction par fendage":
+          en_cours_28j_traction = True
+        else:
+          en_cours_28j_compression = True
 
   # ---- Commentaire de conformité ----
   seuil = next(
@@ -518,14 +590,30 @@ def generer_pv_pdf(export_data, infos_header):
       ),
       35.0,
   )
-  if not a_des_28j or est_en_cours_28j or moyenne_28j_val is None:
+  # La conformité automatique reste basée sur la moyenne de compression à
+  # 28 jours lorsqu'elle existe. La traction par fendage est affichée et
+  # moyennée séparément, sans être comparée au seuil de classe de compression.
+  if (
+      not a_des_28j
+      or en_cours_28j_compression
+      or (
+          moyenne_28j_compression is None
+          and moyenne_28j_traction is None
+      )
+  ):
     comment_valeur = (
         "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
     )
-  elif moyenne_28j_val >= seuil:
-    comment_valeur = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+  elif moyenne_28j_compression is not None:
+    if moyenne_28j_compression >= seuil:
+      comment_valeur = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+    else:
+      comment_valeur = "PERFORMANCES MECANIQUES NON CONFORMES"
   else:
-    comment_valeur = "PERFORMANCES MECANIQUES NON CONFORMES"
+    comment_valeur = (
+        "RESULTATS DE TRACTION PAR FENDAGE A 28 JOURS : "
+        "MOYENNE DISPONIBLE DANS LE TABLEAU."
+    )
 
   r = blank_row()
   r[0] = "Commentaire :"
@@ -950,14 +1038,24 @@ def show(supabase):
               date_coulee_h, dt_essai_item, item.get("age")
           )
 
+          type_essai_item = normaliser_type_essai(item.get("type_essai"))
+          forme_item = item.get("forme", "Cylindrique 150x300")
+          resistance_item = calculer_resistance_mpa(
+              f_kn,
+              type_essai=type_essai_item,
+              forme=forme_item,
+              section=sec,
+          )
+
           export_data_h.append({
               "repere_eprouvette": f"{ref_p}{rep_s}" if ref_p else rep_s,
-              "forme": item.get("forme", "Cylindrique 150x300"),
+              "forme": forme_item,
               "section": sec,
               "force_kn": f_kn,
-              "fc_mpa": fc,
+              "fc_mpa": resistance_item,
               "date_essai": dt_essai_item,
               "age": age_real,
+              "type_essai": type_essai_item,
               "statut": "En cours" if f_kn == 0 else "Réalisé",
           })
 
