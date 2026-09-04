@@ -1285,15 +1285,25 @@ def show(supabase):
                     # affichée se mette à jour DÈS qu'on change l'échéance dans le
                     # tableau — sans attendre le clic sur "Enregistrer".
                     etat_editeur_prog = st.session_state.get("editor_modification_phase1", {})
-                    for idx_pos, changements in etat_editeur_prog.get("edited_rows", {}).items():
+                    edited_rows_prog = etat_editeur_prog.get("edited_rows", {})
+                    lignes_avec_date_manuelle = set()
+                    for idx_pos, changements in edited_rows_prog.items():
+                        idx_pos = int(idx_pos)
                         if idx_pos < len(df_display_prog):
                             for col_maj, val_maj in changements.items():
                                 if col_maj in df_display_prog.columns:
                                     df_display_prog.iat[idx_pos, df_display_prog.columns.get_loc(col_maj)] = val_maj
+                            if "date_ecrasement" in changements:
+                                # L'utilisateur a directement modifié cette date : on la
+                                # respecte, on ne doit pas l'écraser par l'auto-calcul
+                                # ci-dessous.
+                                lignes_avec_date_manuelle.add(idx_pos)
 
                     if "date_ecrasement" in df_display_prog.columns and "date_coulee" in df_display_prog.columns:
                         col_idx_ecras = df_display_prog.columns.get_loc("date_ecrasement")
                         for idx_pos in range(len(df_display_prog)):
+                            if idx_pos in lignes_avec_date_manuelle:
+                                continue
                             ech_val = df_display_prog.iloc[idx_pos].get("echeance")
                             coulee_val = df_display_prog.iloc[idx_pos].get("date_coulee")
                             nb_j_apercu = extraire_nb_jours(ech_val, default=28)
@@ -1312,8 +1322,13 @@ def show(supabase):
                             "echeance": st.column_config.SelectboxColumn("Échéance Visée", options=["3 jours", "7 jours", "28 jours", "90 jours"]),
                             "date_coulee": st.column_config.TextColumn("Date Coulée"),
                             "date_ecrasement": st.column_config.TextColumn(
-                                "Date Écrasement Prévue (auto)", disabled=True,
-                                help="Calculée automatiquement = Date Coulée + Échéance Visée. Se met à jour dès que tu changes l'échéance.",
+                                "Date Écrasement Prévue",
+                                help="Calculée automatiquement = Date Coulée + Échéance"
+                                     " Visée, mais modifiable directement si besoin (ex :"
+                                     " décalage logistique, jour férié). Une valeur saisie"
+                                     " ici manuellement est conservée telle quelle tant que"
+                                     " l'Échéance ou la Date Coulée de cette ligne ne"
+                                     " changent pas à leur tour.",
                             ),
                             "ouvrage": st.column_config.TextColumn("Ouvrage", disabled=True),
                             "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
@@ -1339,22 +1354,29 @@ def show(supabase):
                                 ech_str = str(r_m.get("echeance", "")).strip()
                                 dt_coulee_str = str(r_m.get("date_coulee", "")).strip()
 
-                                # Règle stricte et systématique, appliquée ligne par
-                                # ligne (pas de calcul vectoriel pandas fragile) :
-                                # Date Écrasement Prévue = Date Coulée + Échéance Visée.
-                                nb_j = extraire_nb_jours(ech_str, default=28)
-                                try:
-                                    dt_c = datetime.strptime(dt_coulee_str[:10], "%Y-%m-%d").date()
-                                    dt_ecrasement_calc = str(dt_c + timedelta(days=nb_j))
-                                except (ValueError, TypeError):
-                                    dt_ecrasement_calc = dt_coulee_str
+                                # La colonne "date_ecrasement" affichée dans le tableau
+                                # reflète déjà soit le calcul automatique (Date Coulée +
+                                # Échéance), soit une correction manuelle directe de
+                                # l'utilisateur (cf. logique d'aperçu ci-dessus qui
+                                # respecte les deux cas) : on enregistre donc cette
+                                # valeur telle quelle, sans la recalculer ici — la
+                                # recalculer aurait pour effet d'écraser silencieusement
+                                # toute correction manuelle de la date d'écrasement.
+                                dt_ecrasement_val = str(r_m.get("date_ecrasement", "")).strip()
+                                if not dt_ecrasement_val or dt_ecrasement_val.lower() in ["none", "nan", "-", ""]:
+                                    nb_j = extraire_nb_jours(ech_str, default=28)
+                                    try:
+                                        dt_c = datetime.strptime(dt_coulee_str[:10], "%Y-%m-%d").date()
+                                        dt_ecrasement_val = str(dt_c + timedelta(days=nb_j))
+                                    except (ValueError, TypeError):
+                                        dt_ecrasement_val = dt_coulee_str
 
                                 pay = {
                                     "ref_controle": ref_ctrl,
                                     "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
                                     "echeance": ech_str,
                                     "date_coulee": dt_coulee_str,
-                                    "date_ecrasement": dt_ecrasement_calc,
+                                    "date_ecrasement": dt_ecrasement_val,
                                 }
                                 try:
                                     orig_row_p1 = orig_par_id_p1.get(ep_id, {})
@@ -1385,13 +1407,39 @@ def show(supabase):
                         " programmation (ex : 12 attendues, mais des éprouvettes en trop"
                         " ont été ajoutées par erreur)."
                     )
+
+                    lots_pour_suppression = {}
+                    for ep in eprouvettes_enregistrees:
+                        cle_lot_suppr = (
+                            f"{ep.get('ref_controle', '-')} — {ep.get('ouvrage', '-')}"
+                            f" (Lot #{ep.get('betonnage_id')})"
+                        )
+                        lots_pour_suppression.setdefault(cle_lot_suppr, []).append(ep)
+
+                    labels_lots_suppr = [
+                        f"{cle} — {len(eps)} éprouvette(s)"
+                        for cle, eps in lots_pour_suppression.items()
+                    ]
+                    mapping_label_vers_cle_lot = dict(
+                        zip(labels_lots_suppr, lots_pour_suppression.keys())
+                    )
+
+                    lot_choisi_suppr = st.selectbox(
+                        "1️⃣ Choisir le lot",
+                        options=labels_lots_suppr,
+                        key="select_lot_suppr_prog",
+                    )
+                    eprouvettes_du_lot_suppr = lots_pour_suppression.get(
+                        mapping_label_vers_cle_lot.get(lot_choisi_suppr), []
+                    )
+
                     options_suppr = {
-                        f"#{ep['id']} — {ep.get('ref_controle', '-')} / {ep.get('repere_eprouvette', '-')}"
+                        f"#{ep['id']} — {ep.get('repere_eprouvette', '-')}"
                         f" ({ep.get('echeance', '-')}, prévu le {ep.get('date_ecrasement', '-')})": ep["id"]
-                        for ep in eprouvettes_enregistrees
+                        for ep in eprouvettes_du_lot_suppr
                     }
                     choix_suppr = st.multiselect(
-                        "Sélectionner la ou les éprouvette(s) à supprimer définitivement",
+                        "2️⃣ Choisir la ou les éprouvette(s) à supprimer dans ce lot",
                         options=list(options_suppr.keys()),
                         key="multiselect_suppr_prog",
                     )
