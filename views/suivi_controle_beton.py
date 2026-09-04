@@ -419,7 +419,7 @@ def generer_pv_excel(export_data, infos_header):
             f_kn_val = 0.0
             
         is_en_cours = str(item.get("statut", "")).lower() == "en cours" or f_kn_val == 0.0
-        dt_essai = item.get("date_essai")
+        dt_essai = item.get("date_essai") or item.get("date_ecrasement")
 
         ws.cell(row=curr_row, column=1, value=str(item.get("repere_eprouvette", "B/01")))
         ws.cell(row=curr_row, column=2, value=str(remplacer_na(infos_header.get("date_coulee"), "-")))
@@ -451,7 +451,7 @@ def generer_pv_excel(export_data, infos_header):
         for c in range(1, 9):
             format_cell(ws.cell(row=curr_row, column=c), font=font_regular, align=align_center)
 
-        cle_lot = f"{item.get('age')}_{item.get('date_essai')}_{t_essai}"
+        cle_lot = f"{item.get('age')}_{dt_essai}_{t_essai}"
         if cle_lot not in groupes_lots:
             groupes_lots[cle_lot] = {"lignes": [], "en_cours": is_en_cours, "age": age_val, "type_essai": t_essai}
         elif is_en_cours:
@@ -624,6 +624,22 @@ def _format_ep_row(ep, date_ref=None):
         "Âge Théorique": age_calc,
         "Statut": "✅ Écrasée" if f_kn > 0 else "⏳ En attente"
     }
+
+
+def executer_update_eprouvette(supabase, ep_id, update_payload):
+    """
+    Exécute une mise à jour d'éprouvette en retirant les clés obsolètes si elles
+    ne figurent pas dans la structure de la table Supabase (ex: PGRST204 date_essai).
+    """
+    try:
+        return supabase.table("suivi_controle_beton").update(update_payload).eq("id", ep_id).execute()
+    except Exception as e:
+        err_str = str(e)
+        if "PGRST204" in err_str and "date_essai" in err_str:
+            payload_clean = update_payload.copy()
+            payload_clean.pop("date_essai", None)
+            return supabase.table("suivi_controle_beton").update(payload_clean).eq("id", ep_id).execute()
+        raise e
 
 
 # =========================================================
@@ -815,7 +831,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                                 "type_essai": str(r["Type Essai"]),
                                 "fc_mpa": float(r["Résistance (MPa)"]),
                             }
-                            supabase.table("suivi_controle_beton").update(nouvelles_force).eq("id", ep_id_maj).execute()
+                            executer_update_eprouvette(supabase, ep_id_maj, nouvelles_force)
 
                     st.session_state.pop(df_key, None)
                     st.session_state.pop(f"{df_key}_len", None)
@@ -951,7 +967,7 @@ def show(supabase):
                                     "date_coulee": str(r_m.get("date_coulee", "")).strip(),
                                     "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
                                 }
-                                supabase.table("suivi_controle_beton").update(pay).eq("id", int(r_m["id"])).execute()
+                                executer_update_eprouvette(supabase, int(r_m["id"]), pay)
                             st.success("✅ Modifications enregistrées avec succès !")
                             st.rerun()
                         except Exception as err:
@@ -1066,10 +1082,10 @@ def show(supabase):
                                 "force_kn": f_kn,
                                 "fc_mpa": fc_val,
                                 "type_essai": str(type_essai_lot),
-                                "date_essai": str(date.today()),
+                                "date_ecrasement": str(date.today()),
                                 "technicien": str(st.session_state.get("username", "Technicien")),
                             }
-                            supabase.table("suivi_controle_beton").update(pay_update).eq("id", int(r["ID"])).execute()
+                            executer_update_eprouvette(supabase, int(r["ID"]), pay_update)
 
                     st.success("✅ Résultats enregistrés avec succès !")
                     st.rerun()
