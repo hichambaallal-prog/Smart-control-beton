@@ -74,6 +74,57 @@ def extraire_nb_jours(echeance_str, default=28):
     return int(match.group()) if match else default
 
 
+def normaliser_type_essai(type_essai):
+    """Normalise le type d'essai et conserve la compatibilité avec les anciennes données."""
+    s = unicodedata.normalize("NFKD", str(type_essai or "").strip().lower()).encode("ascii", "ignore").decode("ascii")
+    if "traction" in s or "fendage" in s or "split" in s:
+        return "Traction par fendage"
+    return "Compression"
+
+
+def dimensions_eprouvette(forme_ep):
+    """Retourne diamètre et longueur (mm) depuis une forme du type Cylindrique 150x300."""
+    forme = str(forme_ep or "Cylindrique 150x300").lower().replace(" ", "")
+    match = re.search(r"(\d+(?:[.,]\d+)?)x(\d+(?:[.,]\d+)?)", forme)
+    if match:
+        d = float(match.group(1).replace(",", "."))
+        l = float(match.group(2).replace(",", "."))
+        return d, l
+    return 150.0, 300.0
+
+
+def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindrique 150x300", section=None):
+    """
+    Calcule la résistance à partir de la force de rupture en kN.
+    Compression : fc = F / A, avec A = pi*d²/4.
+    Traction par fendage : fct = 2F / (pi*L*d).
+    """
+    try:
+        f_kn = float(force_kn or 0.0)
+    except (ValueError, TypeError):
+        f_kn = 0.0
+
+    if f_kn <= 0:
+        return 0.0
+
+    type_n = normaliser_type_essai(type_essai)
+    d_mm, l_mm = dimensions_eprouvette(forme)
+
+    if type_n == "Traction par fendage":
+        # F(kN) -> N ; d et L en mm ; résultat en N/mm² = MPa
+        return round((2.0 * f_kn * 1000.0) / (3.141592653589793 * l_mm * d_mm), 1)
+
+    # Compression : priorité à la section réellement enregistrée si disponible.
+    try:
+        sec = float(section) if section is not None else 0.0
+    except (ValueError, TypeError):
+        sec = 0.0
+    if sec <= 0:
+        sec = 3.141592653589793 * (d_mm ** 2) / 4.0
+
+    return round((f_kn * 1000.0) / sec, 1)
+
+
 # ==============================================================================
 # 1. GESTION DES UTILISATEURS ET CONNEXION SUPABASE
 # ==============================================================================
@@ -295,12 +346,16 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(row=4, column=c).fill = fill_dark
         ws.cell(row=4, column=c).border = border_cell
 
+    types_pv = {normaliser_type_essai(item.get("type_essai")) for item in export_data}
+    compression_present = "Compression" in types_pv
+    traction_present = "Traction par fendage" in types_pv
+
     ws.merge_cells("A5:D5")
-    ws["A5"] = "[X] COMPRESSION NF EN 12390-3 (2019)"
+    ws["A5"] = f"[{'X' if compression_present else ' '}] COMPRESSION NF EN 12390-3 (2019)"
     format_cell(ws["A5"], font_bold, align_center)
 
     ws.merge_cells("E5:H5")
-    ws["E5"] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
+    ws["E5"] = f"[{'X' if traction_present else ' '}] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
     format_cell(ws["E5"], font_bold, align_center)
 
     for c in range(1, 9): ws.cell(row=5, column=c).border = border_cell
@@ -445,23 +500,36 @@ def generer_pv_excel(export_data, infos_header):
         age_val = extraire_nb_jours(item.get("age"), default=7)
         ws.cell(row=curr_row, column=4, value=age_val)
 
+        type_essai_item = normaliser_type_essai(item.get("type_essai"))
         if is_en_cours:
             ws.cell(row=curr_row, column=5, value="En cours")
-            ws.cell(row=curr_row, column=6, value="En cours")
+            if type_essai_item == "Traction par fendage":
+                ws.cell(row=curr_row, column=7, value="En cours")
+            else:
+                ws.cell(row=curr_row, column=6, value="En cours")
         else:
-            try:
-                fc_val = float(item.get("fc_mpa", 0.0))
-            except (ValueError, TypeError):
-                fc_val = 0.0
+            resistance_val = calculer_resistance_mpa(
+                f_kn_val,
+                type_essai_item,
+                item.get("forme"),
+                item.get("section")
+            )
+            # F = Compression ; G = Traction ; H = moyenne du groupe.
+            if type_essai_item == "Traction par fendage":
+                ws.cell(row=curr_row, column=7, value=resistance_val).number_format = "0.0"
+                ws.cell(row=curr_row, column=6, value="-")
+            else:
+                ws.cell(row=curr_row, column=6, value=resistance_val).number_format = "0.0"
+                ws.cell(row=curr_row, column=7, value="-")
             ws.cell(row=curr_row, column=5, value=f_kn_val).number_format = "0.0"
-            ws.cell(row=curr_row, column=6, value=fc_val).number_format = "0.0"
 
-        ws.cell(row=curr_row, column=7, value="-")
+        # Le type est visible dans le commentaire de ligne / cellule H pour éviter
+        # d'ajouter une colonne au modèle LPEE existant.
 
         for c in range(1, 9):
             format_cell(ws.cell(row=curr_row, column=c), font=font_regular, align=align_center)
 
-        cle_lot = f"{item.get('age')}_{item.get('date_essai')}"
+        cle_lot = f"{item.get('age')}_{item.get('date_essai')}_{normaliser_type_essai(item.get('type_essai'))}"
         if cle_lot not in groupes_lots:
             groupes_lots[cle_lot] = {"lignes": [], "en_cours": is_en_cours, "age": age_val}
         elif is_en_cours:
@@ -477,11 +545,13 @@ def generer_pv_excel(export_data, infos_header):
             if start_r != end_r: ws.merge_cells(f"H{start_r}:H{end_r}")
             cell_h.value = "En cours"
         else:
+            type_groupe = normaliser_type_essai(export_data[lignes[0] - row_start].get("type_essai"))
+            col_resultat = "G" if type_groupe == "Traction par fendage" else "F"
             if start_r == end_r:
-                cell_h.value = f"=ROUND(F{start_r}, 1)"
+                cell_h.value = f"=ROUND({col_resultat}{start_r}, 1)"
             else:
                 ws.merge_cells(f"H{start_r}:H{end_r}")
-                cell_h.value = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
+                cell_h.value = f"=ROUND(AVERAGE({col_resultat}{start_r}:{col_resultat}{end_r}), 1)"
             cell_h.number_format = "0.0"
             if extraire_nb_jours(data_lot["age"]) >= 28:
                 a_des_28j_ecrases, cellule_moyenne_28j = True, f"H{start_r}"
@@ -714,6 +784,37 @@ def afficher_module_validation_admin(supabase, est_admin=False):
     c2.metric("Date de coulée", extraire_date_coulee(info_b_sel))
     c3.metric("Statut Actuel du PV", info_b_sel.get("statut_pv", "⏳ En attente"))
 
+    # Génération du PV Excel avec séparation Compression / Traction par fendage.
+    export_pv = []
+    for ep in ep_sel_list:
+        export_pv.append({
+            **ep,
+            "type_essai": normaliser_type_essai(ep.get("type_essai")),
+            "forme": ep.get("forme") or "Cylindrique 150x300",
+            "date_essai": ep.get("date_ecrasement") or "-",
+            "statut": "en cours" if float(ep.get("force_kn") or 0) <= 0 else "écrasée",
+        })
+    infos_pv = {
+        **info_b_sel,
+        "date_coulee": extraire_date_coulee(info_b_sel),
+        "re_num": info_b_sel.get("re_num") or info_b_sel.get("num_reception") or "-",
+        "dossier": info_b_sel.get("dossier") or "-",
+        "client": info_b_sel.get("client") or "-",
+        "classe_beton": info_b_sel.get("classe_beton") or "-",
+        "ouvrage": info_b_sel.get("ouvrage") or "-",
+        "forme": export_pv[0].get("forme") if export_pv else "Cylindrique 150x300",
+        "observations": info_b_sel.get("observations_admin") or "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES",
+    }
+    pv_excel = generer_pv_excel(export_pv, infos_pv)
+    st.download_button(
+        "📄 Télécharger le PV Excel LPEE",
+        data=pv_excel,
+        file_name=f"PV_Essais_Beton_{determiner_ref_controle(supabase, b_id_sel, info_b_sel, ep_sel_list[0])}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        key=f"btn_download_pv_{b_id_sel}",
+    )
+
     # Préparation des données pour affichage / édition tableau
     df_key = f"admin_edit_pv_{b_id_sel}"
     if df_key not in st.session_state or st.session_state.get(f"{df_key}_len") != len(ep_sel_list):
@@ -721,12 +822,14 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         for ep in ep_sel_list:
             sec = float(ep.get("section") or 176.71)
             f_kn = float(ep.get("force_kn") or 0.0)
-            fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+            type_ep = normaliser_type_essai(ep.get("type_essai"))
+            fc = calculer_resistance_mpa(f_kn, type_ep, ep.get("forme"), sec)
             rows_val.append({
                 "ID": ep.get("id"),
                 "Repère": ep.get("repere_eprouvette", "-"),
                 "Échéance": ep.get("echeance", "-"),
                 "Date Écrasement": ep.get("date_ecrasement", "-"),
+                "Type d'essai": type_ep,
                 "Force (kN)": f_kn,
                 "Résistance (MPa)": fc,
                 "Opérateur": ep.get("technicien", "-"),
@@ -749,10 +852,13 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                 except (ValueError, TypeError):
                     new_force = 0.0
                 sec = float(st.session_state[df_key].at[row_idx, "_section"])
-                st.session_state[df_key].at[row_idx, "Force (kN)"] = new_force
-                st.session_state[df_key].at[row_idx, "Résistance (MPa)"] = (
-                    round((new_force * 10.0) / sec, 1) if sec > 0 and new_force > 0 else 0.0
+                type_ep = st.session_state[df_key].at[row_idx, "Type d'essai"]
+                forme_ep = next(
+                    (e.get("forme") for e in ep_sel_list if e.get("id") == st.session_state[df_key].at[row_idx, "ID"]),
+                    "Cylindrique 150x300"
                 )
+                st.session_state[df_key].at[row_idx, "Force (kN)"] = new_force
+                st.session_state[df_key].at[row_idx, "Résistance (MPa)"] = calculer_resistance_mpa(new_force, type_ep, forme_ep, sec)
 
     if est_admin:
         st.caption(
@@ -772,6 +878,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
             "Repère": st.column_config.TextColumn("Repère", disabled=True),
             "Échéance": st.column_config.TextColumn("Échéance", disabled=True),
             "Date Écrasement": st.column_config.TextColumn("Date Écrasement", disabled=True),
+            "Type d'essai": st.column_config.TextColumn("Type d'essai", disabled=True),
             "Force (kN)": st.column_config.NumberColumn(
                 "⚡ Force (kN)", disabled=not est_admin,
                 min_value=0.0, max_value=3000.0, step=0.1, format="%.1f",
@@ -795,7 +902,8 @@ def afficher_module_validation_admin(supabase, est_admin=False):
             for ep in ep_7j:
                 sec = float(ep.get("section") or 176.71)
                 f_kn = float(ep.get("force_kn") or 0.0)
-                fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+                type_ep = normaliser_type_essai(ep.get("type_essai"))
+                fc = calculer_resistance_mpa(f_kn, type_ep, ep.get("forme"), sec)
                 rows_7j.append({
                     "Repère": ep.get("repere_eprouvette", "-"),
                     "Date Écrasement": ep.get("date_ecrasement", "-"),
@@ -1562,8 +1670,24 @@ def show(supabase):
             max_allowed = solde_disponible if not mode_admin else 50
             nb_eprouvettes_p = col_e3.number_input("Nombre d'éprouvettes", min_value=(1 if max_allowed > 0 else 0), max_value=max_allowed, value=min(3, max_allowed) if max_allowed >= 3 else max_allowed, key=f"p_nb_ep_{b_id}_{nb_j}j")
 
-            forme_p = st.selectbox("Type / Forme d'éprouvette", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
-            sect_def = 176.71 if "150x300" in forme_p else (201.06 if "160x320" in forme_p else 78.54)
+            col_t1, col_t2 = st.columns(2)
+            type_essai_p = col_t1.selectbox(
+                "Type d'essai",
+                ["Compression", "Traction par fendage"],
+                key=f"p_type_essai_{b_id}_{nb_j}j"
+            )
+            forme_p = col_t2.selectbox(
+                "Type / Forme d'éprouvette",
+                ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"],
+                key=f"p_forme_{b_id}"
+            )
+            d_p, l_p = dimensions_eprouvette(forme_p)
+            sect_def = 3.141592653589793 * (d_p ** 2) / 4.0
+
+            if type_essai_p == "Traction par fendage":
+                st.caption("ℹ️ Traction par fendage : fct = 2·F / (π·L·d). Pour 150×300 mm : fct ≈ F(kN) / 70,6858.")
+            else:
+                st.caption("ℹ️ Compression : fc = F / A, avec A = π·d²/4.")
 
             if int(nb_eprouvettes_p) > 0:
                 st.markdown("##### 🏷️ Repères codés des éprouvettes")
@@ -1584,7 +1708,7 @@ def show(supabase):
                             "betonnage_id": b_id, "num_bl": num_bl_p, "ouvrage": ouvrage_p, "classe_beton": classe_beton_p,
                             "date_coulee": str(date_coulee_p), "echeance": echeance_p, "date_ecrasement": str(date_ecrasement_prevue),
                             "ref_controle": ref_controle_p, "repere_eprouvette": rep, "forme": forme_p, "section": float(sect_def),
-                            "projet_id": projet_id_actif,
+                            "type_essai": type_essai_p, "projet_id": projet_id_actif,
                         }
                         try:
                             res_ins_prog = supabase.table("suivi_controle_beton").insert(pay).execute()
@@ -1788,10 +1912,8 @@ def show(supabase):
                         for e in ep_7j_rappel:
                             sec_r = float(e.get("section") or 176.71)
                             f_kn_r = float(e.get("force_kn") or 0.0)
-                            fc_r = float(
-                                e.get("fc_mpa")
-                                or (round((f_kn_r * 10.0) / sec_r, 1) if f_kn_r > 0 else 0.0)
-                            )
+                            type_r = normaliser_type_essai(e.get("type_essai"))
+                            fc_r = calculer_resistance_mpa(f_kn_r, type_r, e.get("forme"), sec_r)
                             rows_rappel_7j.append({
                                 "Repère": e.get("repere_eprouvette", "-"),
                                 "Date Écrasement": e.get("date_ecrasement", "-"),
@@ -1830,13 +1952,14 @@ def show(supabase):
                         st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
                         if st.button("💾 Enregistrer cette éprouvette", type="primary", use_container_width=True, key=f"btn_save_rapide_{eprouvette_ciblee['id']}"):
                             sec_q = float(eprouvette_ciblee.get("section") or 176.71)
-                            fc_q = round((force_rapide * 10.0) / sec_q, 1) if sec_q > 0 and force_rapide > 0 else 0.0
+                            type_q = normaliser_type_essai(eprouvette_ciblee.get("type_essai"))
+                            fc_q = calculer_resistance_mpa(force_rapide, type_q, eprouvette_ciblee.get("forme"), sec_q)
                             try:
                                 anciennes_q = {
                                     "force_kn": float(eprouvette_ciblee.get("force_kn") or 0.0),
                                     "fc_mpa": float(eprouvette_ciblee.get("fc_mpa") or 0.0),
                                 }
-                                nouvelles_q = {"force_kn": force_rapide, "fc_mpa": fc_q}
+                                nouvelles_q = {"force_kn": force_rapide, "fc_mpa": fc_q, "type_essai": normaliser_type_essai(eprouvette_ciblee.get("type_essai"))}
                                 supabase.table("suivi_controle_beton").update(nouvelles_q).eq("id", eprouvette_ciblee["id"]).execute()
                                 enregistrer_modification(
                                     supabase,
@@ -1871,17 +1994,20 @@ def show(supabase):
                             f_kn = float(ep.get("force_kn") or 0.0)
                         except (ValueError, TypeError):
                             f_kn = 0.0
-                        fc = round((f_kn * 10.0) / sec, 1) if sec > 0 and f_kn > 0 else 0.0
+                        type_ep = normaliser_type_essai(ep.get("type_essai"))
+                        forme_ep = str(ep.get("forme") or "Cylindrique 150x300")
+                        resistance = calculer_resistance_mpa(f_kn, type_ep, forme_ep, sec)
                         rows_list.append({
                             "ID": ep["id"], "🏷️ Référence de Contrôle": str(ep.get("ref_controle") or ref_controle_courante).strip(),
-                            "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"), "Forme d'éprouvette": str(ep.get("forme") or "Cylindrique 150x300"),
-                            "_section": sec, "Force (kN)": f_kn, "Résistance Fc (MPa)": fc, "Moyenne Resistance Fc (MPa)": 0.0,
+                            "Repère": ep.get("repere_eprouvette", f"/{ep['id']}"), "Type d'essai": type_ep,
+                            "Forme d'éprouvette": forme_ep,
+                            "_section": sec, "Force (kN)": f_kn, "Résistance (MPa)": resistance, "Moyenne Resistance (MPa)": 0.0,
                             "_force_orig": f_kn, "_ref_orig": str(ep.get("ref_controle") or ref_controle_courante).strip(),
                             "_repere_orig": ep.get("repere_eprouvette", f"/{ep['id']}"),
                         })
                     df_init = pd.DataFrame(rows_list)
-                    valides_init = df_init[df_init["Résistance Fc (MPa)"] > 0]
-                    df_init["Moyenne Resistance Fc (MPa)"] = round(valides_init["Résistance Fc (MPa)"].mean(), 1) if not valides_init.empty else 0.0
+                    valides_init = df_init[df_init["Résistance (MPa)"] > 0]
+                    df_init["Moyenne Resistance (MPa)"] = round(valides_init["Résistance (MPa)"].mean(), 1) if not valides_init.empty else 0.0
                     st.session_state[lot_key] = df_init
 
                 def update_fc():
@@ -1891,8 +2017,10 @@ def show(supabase):
                             try: new_force = float(updated_cols["Force (kN)"])
                             except (ValueError, TypeError): new_force = 0.0
                             sec = float(st.session_state[lot_key].at[row_idx, "_section"])
+                            type_ep = st.session_state[lot_key].at[row_idx, "Type d'essai"]
+                            forme_ep = st.session_state[lot_key].at[row_idx, "Forme d'éprouvette"]
                             st.session_state[lot_key].at[row_idx, "Force (kN)"] = new_force
-                            st.session_state[lot_key].at[row_idx, "Résistance Fc (MPa)"] = round((new_force * 10.0) / sec, 1) if sec > 0 and new_force > 0 else 0.0
+                            st.session_state[lot_key].at[row_idx, "Résistance (MPa)"] = calculer_resistance_mpa(new_force, type_ep, forme_ep, sec)
 
                         if "🏷️ Référence de Contrôle" in updated_cols:
                             nouvelle_ref = str(updated_cols["🏷️ Référence de Contrôle"] or "").strip()
@@ -1900,22 +2028,23 @@ def show(supabase):
                             st.session_state[f"ref_controle_beton_{betonnage_id}"] = nouvelle_ref
 
                     df_cur = st.session_state[lot_key]
-                    valides = df_cur[df_cur["Résistance Fc (MPa)"].astype(float) > 0]
-                    st.session_state[lot_key]["Moyenne Resistance Fc (MPa)"] = round(valides["Résistance Fc (MPa)"].astype(float).mean(), 1) if not valides.empty else 0.0
+                    valides = df_cur[df_cur["Résistance (MPa)"].astype(float) > 0]
+                    st.session_state[lot_key]["Moyenne Resistance (MPa)"] = round(valides["Résistance (MPa)"].astype(float).mean(), 1) if not valides.empty else 0.0
 
                 st.data_editor(
                     st.session_state[lot_key],
                     column_config={
                         "ID": st.column_config.NumberColumn("ID", disabled=True),
                         "Repère": st.column_config.TextColumn("Repère", disabled=not mode_admin),
+                        "Type d'essai": st.column_config.TextColumn("Type d'essai", disabled=True),
                         "Forme d'éprouvette": st.column_config.TextColumn("Forme d'éprouvette", disabled=True),
                         "_section": None,
                         "_force_orig": None,
                         "_ref_orig": None,
                         "_repere_orig": None,
                         "Force (kN)": st.column_config.NumberColumn("⚡ Force (kN)", min_value=0.0, max_value=3000.0, step=0.1, format="%.1f"),
-                        "Résistance Fc (MPa)": st.column_config.NumberColumn("💥 Résistance Fc (MPa)", disabled=True, format="%.1f"),
-                        "Moyenne Resistance Fc (MPa)": st.column_config.NumberColumn("📊 Moyenne Resistance Fc (MPa)", disabled=True, format="%.1f"),
+                        "Résistance (MPa)": st.column_config.NumberColumn("💥 Résistance (MPa)", disabled=True, format="%.1f"),
+                        "Moyenne Resistance (MPa)": st.column_config.NumberColumn("📊 Moyenne Resistance (MPa)", disabled=True, format="%.1f"),
                     },
                     use_container_width=True, hide_index=True, key="data_editor_ecrasement", on_change=update_fc,
                 )
@@ -1941,7 +2070,8 @@ def show(supabase):
                         for _, row in df_actuel.iterrows():
                             upd = {
                                 "ref_controle": row.get("🏷️ Référence de Contrôle"), "repere_eprouvette": row.get("Repère"),
-                                "force_kn": float(row["Force (kN)"]), "fc_mpa": float(row["Résistance Fc (MPa)"]),
+                                "force_kn": float(row["Force (kN)"]), "fc_mpa": float(row["Résistance (MPa)"]),
+                                "type_essai": row.get("Type d'essai", "Compression"),
                                 "technicien": tech_global, "observations": obs_globale,
                             }
                             try:
