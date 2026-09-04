@@ -959,6 +959,7 @@ def show(supabase):
                             "id": st.column_config.NumberColumn("ID", disabled=True),
                             "type_essai": st.column_config.SelectboxColumn("Type d'essai", options=["Compression", "Traction par fendage"]),
                             "echeance": st.column_config.SelectboxColumn("Échéance Visée", options=["3 jours", "7 jours", "28 jours", "90 jours"]),
+                            "date_ecrasement": st.column_config.TextColumn("Date Écrasement", help="Recalculée automatiquement selon l'échéance à l'enregistrement"),
                         },
                         use_container_width=True, hide_index=True, key="editor_modification_phase1",
                     )
@@ -966,16 +967,29 @@ def show(supabase):
                     if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", key="btn_save_mod_prog"):
                         try:
                             for _, r_m in df_prog_modifiee.iterrows():
+                                nouvelle_echeance = str(r_m.get("echeance", "")).strip()
+                                str_date_coulee = str(r_m.get("date_coulee", "")).strip()
+
+                                # --- RECALCUL AUTOMATIQUE DE LA DATE D'ÉCRASEMENT EN FONCTION DE L'ÉCHÉANCE ---
+                                date_ecrasement_calculee = str(r_m.get("date_ecrasement", "")).strip()
+                                if str_date_coulee and str_date_coulee not in ["-", "None", "NaN", ""]:
+                                    try:
+                                        d_coulee = datetime.strptime(str_date_coulee[:10], "%Y-%m-%d").date()
+                                        nb_j = extraire_nb_jours(nouvelle_echeance)
+                                        date_ecrasement_calculee = str(d_coulee + timedelta(days=nb_j))
+                                    except Exception:
+                                        pass
+
                                 pay = {
                                     "ref_controle": str(r_m.get("ref_controle", "")).strip(),
                                     "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
                                     "type_essai": str(r_m.get("type_essai", "Compression")),
-                                    "echeance": str(r_m.get("echeance", "")).strip(),
-                                    "date_coulee": str(r_m.get("date_coulee", "")).strip(),
-                                    "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
+                                    "echeance": nouvelle_echeance,
+                                    "date_coulee": str_date_coulee,
+                                    "date_ecrasement": date_ecrasement_calculee,
                                 }
                                 executer_update_eprouvette(supabase, int(r_m["id"]), pay)
-                            st.success("✅ Modifications enregistrées avec succès !")
+                            st.success("✅ Modifications enregistrées et dates d'écrasement recalculées avec succès !")
                             st.rerun()
                         except Exception as err:
                             st.error(f"❌ Erreur de mise à jour dans la base de données : {err}")
