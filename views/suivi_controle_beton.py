@@ -276,7 +276,7 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(row=4, column=c).fill = fill_dark
         ws.cell(row=4, column=c).border = border_cell
 
-    # Détection du type d'essai prédominant pour cocher la bonne case dans le PV[cite: 1]
+    # Détection du type d'essai prédominant
     a_fendage = any(str(item.get("type_essai", "")).strip() == "Traction par fendage" for item in export_data)
     ws.merge_cells("A5:D5")
     ws["A5"] = f"[{' ' if a_fendage else 'X'}] COMPRESSION NF EN 12390-3 (2019)"
@@ -441,7 +441,6 @@ def generer_pv_excel(export_data, infos_header):
                 fc_val = 0.0
             ws.cell(row=curr_row, column=5, value=f_kn_val).number_format = "0.0"
             
-            # Positionnement du résultat selon le type d'essai (Compression=Col F, Traction=Col G)[cite: 1]
             if t_essai == "Traction par fendage":
                 ws.cell(row=curr_row, column=6, value="-")
                 ws.cell(row=curr_row, column=7, value=fc_val).number_format = "0.00"
@@ -798,14 +797,14 @@ def afficher_module_validation_admin(supabase, est_admin=False):
             if submit_val:
                 nouveau_statut = "✅ Validé & Signé" if "Valider" in statut_decision else "❌ Rejeté / En Révision"
                 update_payload = {
-                    "statut_pv": nouveau_statut,
-                    "visa_resp": resp_essai,
-                    "visa_chef": chef_labo,
-                    "observations_admin": comm_admin,
+                    "statut_pv": str(nouveau_statut),
+                    "visa_resp": str(resp_essai),
+                    "visa_chef": str(chef_labo),
+                    "observations_admin": str(comm_admin),
                     "date_validation": str(date.today())
                 }
                 try:
-                    supabase.table("suivi_betonnage").update(update_payload).eq("id", b_id_sel).execute()
+                    supabase.table("suivi_betonnage").update(update_payload).eq("id", int(b_id_sel)).execute()
 
                     df_edit = st.session_state.get(df_key)
                     if df_edit is not None:
@@ -824,7 +823,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                     st.balloons()
                     st.rerun()
                 except Exception as e:
-                    st.error(f"❌ Erreur lors de la mise à jour du statut : {e}")
+                    st.error(f"❌ Erreur lors de la mise à jour du statut dans Supabase : {e}")
 
 
 # =========================================================
@@ -899,12 +898,15 @@ def show(supabase):
             )
 
             if st.button("💾 Enregistrer les N° de Réception", type="primary"):
-                for _, row in df_edited.iterrows():
-                    b_id, n_rec = int(row["_id_beton"]), str(row["1-Numero de reception"]).strip()
-                    if n_rec and n_rec not in ["-", ""]:
-                        supabase.table("suivi_betonnage").update({"num_reception": n_rec}).eq("id", b_id).execute()
-                st.success("✅ N° de Réception mis à jour !")
-                st.rerun()
+                try:
+                    for _, row in df_edited.iterrows():
+                        b_id, n_rec = int(row["_id_beton"]), str(row["1-Numero de reception"]).strip()
+                        if n_rec and n_rec not in ["-", ""]:
+                            supabase.table("suivi_betonnage").update({"num_reception": n_rec}).eq("id", b_id).execute()
+                    st.success("✅ N° de Réception mis à jour !")
+                    st.rerun()
+                except Exception as err:
+                    st.error(f"❌ Erreur lors de la mise à jour des N° de Réception : {err}")
 
     # =========================================================
     # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES & TYPE D'ESSAI
@@ -923,7 +925,6 @@ def show(supabase):
                 if eprouvettes_enregistrees:
                     df_display_prog = pd.DataFrame(eprouvettes_enregistrees)
                     
-                    # Garantir la présence de la colonne type_essai
                     if "type_essai" not in df_display_prog.columns:
                         df_display_prog["type_essai"] = "Compression"
 
@@ -940,18 +941,21 @@ def show(supabase):
                     )
 
                     if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", key="btn_save_mod_prog"):
-                        for _, r_m in df_prog_modifiee.iterrows():
-                            pay = {
-                                "ref_controle": str(r_m.get("ref_controle", "")).strip(),
-                                "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
-                                "type_essai": str(r_m.get("type_essai", "Compression")),
-                                "echeance": str(r_m.get("echeance", "")).strip(),
-                                "date_coulee": str(r_m.get("date_coulee", "")).strip(),
-                                "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
-                            }
-                            supabase.table("suivi_controle_beton").update(pay).eq("id", int(r_m["id"])).execute()
-                        st.success("✅ Modifications enregistrées avec succès !")
-                        st.rerun()
+                        try:
+                            for _, r_m in df_prog_modifiee.iterrows():
+                                pay = {
+                                    "ref_controle": str(r_m.get("ref_controle", "")).strip(),
+                                    "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
+                                    "type_essai": str(r_m.get("type_essai", "Compression")),
+                                    "echeance": str(r_m.get("echeance", "")).strip(),
+                                    "date_coulee": str(r_m.get("date_coulee", "")).strip(),
+                                    "date_ecrasement": str(r_m.get("date_ecrasement", "")).strip(),
+                                }
+                                supabase.table("suivi_controle_beton").update(pay).eq("id", int(r_m["id"])).execute()
+                            st.success("✅ Modifications enregistrées avec succès !")
+                            st.rerun()
+                        except Exception as err:
+                            st.error(f"❌ Erreur de mise à jour dans la base de données : {err}")
 
         st.divider()
         st.subheader("➕ Ajouter une Nouvelle Programmation")
@@ -975,24 +979,27 @@ def show(supabase):
                 forme_p = st.selectbox("Forme", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
 
                 if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True):
-                    for i in range(int(nb_eprouvettes_p)):
-                        pay = {
-                            "betonnage_id": b_id,
-                            "type_essai": type_essai_p,
-                            "num_bl": extraire_num_bl(beton_p),
-                            "ouvrage": beton_p.get("ouvrage"),
-                            "classe_beton": beton_p.get("classe_beton"),
-                            "date_coulee": str(date_coulee_p),
-                            "echeance": echeance_p,
-                            "date_ecrasement": str(date_ecrasement_prevue),
-                            "ref_controle": beton_p.get("num_reception"),
-                            "repere_eprouvette": f"/{i+1}",
-                            "forme": forme_p,
-                            "projet_id": projet_id_actif,
-                        }
-                        supabase.table("suivi_controle_beton").insert(pay).execute()
-                    st.success("✅ Éprouvettes programmées avec succès !")
-                    st.rerun()
+                    try:
+                        for i in range(int(nb_eprouvettes_p)):
+                            pay = {
+                                "betonnage_id": int(b_id),
+                                "type_essai": str(type_essai_p),
+                                "num_bl": str(extraire_num_bl(beton_p)),
+                                "ouvrage": str(beton_p.get("ouvrage", "")),
+                                "classe_beton": str(beton_p.get("classe_beton", "")),
+                                "date_coulee": str(date_coulee_p),
+                                "echeance": str(echeance_p),
+                                "date_ecrasement": str(date_ecrasement_prevue),
+                                "ref_controle": str(beton_p.get("num_reception", "")),
+                                "repere_eprouvette": f"/{i+1}",
+                                "forme": str(forme_p),
+                                "projet_id": int(projet_id_actif),
+                            }
+                            supabase.table("suivi_controle_beton").insert(pay).execute()
+                        st.success("✅ Éprouvettes programmées avec succès !")
+                        st.rerun()
+                    except Exception as err:
+                        st.error(f"❌ Erreur lors de l'insertion dans Supabase : {err}")
 
     # =========================================================
     # PHASE 2 : PLANNING & SAISIE DES ÉCRASEMENTS
@@ -1021,7 +1028,6 @@ def show(supabase):
 
             st.markdown("##### 📝 Saisie des Forces de Rupture (kN)")
 
-            # Modification à la volée du Type d'essai pour le lot entier[cite: 1]
             type_essai_lot = st.radio("Type d'essai pour ce lot :", ["Compression", "Traction par fendage"], index=0 if lot_selected[0].get("type_essai") != "Traction par fendage" else 1, horizontal=True)
 
             rows_saisie = []
@@ -1051,21 +1057,24 @@ def show(supabase):
             )
 
             if st.button("💾 Enregistrer la Saisie du Lot", type="primary", use_container_width=True):
-                for _, r in df_edited_saisie.iterrows():
-                    f_kn = float(r["Force (kN)"])
-                    if f_kn > 0:
-                        fc_val = calculer_resistance_mpa(f_kn, type_essai_lot, r["Forme"])
-                        pay_update = {
-                            "force_kn": f_kn,
-                            "fc_mpa": fc_val,
-                            "type_essai": type_essai_lot,
-                            "date_essai": str(date.today()),
-                            "technicien": st.session_state.get("username", "Technicien"),
-                        }
-                        supabase.table("suivi_controle_beton").update(pay_update).eq("id", int(r["ID"])).execute()
+                try:
+                    for _, r in df_edited_saisie.iterrows():
+                        f_kn = float(r["Force (kN)"])
+                        if f_kn > 0:
+                            fc_val = float(calculer_resistance_mpa(f_kn, type_essai_lot, r["Forme"]))
+                            pay_update = {
+                                "force_kn": f_kn,
+                                "fc_mpa": fc_val,
+                                "type_essai": str(type_essai_lot),
+                                "date_essai": str(date.today()),
+                                "technicien": str(st.session_state.get("username", "Technicien")),
+                            }
+                            supabase.table("suivi_controle_beton").update(pay_update).eq("id", int(r["ID"])).execute()
 
-                st.success("✅ Résultats enregistrés avec succès !")
-                st.rerun()
+                    st.success("✅ Résultats enregistrés avec succès !")
+                    st.rerun()
+                except Exception as err:
+                    st.error(f"❌ Échec de l'enregistrement PostgREST / Supabase : {err}")
 
     # =========================================================
     # PHASE 3 : VALIDATION ADMIN (PVs)
