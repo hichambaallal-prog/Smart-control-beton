@@ -520,87 +520,90 @@ def generer_pv_pdf(export_data, infos_header):
   row_indices_body = []
   groupes_lots = {}
 
+  numero_eprouvette = 0
+
   for item in export_data:
-    f_kn = float(item.get("force_kn", 0.0) or 0.0)
-    is_en_cours = (
-        str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
-    )
-    dt_essai = item.get("date_essai")
-    age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
-    type_essai = normaliser_type_essai(item.get("type_essai"))
-    forme_item = item.get("forme", infos_header.get("forme", "Cylindrique 150x300"))
-    section_item = item.get("section")
+      numero_eprouvette += 1
+      f_kn = float(item.get("force_kn", 0.0) or 0.0)
+      is_en_cours = (
+          str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
+      )
+      dt_essai = item.get("date_essai")
+      age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
+      type_essai = normaliser_type_essai(item.get("type_essai"))
+      forme_item = item.get("forme", infos_header.get("forme", "Cylindrique 150x300"))
+      section_item = item.get("section")
 
-    # Recalcul de la résistance selon le type d'essai.
-    # On ne reprend pas aveuglément fc_mpa : cela évite qu'une traction soit
-    # affichée par erreur dans la colonne Compression.
-    resistance_mpa = calculer_resistance_mpa(
-        f_kn,
-        type_essai=type_essai,
-        forme=forme_item,
-        section=section_item,
-    )
+      # Recalcul de la résistance selon le type d'essai.
+      # On ne reprend pas aveuglément fc_mpa : cela évite qu'une traction soit
+      # affichée par erreur dans la colonne Compression.
+      resistance_mpa = calculer_resistance_mpa(
+          f_kn,
+          type_essai=type_essai,
+          forme=forme_item,
+          section=section_item,
+      )
 
-    date_essai_affichage = "-"
-    if (
-        not is_en_cours
-        and dt_essai
-        and str(dt_essai).strip() not in ["-", "", "None", "NaN"]
-    ):
-      date_essai_affichage = str(clean_na(dt_essai, "-"))
-    else:
-      try:
-        df_obj = datetime.strptime(
-            str(date_fab_header).strip()[:10], "%Y-%m-%d"
-        )
-        date_essai_affichage = (
-            df_obj + timedelta(days=int(age_val))
-        ).strftime("%Y-%m-%d")
-      except Exception:
-        date_essai_affichage = "-"
-
-    r = blank_row()
-    r[0] = str(item.get("repere_eprouvette", "B/01"))
-    r[1] = str(date_fab_header)
-    r[2] = date_essai_affichage
-    r[3] = str(age_val)
-
-    if is_en_cours:
-      r[4] = "En cours"
-      if type_essai == "Traction par fendage":
-        r[6] = "En cours"
+      date_essai_affichage = "-"
+      if (
+          not is_en_cours
+          and dt_essai
+          and str(dt_essai).strip() not in ["-", "", "None", "NaN"]
+      ):
+        date_essai_affichage = str(clean_na(dt_essai, "-"))
       else:
-        r[5] = "En cours"
-    else:
-      r[4] = f"{f_kn:.1f}"
-      if type_essai == "Traction par fendage":
-        r[6] = f"{resistance_mpa:.1f}"
+        try:
+          df_obj = datetime.strptime(
+              str(date_fab_header).strip()[:10], "%Y-%m-%d"
+          )
+          date_essai_affichage = (
+              df_obj + timedelta(days=int(age_val))
+          ).strftime("%Y-%m-%d")
+        except Exception:
+          date_essai_affichage = "-"
+
+      r = blank_row()
+      r[0] = f"{ref_h1}/{numero_eprouvette}"
+      r[1] = str(date_fab_header)
+      r[2] = date_essai_affichage
+      r[3] = str(age_val)
+
+      if is_en_cours:
+        r[4] = "En cours"
+        if type_essai == "Traction par fendage":
+          r[6] = "En cours"
+        else:
+          r[5] = "En cours"
       else:
-        r[5] = f"{resistance_mpa:.1f}"
+        r[4] = f"{f_kn:.1f}"
+        if type_essai == "Traction par fendage":
+          r[6] = f"{resistance_mpa:.1f}"
+        else:
+          r[5] = f"{resistance_mpa:.1f}"
 
-    data.append(r)
-    r_idx = len(data) - 1
-    row_indices_body.append(r_idx)
-    fonts.append((0, r_idx, 7, r_idx, "Helvetica", 8.5, BLACK))
+      data.append(r)
+      r_idx = len(data) - 1
+      row_indices_body.append(r_idx)
+      fonts.append((0, r_idx, 7, r_idx, "Helvetica", 8.5, BLACK))
 
-    # Chaque moyenne est indépendante par LOT + AGE + DATE + TYPE D ESSAI.
-    # Le lot correspond ici au bétonnage_id. Cette clé empêche qu un même âge
-    # et un même type provenant de deux lots différents soient regroupés.
-    lot_id = item.get("betonnage_id") or item.get("lot_id") or item.get("lot") or "LOT_INCONNU"
-    cle = (str(lot_id), int(age_val), str(dt_essai), type_essai)
-    groupes_lots.setdefault(
-        cle,
-        {
-            "lignes": [],
-            "en_cours": False,
-            "lot_id": str(lot_id),
-            "age": int(age_val),
-            "type_essai": type_essai,
-        },
-    )
-    groupes_lots[cle]["lignes"].append(r_idx)
-    if is_en_cours:
-      groupes_lots[cle]["en_cours"] = True
+      # Chaque moyenne est indépendante par LOT + AGE + DATE + TYPE D ESSAI.
+      # Le lot correspond ici au bétonnage_id. Cette clé empêche qu un même âge
+      # et un même type provenant de deux lots différents soient regroupés.
+      lot_id = item.get("betonnage_id") or item.get("lot_id") or item.get("lot") or "LOT_INCONNU"
+      cle = (str(lot_id), int(age_val), str(dt_essai), type_essai)
+      groupes_lots.setdefault(
+          cle,
+          {
+              "lignes": [],
+              "en_cours": False,
+              "lot_id": str(lot_id),
+              "age": int(age_val),
+              "type_essai": type_essai,
+          },
+      )
+      groupes_lots[cle]["lignes"].append(r_idx)
+      if is_en_cours:
+        groupes_lots[cle]["en_cours"] = True
 
   # Fusion des moyennes : une moyenne distincte pour chaque lot,
   # chaque âge et chaque type d'essai.
@@ -1122,7 +1125,7 @@ def show(supabase):
           )
 
           export_data_h.append({
-              "repere_eprouvette": f"{ref_p}{rep_s}" if ref_p else rep_s,
+              "repere_eprouvette": rep_s,
               "betonnage_id": b_id_h,
               "lot_id": b_id_h,
               "forme": forme_item,
