@@ -39,10 +39,17 @@ def dimensions_eprouvette(forme_ep):
 
 
 def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindrique 150x300", section=None):
-    """
-    Calcule la resistance en MPa a partir de la charge de rupture en kN.
-    Compression : fc = F / A, A = pi*d²/4.
-    Traction par fendage : fct = 2F / (pi*L*d).
+    """Calcule la resistance en MPa a partir de la charge de rupture en kN.
+
+    IMPORTANT : la section enregistree dans la base peut etre en cm² (ex. 176.71).
+    Pour eviter toute erreur d unite, le calcul de compression est base en priorite
+    sur le diametre reel de l eprouvette extrait de ``forme``.
+
+    Compression : fc = F / A, avec F en N et A en mm².
+    Traction par fendage : fct = 2F / (pi*L*d), avec F en N et L,d en mm.
+    Pour 150x300 mm :
+      - compression : fc = F(kN) / 17.671
+      - fendage : fct = F(kN) / 70.686
     """
     try:
         f_kn = float(force_kn or 0.0)
@@ -57,16 +64,26 @@ def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindriq
     pi = 3.141592653589793
 
     if type_n == "Traction par fendage":
+        # F(kN) -> N ; resultat en N/mm² = MPa
         return round((2.0 * f_kn * 1000.0) / (pi * l_mm * d_mm), 1)
 
-    try:
-        sec = float(section) if section is not None else 0.0
-    except (ValueError, TypeError):
-        sec = 0.0
-    if sec <= 0:
-        sec = pi * (d_mm ** 2) / 4.0
+    # Compression : toujours recalculer A a partir du diametre en mm.
+    # Cela evite de traiter par erreur une section stockee en cm² comme si
+    # elle etait en mm² (176.71 cm² = 17671 mm² pour un cylindre 150 mm).
+    aire_mm2 = pi * (d_mm ** 2) / 4.0
+    if aire_mm2 <= 0:
+        # Secours uniquement si la forme est inconnue.
+        try:
+            sec = float(section) if section is not None else 0.0
+        except (ValueError, TypeError):
+            sec = 0.0
+        # Une valeur proche de 176.71 correspond tres probablement a des cm².
+        if 10.0 < sec < 1000.0:
+            aire_mm2 = sec * 100.0
+        elif sec > 1000.0:
+            aire_mm2 = sec
 
-    return round((f_kn * 1000.0) / sec, 1)
+    return round((f_kn * 1000.0) / aire_mm2, 1)
 
 
 # ==============================================================================
@@ -496,9 +513,10 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((0, row12, 7, row13, "Helvetica-Bold", 8.5, BLACK))
 
   # ---- Lignes de résultats (une par éprouvette) ----
-  # IMPORTANT : le regroupement d'une moyenne se fait par AGE + DATE + TYPE
-  # d'essai. Ainsi, une série à 28 j en compression ne peut jamais être
-  # mélangée avec une série à 28 j en traction par fendage.
+  # IMPORTANT : le regroupement d'une moyenne se fait par LOT + AGE + DATE + TYPE
+  # d'essai. Ainsi, deux lots différents ne peuvent jamais être mélangés,
+  # et une série à 28 j en compression ne peut jamais être mélangée avec
+  # une série à 28 j en traction par fendage.
   row_indices_body = []
   groupes_lots = {}
 
@@ -565,14 +583,17 @@ def generer_pv_pdf(export_data, infos_header):
     row_indices_body.append(r_idx)
     fonts.append((0, r_idx, 7, r_idx, "Helvetica", 8.5, BLACK))
 
-    # Chaque lot de moyenne est indépendant pour compression et traction.
-    # La date est conservée pour ne pas mélanger deux séries distinctes.
-    cle = (int(age_val), str(dt_essai), type_essai)
+    # Chaque moyenne est indépendante par LOT + AGE + DATE + TYPE D ESSAI.
+    # Le lot correspond ici au bétonnage_id. Cette clé empêche qu un même âge
+    # et un même type provenant de deux lots différents soient regroupés.
+    lot_id = item.get("betonnage_id") or item.get("lot_id") or item.get("lot") or "LOT_INCONNU"
+    cle = (str(lot_id), int(age_val), str(dt_essai), type_essai)
     groupes_lots.setdefault(
         cle,
         {
             "lignes": [],
             "en_cours": False,
+            "lot_id": str(lot_id),
             "age": int(age_val),
             "type_essai": type_essai,
         },
@@ -1102,6 +1123,8 @@ def show(supabase):
 
           export_data_h.append({
               "repere_eprouvette": f"{ref_p}{rep_s}" if ref_p else rep_s,
+              "betonnage_id": b_id_h,
+              "lot_id": b_id_h,
               "forme": forme_item,
               "section": sec,
               "force_kn": f_kn,
