@@ -92,6 +92,13 @@ def extraire_nb_jours(echeance_str, default=28):
     return int(match.group()) if match else default
 
 
+def convertir_projet_id(valeur):
+    """Scurise la valeur de projet_id pour éviter l'erreur de conversion int()."""
+    if str(valeur).isdigit():
+        return int(valeur)
+    return str(valeur)
+
+
 # ==============================================================================
 # 1. GESTION DES UTILISATEURS ET SUPABASE
 # ==============================================================================
@@ -142,7 +149,7 @@ def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=Non
             .eq("num_reception", num_clean)
         )
         if projet_id:
-            query = query.eq("projet_id", projet_id)
+            query = query.eq("projet_id", convertir_projet_id(projet_id))
         res = query.execute()
         for m in (res.data or []):
             if current_beton_id is None or int(m.get("id")) != int(current_beton_id):
@@ -659,7 +666,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         st.info("👁️ **Mode consultation** : cette phase est ouverte aux utilisateurs connectés. La validation officielle, le rejet, la signature et la modification des résultats sont réservés à l'administrateur BAALLAL.")
 
     try:
-        res = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).not_.is_("force_kn", "null").gt("force_kn", 0).order("id", desc=True).execute()
+        res = supabase.table("suivi_controle_beton").select("*").eq("projet_id", convertir_projet_id(projet_id_actif)).not_.is_("force_kn", "null").gt("force_kn", 0).order("id", desc=True).execute()
         essais_realises = res.data or []
     except Exception as e:
         st.error(f"❌ Erreur de chargement des essais réalisés : {e}")
@@ -880,7 +887,7 @@ def show(supabase):
 
     betonnages_preleves = []
     try:
-        res_b = supabase.table("suivi_betonnage").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
+        res_b = supabase.table("suivi_betonnage").select("*").eq("projet_id", convertir_projet_id(projet_id_actif)).order("id", desc=True).execute()
         if res_b.data:
             betonnages_preleves = [b for b in res_b.data if b.get("prelevement") and str(b.get("prelevement")).upper().startswith("OUI")]
     except Exception as e:
@@ -933,7 +940,7 @@ def show(supabase):
         if can_edit:
             with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
                 try:
-                    res_p = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
+                    res_p = supabase.table("suivi_controle_beton").select("*").eq("projet_id", convertir_projet_id(projet_id_actif)).order("id", desc=True).execute()
                     eprouvettes_enregistrees = res_p.data or []
                 except Exception as e:
                     eprouvettes_enregistrees = []
@@ -983,6 +990,9 @@ def show(supabase):
                 beton_p = options_beton[choix_label_p]
                 b_id = beton_p.get("id")
 
+                nb_ep_prelevees = beton_p.get("nb_eprouvettes") or 12
+                st.info(f"📊 **Information Prélèvement :** La fiche de bétonnage sélectionnée comprend un total de **{nb_ep_prelevees} éprouvettes** confectionnées.")
+
                 col_type, col_ech = st.columns(2)
                 type_essai_p = col_type.selectbox("🧪 Type d'Essai", ["Compression", "Traction par fendage"], key=f"p_type_essai_{b_id}")
                 echeance_p = col_ech.selectbox("Âge / Échéance visée", ["3 jours", "7 jours", "28 jours", "90 jours"], key=f"p_echeance_{b_id}")
@@ -991,7 +1001,7 @@ def show(supabase):
                 nb_j = extraire_nb_jours(echeance_p)
                 date_ecrasement_prevue = date_coulee_p + timedelta(days=nb_j)
 
-                nb_eprouvettes_p = st.number_input("Nombre d'éprouvettes", min_value=1, max_value=12, value=3, key=f"p_nb_ep_{b_id}")
+                nb_eprouvettes_p = st.number_input("Nombre d'éprouvettes à programmer", min_value=1, max_value=12, value=min(3, int(nb_ep_prelevees)), key=f"p_nb_ep_{b_id}")
                 forme_p = st.selectbox("Forme", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
 
                 if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True):
@@ -1009,7 +1019,7 @@ def show(supabase):
                                 "ref_controle": str(beton_p.get("num_reception", "")),
                                 "repere_eprouvette": f"/{i+1}",
                                 "forme": str(forme_p),
-                                "projet_id": int(projet_id_actif),
+                                "projet_id": convertir_projet_id(projet_id_actif),
                             }
                             supabase.table("suivi_controle_beton").insert(pay).execute()
                         st.success("✅ Éprouvettes programmées avec succès !")
@@ -1024,7 +1034,7 @@ def show(supabase):
         st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
 
         try:
-            res_att = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).or_("force_kn.is.null,force_kn.eq.0").order("id", desc=False).execute()
+            res_att = supabase.table("suivi_controle_beton").select("*").eq("projet_id", convertir_projet_id(projet_id_actif)).or_("force_kn.is.null,force_kn.eq.0").order("id", desc=False).execute()
             eprouvettes_en_attente = res_att.data or []
         except Exception as e:
             eprouvettes_en_attente = []
