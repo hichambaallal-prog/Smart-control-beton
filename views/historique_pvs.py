@@ -17,6 +17,59 @@ import projets_config
 
 
 # ==============================================================================
+# OUTILS ESSAIS : COMPRESSION / TRACTION PAR FENDAGE
+# ==============================================================================
+def normaliser_type_essai(type_essai):
+    """Normalise le type d'essai et reste compatible avec les anciennes donnees."""
+    s = unicodedata.normalize("NFKD", str(type_essai or "").strip().lower()).encode("ascii", "ignore").decode("ascii")
+    if "traction" in s or "fendage" in s or "split" in s:
+        return "Traction par fendage"
+    return "Compression"
+
+
+def dimensions_eprouvette(forme_ep):
+    """Retourne diametre et longueur (mm) depuis une forme du type Cylindrique 150x300."""
+    forme = str(forme_ep or "Cylindrique 150x300").lower().replace(" ", "")
+    match = re.search(r"(\d+(?:[.,]\d+)?)x(\d+(?:[.,]\d+)?)", forme)
+    if match:
+        d = float(match.group(1).replace(",", "."))
+        l = float(match.group(2).replace(",", "."))
+        return d, l
+    return 150.0, 300.0
+
+
+def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindrique 150x300", section=None):
+    """
+    Calcule la resistance en MPa a partir de la charge de rupture en kN.
+    Compression : fc = F / A, A = pi*d²/4.
+    Traction par fendage : fct = 2F / (pi*L*d).
+    """
+    try:
+        f_kn = float(force_kn or 0.0)
+    except (ValueError, TypeError):
+        f_kn = 0.0
+
+    if f_kn <= 0:
+        return 0.0
+
+    type_n = normaliser_type_essai(type_essai)
+    d_mm, l_mm = dimensions_eprouvette(forme)
+    pi = 3.141592653589793
+
+    if type_n == "Traction par fendage":
+        return round((2.0 * f_kn * 1000.0) / (pi * l_mm * d_mm), 1)
+
+    try:
+        sec = float(section) if section is not None else 0.0
+    except (ValueError, TypeError):
+        sec = 0.0
+    if sec <= 0:
+        sec = pi * (d_mm ** 2) / 4.0
+
+    return round((f_kn * 1000.0) / sec, 1)
+
+
+# ==============================================================================
 # 1. GESTION UTILISATEURS & SUPABASE
 # ==============================================================================
 def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
