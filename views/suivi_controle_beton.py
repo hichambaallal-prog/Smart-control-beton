@@ -1046,21 +1046,42 @@ def show(supabase):
 
             type_essai_lot = st.radio("Type d'essai pour ce lot :", ["Compression", "Traction par fendage"], index=0 if lot_selected[0].get("type_essai") != "Traction par fendage" else 1, horizontal=True)
 
-            rows_saisie = []
-            for ep in lot_selected:
-                rows_saisie.append({
-                    "ID": ep["id"],
-                    "Repère": ep.get("repere_eprouvette"),
-                    "Type Essai": type_essai_lot,
-                    "Forme": ep.get("forme", "Cylindrique 150x300"),
-                    "Force (kN)": float(ep.get("force_kn") or 0.0),
-                    "Résistance (MPa)": float(ep.get("fc_mpa") or 0.0),
-                })
+            df_saisie_key = f"df_saisie_p2_{lot_selected[0].get('betonnage_id')}_{lot_selected[0].get('echeance')}"
 
-            df_saisie = pd.DataFrame(rows_saisie)
+            if df_saisie_key not in st.session_state or len(st.session_state[df_saisie_key]) != len(lot_selected):
+                rows_saisie = []
+                for ep in lot_selected:
+                    f_kn = float(ep.get("force_kn") or 0.0)
+                    forme_ep = ep.get("forme", "Cylindrique 150x300")
+                    fc_calc = calculer_resistance_mpa(f_kn, type_essai_lot, forme_ep)
+                    rows_saisie.append({
+                        "ID": ep["id"],
+                        "Repère": ep.get("repere_eprouvette"),
+                        "Type Essai": type_essai_lot,
+                        "Forme": forme_ep,
+                        "Force (kN)": f_kn,
+                        "Résistance (MPa)": fc_calc,
+                    })
+                st.session_state[df_saisie_key] = pd.DataFrame(rows_saisie)
 
-            df_edited_saisie = st.data_editor(
-                df_saisie,
+            editor_p2_key = f"editor_p2_{df_saisie_key}"
+
+            def _maj_resistance_phase2():
+                editor_state = st.session_state.get(editor_p2_key, {})
+                for row_idx, updated_cols in editor_state.get("edited_rows", {}).items():
+                    if "Force (kN)" in updated_cols or "Type Essai" in updated_cols:
+                        try:
+                            new_force = float(updated_cols.get("Force (kN)", st.session_state[df_saisie_key].at[row_idx, "Force (kN)"]))
+                        except (ValueError, TypeError):
+                            new_force = 0.0
+                        t_essai = type_essai_lot
+                        forme_v = st.session_state[df_saisie_key].at[row_idx, "Forme"]
+
+                        st.session_state[df_saisie_key].at[row_idx, "Force (kN)"] = new_force
+                        st.session_state[df_saisie_key].at[row_idx, "Résistance (MPa)"] = calculer_resistance_mpa(new_force, t_essai, forme_v)
+
+            st.data_editor(
+                st.session_state[df_saisie_key],
                 column_config={
                     "ID": None,
                     "Forme": None,
@@ -1069,12 +1090,16 @@ def show(supabase):
                     "Force (kN)": st.column_config.NumberColumn("⚡ Force (kN)", min_value=0.0, max_value=3000.0, step=0.1, format="%.1f"),
                     "Résistance (MPa)": st.column_config.NumberColumn("Résistance (MPa)", disabled=True, format="%.2f"),
                 },
-                use_container_width=True, hide_index=True, key="editor_saisie_p2"
+                use_container_width=True,
+                hide_index=True,
+                key=editor_p2_key,
+                on_change=_maj_resistance_phase2,
             )
 
             if st.button("💾 Enregistrer la Saisie du Lot", type="primary", use_container_width=True):
                 try:
-                    for _, r in df_edited_saisie.iterrows():
+                    df_to_save = st.session_state[df_saisie_key]
+                    for _, r in df_to_save.iterrows():
                         f_kn = float(r["Force (kN)"])
                         if f_kn > 0:
                             fc_val = float(calculer_resistance_mpa(f_kn, type_essai_lot, r["Forme"]))
@@ -1087,6 +1112,7 @@ def show(supabase):
                             }
                             executer_update_eprouvette(supabase, int(r["ID"]), pay_update)
 
+                    st.session_state.pop(df_saisie_key, None)
                     st.success("✅ Résultats enregistrés avec succès !")
                     st.rerun()
                 except Exception as err:
