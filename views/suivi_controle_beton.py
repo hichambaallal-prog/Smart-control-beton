@@ -1,6 +1,5 @@
 import base64
 import io
-import math
 import re
 import unicodedata
 from datetime import date, datetime, timedelta
@@ -19,6 +18,7 @@ try:
 except ImportError:
     Client = None
 
+# Constante des onglets incluant la Phase 3
 OPTIONS_ONGLETS = [
     "📋 Phase 0 : Réception & Validation",
     "📅 Phase 1 : Programmation",
@@ -28,43 +28,26 @@ OPTIONS_ONGLETS = [
 
 
 # ==============================================================================
-# FONCTIONS UTILITAIRES : CALCUL DE RÉSISTANCE ET EXTRACTION DATES
+# FONCTIONS UTILITAIRES : EXTRACTION DE DATES ET DÉLAIS (DAP-PANDAS & REGEX)
 # ==============================================================================
-def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindrique 150x300"):
-    try:
-        f_kn = float(force_kn or 0.0)
-    except (ValueError, TypeError):
-        return 0.0
-
-    if f_kn <= 0:
-        return 0.0
-
-    force_n = f_kn * 1000.0
-
-    if "160x320" in str(forme):
-        d, L, sec = 160.0, 320.0, 20106.19
-    elif "100x200" in str(forme):
-        d, L, sec = 100.0, 200.0, 7853.98
-    else:
-        d, L, sec = 150.0, 300.0, 17671.46
-
-    if type_essai == "Traction par fendage":
-        f_ct = (2.0 * force_n) / (math.pi * L * d)
-        return round(f_ct, 2)
-    else:
-        f_c = force_n / sec
-        return round(f_c, 1)
-
-
 def calculer_date_ecrasement(df):
+    """
+    Calcule la 'Date Écrasement Prévue' à partir de 'Date Coulée'
+    et du délai spécifié dans 'Échéance Visée' ou 'echeance' (ex: '7 jours', '28 jours').
+    """
     df_result = df.copy()
+
+    # Détection de la colonne d'échéance disponible
     col_ech = next((c for c in ['Échéance Visée', 'echeance', 'Échéance'] if c in df_result.columns), None)
     col_coul = next((c for c in ['Date Coulée', 'date_coulee'] if c in df_result.columns), None)
 
     if not col_coul or not col_ech:
         return df_result
 
+    # 1. Conversion de Date Coulée au format datetime
     df_result['Date Coulée'] = pd.to_datetime(df_result[col_coul], errors='coerce')
+
+    # 2. Extraction du nombre de jours
     nb_jours = (
         df_result[col_ech]
         .astype(str)
@@ -73,7 +56,10 @@ def calculer_date_ecrasement(df):
         .astype(int)
     )
 
+    # 3. Calcul de la Date Écrasement Prévue en ajoutant le nombre de jours
     df_result['Date Écrasement Prévue'] = df_result['Date Coulée'] + pd.to_timedelta(nb_jours, unit='D')
+
+    # 4. Formate les dates au format YYYY-MM-DD
     df_result['Date Coulée'] = df_result['Date Coulée'].dt.strftime('%Y-%m-%d')
     df_result['Date Écrasement Prévue'] = df_result['Date Écrasement Prévue'].dt.strftime('%Y-%m-%d')
 
@@ -81,22 +67,18 @@ def calculer_date_ecrasement(df):
 
 
 def extraire_nb_jours(echeance_str, default=28):
+    """Extrait le nombre de jours numérique à partir d'une chaîne (ex: '28 jours', '7 J')."""
     if pd.isna(echeance_str) or not echeance_str:
         return default
     match = re.search(r'\d+', str(echeance_str))
     return int(match.group()) if match else default
 
 
-def convertir_projet_id(valeur):
-    if str(valeur).isdigit():
-        return int(valeur)
-    return str(valeur)
-
-
 # ==============================================================================
-# 1. GESTION DES UTILISATEURS ET SUPABASE
+# 1. GESTION DES UTILISATEURS ET CONNEXION SUPABASE
 # ==============================================================================
 def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
+    """Vérifie l'utilisateur et initialise le session_state."""
     try:
         res = (
             supabase.table("users")
@@ -122,7 +104,29 @@ def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
     return False
 
 
+def afficher_ecran_connexion(supabase):
+    """Affiche le formulaire de connexion si l'utilisateur n'est pas authentifié."""
+    st.title("🔐 Connexion au Laboratoire Smart Control Béton")
+    
+    if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
+        st.info("🎯 **Scan QR Code détecté !** Connectez-vous pour accéder directement à la Phase 2 de la fiche scannée.")
+
+    with st.form("form_connexion", clear_on_submit=False):
+        nom_u = st.text_input("Nom d'utilisateur", key="input_user")
+        mdp = st.text_input("Mot de passe", type="password", key="input_pass")
+        submit = st.form_submit_button("Se connecter", type="primary", use_container_width=True)
+
+        if submit:
+            if connecter_utilisateur(supabase, nom_u, mdp):
+                st.toast("✅ Connexion réussie !", icon="🔓")
+                st.rerun()
+
+
+# =========================================================
+# FONCTION UTILITAIRE : GÉNÉRATION ET GESTION DES QR CODES
+# =========================================================
 def generer_qr_code(data_url):
+    """Génère un QR Code en mémoire sous forme d'image PNG en octets."""
     qr = qrcode.QRCode(box_size=8, border=2)
     qr.add_data(data_url)
     qr.make(fit=True)
@@ -132,7 +136,15 @@ def generer_qr_code(data_url):
     return buffer.getvalue()
 
 
+# =========================================================
+# FONCTION UTILITAIRE : VÉRIFICATION DES DOUBLONS DU N° DE RÉCEPTION
+# =========================================================
 def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=None, projet_id=None):
+    """Vérifie si le num_reception existe déjà dans suivi_betonnage, DANS LE
+    MÊME PROJET uniquement. Sans ce filtre, une référence légitimement
+    réutilisée dans un autre chantier (ex: 'B/395' présent à la fois côté
+    LGV CASA SUD et côté Gare LGV Casa Sud) serait à tort signalée comme
+    doublon et bloquerait des modifications parfaitement valides."""
     if not num_reception or str(num_reception).strip() in ["", "-", "None", "NaN", "N/A"]:
         return False
     num_clean = str(num_reception).strip()
@@ -143,7 +155,7 @@ def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=Non
             .eq("num_reception", num_clean)
         )
         if projet_id:
-            query = query.eq("projet_id", convertir_projet_id(projet_id))
+            query = query.eq("projet_id", projet_id)
         res = query.execute()
         for m in (res.data or []):
             if current_beton_id is None or int(m.get("id")) != int(current_beton_id):
@@ -153,7 +165,11 @@ def verifier_doublon_num_reception(supabase, num_reception, current_beton_id=Non
     return False
 
 
+# =========================================================
+# FONCTION UTILITAIRE : EXTRACTION SÉCURISÉE DU N° BL & DATE COULÉE
+# =========================================================
 def extraire_num_bl(*sources):
+    """Inspecte récursivement les sources pour extraire le N° de Bon de Livraison (BL)."""
     keys = ["num_bl", "bl", "num_bon_livraison", "n_bl", "bon_livraison", "num_bl_p", "n_bon", "bon_de_livraison", "code_bl"]
     invalid = {"N/A", "NONE", "NAN", "-", ""}
     for src in sources:
@@ -177,6 +193,7 @@ def extraire_num_bl(*sources):
 
 
 def extraire_date_coulee(item):
+    """Extrait la date de coulée / livraison exacte depuis l'objet bétonnage."""
     if not item or not isinstance(item, dict):
         return str(date.today())
     for k in ["date_coulee", "date_livraison", "date_prelevement"]:
@@ -187,9 +204,10 @@ def extraire_date_coulee(item):
 
 
 # =========================================================
-# 2. GÉNÉRATION DU PROCÈS-VERBAL EXCEL
+# 2. GÉNÉRATION DU PROCÈS-VERBAL EXCEL (FORMAT EXACT LPEE)
 # =========================================================
 def generer_pv_excel(export_data, infos_header):
+    """Génère un Procès-Verbal (PV) d'écrasement de béton répliquant le modèle LPEE."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "PV Écrasement LPEE"
@@ -277,13 +295,12 @@ def generer_pv_excel(export_data, infos_header):
         ws.cell(row=4, column=c).fill = fill_dark
         ws.cell(row=4, column=c).border = border_cell
 
-    a_fendage = any(str(item.get("type_essai", "")).strip() == "Traction par fendage" for item in export_data)
     ws.merge_cells("A5:D5")
-    ws["A5"] = f"[{' ' if a_fendage else 'X'}] COMPRESSION NF EN 12390-3 (2019)"
+    ws["A5"] = "[X] COMPRESSION NF EN 12390-3 (2019)"
     format_cell(ws["A5"], font_bold, align_center)
 
     ws.merge_cells("E5:H5")
-    ws["E5"] = f"[{'X' if a_fendage else ' '}] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
+    ws["E5"] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
     format_cell(ws["E5"], font_bold, align_center)
 
     for c in range(1, 9): ws.cell(row=5, column=c).border = border_cell
@@ -316,7 +333,7 @@ def generer_pv_excel(export_data, infos_header):
     format_cell(ws["A8"], font_bold, align_center)
 
     ws.merge_cells("B8:D8")
-    ws["B8"] = remplacer_na(infos_header.get("chantier"), "Augmentation de la capacité ferroviaire entre Kenitra et Marrakech")
+    ws["B8"] = remplacer_na(infos_header.get("chantier"), "Augmentation de la capacité ferroviaire entre Kenitra et Marrakech et au niveau du hub de Casablanca\nTravaux d'exécution de terrassement, ouvrages d'art et rétablissement de communication entre PK 5+450 et PK 10+000-GARE CASA SUD")
     format_cell(ws["B8"], font_small, align_center)
 
     ws.merge_cells("E8:F8")
@@ -419,7 +436,7 @@ def generer_pv_excel(export_data, infos_header):
             f_kn_val = 0.0
             
         is_en_cours = str(item.get("statut", "")).lower() == "en cours" or f_kn_val == 0.0
-        dt_essai = item.get("date_essai") or item.get("date_ecrasement")
+        dt_essai = item.get("date_essai")
 
         ws.cell(row=curr_row, column=1, value=str(item.get("repere_eprouvette", "B/01")))
         ws.cell(row=curr_row, column=2, value=str(remplacer_na(infos_header.get("date_coulee"), "-")))
@@ -428,32 +445,25 @@ def generer_pv_excel(export_data, infos_header):
         age_val = extraire_nb_jours(item.get("age"), default=7)
         ws.cell(row=curr_row, column=4, value=age_val)
 
-        t_essai = str(item.get("type_essai", "Compression")).strip()
-
         if is_en_cours:
             ws.cell(row=curr_row, column=5, value="En cours")
             ws.cell(row=curr_row, column=6, value="En cours")
-            ws.cell(row=curr_row, column=7, value="-")
         else:
             try:
                 fc_val = float(item.get("fc_mpa", 0.0))
             except (ValueError, TypeError):
                 fc_val = 0.0
             ws.cell(row=curr_row, column=5, value=f_kn_val).number_format = "0.0"
-            
-            if t_essai == "Traction par fendage":
-                ws.cell(row=curr_row, column=6, value="-")
-                ws.cell(row=curr_row, column=7, value=fc_val).number_format = "0.00"
-            else:
-                ws.cell(row=curr_row, column=6, value=fc_val).number_format = "0.0"
-                ws.cell(row=curr_row, column=7, value="-")
+            ws.cell(row=curr_row, column=6, value=fc_val).number_format = "0.0"
+
+        ws.cell(row=curr_row, column=7, value="-")
 
         for c in range(1, 9):
             format_cell(ws.cell(row=curr_row, column=c), font=font_regular, align=align_center)
 
-        cle_lot = f"{item.get('age')}_{dt_essai}_{t_essai}"
+        cle_lot = f"{item.get('age')}_{item.get('date_essai')}"
         if cle_lot not in groupes_lots:
-            groupes_lots[cle_lot] = {"lignes": [], "en_cours": is_en_cours, "age": age_val, "type_essai": t_essai}
+            groupes_lots[cle_lot] = {"lignes": [], "en_cours": is_en_cours, "age": age_val}
         elif is_en_cours:
             groupes_lots[cle_lot]["en_cours"] = True
         groupes_lots[cle_lot]["lignes"].append(curr_row)
@@ -462,18 +472,17 @@ def generer_pv_excel(export_data, infos_header):
         lignes = data_lot["lignes"]
         start_r, end_r = min(lignes), max(lignes)
         cell_h = ws[f"H{start_r}"]
-        col_res = "G" if data_lot["type_essai"] == "Traction par fendage" else "F"
 
         if data_lot["en_cours"]:
             if start_r != end_r: ws.merge_cells(f"H{start_r}:H{end_r}")
             cell_h.value = "En cours"
         else:
             if start_r == end_r:
-                cell_h.value = f"=ROUND({col_res}{start_r}, 1)"
+                cell_h.value = f"=ROUND(F{start_r}, 1)"
             else:
                 ws.merge_cells(f"H{start_r}:H{end_r}")
-                cell_h.value = f"=ROUND(AVERAGE({col_res}{start_r}:{col_res}{end_r}), 1)"
-            cell_h.number_format = "0.00" if data_lot["type_essai"] == "Traction par fendage" else "0.0"
+                cell_h.value = f"=ROUND(AVERAGE(F{start_r}:F{end_r}), 1)"
+            cell_h.number_format = "0.0"
             if extraire_nb_jours(data_lot["age"]) >= 28:
                 a_des_28j_ecrases, cellule_moyenne_28j = True, f"H{start_r}"
 
@@ -535,6 +544,7 @@ def generer_pv_excel(export_data, infos_header):
 # FONCTIONS AUXILIAIRES DE SUPABASE & PARSING
 # =========================================================
 def exporter_dataframe_excel(df, date_chaine):
+    """Génère un fichier Excel à partir d'un DataFrame."""
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name=f"Planning_{date_chaine}"[:31])
@@ -563,6 +573,7 @@ def obtenir_infos_betonnage_parent(supabase, betonnage_id):
 
 
 def obtenir_infos_betonnage_parents_bulk(supabase, betonnage_ids):
+    """Charge en UNE seule requête les fiches parentes de plusieurs lots à la fois."""
     ids_valides = sorted({int(b) for b in betonnage_ids if b is not None})
     if not ids_valides:
         return {}
@@ -594,6 +605,7 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
 
 
 def _format_ep_row(ep, date_ref=None):
+    """Helper pour parser les données d'éprouvettes (Retard, Jour, Semaine)."""
     dt_coul, dt_ecras = ep.get("date_coulee"), ep.get("date_ecrasement")
     age_calc = "-"
     if dt_coul and dt_ecras:
@@ -614,7 +626,6 @@ def _format_ep_row(ep, date_ref=None):
     return {
         "ID": ep.get("id"),
         "Référence / Repère": rep_complet,
-        "Type Essai": ep.get("type_essai", "Compression"),
         "N° BL": extraire_num_bl(ep),
         "Ouvrage": ep.get("ouvrage", "-"),
         "Classe Béton": ep.get("classe_beton", "-"),
@@ -626,22 +637,11 @@ def _format_ep_row(ep, date_ref=None):
     }
 
 
-def executer_update_eprouvette(supabase, ep_id, update_payload):
-    try:
-        return supabase.table("suivi_controle_beton").update(update_payload).eq("id", ep_id).execute()
-    except Exception as e:
-        err_str = str(e)
-        if "PGRST204" in err_str and "date_essai" in err_str:
-            payload_clean = update_payload.copy()
-            payload_clean.pop("date_essai", None)
-            return supabase.table("suivi_controle_beton").update(payload_clean).eq("id", ep_id).execute()
-        raise e
-
-
 # =========================================================
-# MODULE : PHASE 3 - VALIDATION ADMIN (PVs)
+# MODULE NOUVEAU : PHASE 3 - VALIDATION ADMIN (PVs)
 # =========================================================
 def afficher_module_validation_admin(supabase, est_admin=False):
+    """Affiche le module d'approbation administrative et de signature des PVs."""
     st.subheader("🛡️ 3. Validation & Consultation des PVs")
 
     projet_id_actif = projets_config.projet_actif(st.session_state.get("user") or {})
@@ -655,7 +655,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         st.info("👁️ **Mode consultation** : cette phase est ouverte aux utilisateurs connectés. La validation officielle, le rejet, la signature et la modification des résultats sont réservés à l'administrateur BAALLAL.")
 
     try:
-        res = supabase.table("suivi_controle_beton").select("*").eq("projet_id", convertir_projet_id(projet_id_actif)).not_.is_("force_kn", "null").gt("force_kn", 0).order("id", desc=True).execute()
+        res = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).not_.is_("force_kn", "null").gt("force_kn", 0).order("id", desc=True).execute()
         essais_realises = res.data or []
     except Exception as e:
         st.error(f"❌ Erreur de chargement des essais réalisés : {e}")
@@ -665,6 +665,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         st.warning("ℹ️ Aucun essai écrasé n'est actuellement en attente de validation.")
         return
 
+    # Regroupement par lot (betonnage_id)
     lots_dict = {}
     for ep in essais_realises:
         b_id = ep.get("betonnage_id")
@@ -713,24 +714,23 @@ def afficher_module_validation_admin(supabase, est_admin=False):
     c2.metric("Date de coulée", extraire_date_coulee(info_b_sel))
     c3.metric("Statut Actuel du PV", info_b_sel.get("statut_pv", "⏳ En attente"))
 
+    # Préparation des données pour affichage / édition tableau
     df_key = f"admin_edit_pv_{b_id_sel}"
     if df_key not in st.session_state or st.session_state.get(f"{df_key}_len") != len(ep_sel_list):
         rows_val = []
         for ep in ep_sel_list:
+            sec = float(ep.get("section") or 176.71)
             f_kn = float(ep.get("force_kn") or 0.0)
-            t_essai = ep.get("type_essai", "Compression")
-            forme_v = ep.get("forme", "Cylindrique 150x300")
-            fc = float(ep.get("fc_mpa") or calculer_resistance_mpa(f_kn, t_essai, forme_v))
+            fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
             rows_val.append({
                 "ID": ep.get("id"),
                 "Repère": ep.get("repere_eprouvette", "-"),
-                "Type Essai": t_essai,
                 "Échéance": ep.get("echeance", "-"),
                 "Date Écrasement": ep.get("date_ecrasement", "-"),
                 "Force (kN)": f_kn,
                 "Résistance (MPa)": fc,
                 "Opérateur": ep.get("technicien", "-"),
-                "_forme": forme_v,
+                "_section": sec,
                 "_force_orig": f_kn,
                 "_fc_orig": fc,
             })
@@ -740,46 +740,71 @@ def afficher_module_validation_admin(supabase, est_admin=False):
     editor_key = f"editor_{df_key}"
 
     def _maj_resistance_admin():
+        """Recalcule Résistance (MPa) en direct quand l'admin modifie Force (kN)."""
         editor_state = st.session_state.get(editor_key, {})
         for row_idx, updated_cols in editor_state.get("edited_rows", {}).items():
-            if "Force (kN)" in updated_cols or "Type Essai" in updated_cols:
+            if "Force (kN)" in updated_cols:
                 try:
-                    new_force = float(updated_cols.get("Force (kN)", st.session_state[df_key].at[row_idx, "Force (kN)"]))
+                    new_force = float(updated_cols["Force (kN)"])
                 except (ValueError, TypeError):
                     new_force = 0.0
-                t_essai = updated_cols.get("Type Essai", st.session_state[df_key].at[row_idx, "Type Essai"])
-                forme_v = st.session_state[df_key].at[row_idx, "_forme"]
-                
+                sec = float(st.session_state[df_key].at[row_idx, "_section"])
                 st.session_state[df_key].at[row_idx, "Force (kN)"] = new_force
-                st.session_state[df_key].at[row_idx, "Type Essai"] = t_essai
-                st.session_state[df_key].at[row_idx, "Résistance (MPa)"] = calculer_resistance_mpa(new_force, t_essai, forme_v)
+                st.session_state[df_key].at[row_idx, "Résistance (MPa)"] = (
+                    round((new_force * 10.0) / sec, 1) if sec > 0 and new_force > 0 else 0.0
+                )
 
     if est_admin:
         st.caption(
-            "✏️ Mode administrateur : la **Force (kN)** et le **Type d'essai** sont modifiables"
+            "✏️ Mode administrateur : la **Force (kN)** est modifiable"
             " ci-dessous — la Résistance (MPa) se recalcule automatiquement."
+            " Les modifications sont enregistrées en même temps que la"
+            " décision de validation, plus bas."
         )
 
     st.data_editor(
         st.session_state[df_key],
         column_config={
             "ID": None,
-            "_forme": None,
+            "_section": None,
             "_force_orig": None,
             "_fc_orig": None,
             "Repère": st.column_config.TextColumn("Repère", disabled=True),
-            "Type Essai": st.column_config.SelectboxColumn("Type d'essai", options=["Compression", "Traction par fendage"], disabled=not est_admin),
             "Échéance": st.column_config.TextColumn("Échéance", disabled=True),
             "Date Écrasement": st.column_config.TextColumn("Date Écrasement", disabled=True),
             "Force (kN)": st.column_config.NumberColumn(
                 "⚡ Force (kN)", disabled=not est_admin,
                 min_value=0.0, max_value=3000.0, step=0.1, format="%.1f",
             ),
-            "Résistance (MPa)": st.column_config.NumberColumn("Résistance (MPa)", disabled=True, format="%.2f"),
+            "Résistance (MPa)": st.column_config.NumberColumn("Résistance (MPa)", disabled=True, format="%.1f"),
             "Opérateur": st.column_config.TextColumn("Opérateur", disabled=True),
         },
         use_container_width=True, hide_index=True, key=editor_key, on_change=_maj_resistance_admin,
     )
+
+    ep_28j = [ep for ep in ep_sel_list if extraire_nb_jours(ep.get("echeance")) == 28]
+    if ep_28j:
+        ep_7j = [ep for ep in ep_sel_list if extraire_nb_jours(ep.get("echeance")) == 7]
+        ref_ctrl_sel = determiner_ref_controle(supabase, b_id_sel, info_b_sel, ep_sel_list[0])
+        st.warning(
+            f"🔔 **Rappel avant validation à 28 jours** — Résultats à 7 jours"
+            f" déjà enregistrés pour ce même lot (Réf: {ref_ctrl_sel}) :"
+        )
+        if ep_7j:
+            rows_7j = []
+            for ep in ep_7j:
+                sec = float(ep.get("section") or 176.71)
+                f_kn = float(ep.get("force_kn") or 0.0)
+                fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+                rows_7j.append({
+                    "Repère": ep.get("repere_eprouvette", "-"),
+                    "Date Écrasement": ep.get("date_ecrasement", "-"),
+                    "Force (kN)": f_kn,
+                    "Résistance (MPa)": fc,
+                })
+            st.dataframe(pd.DataFrame(rows_7j), use_container_width=True, hide_index=True)
+        else:
+            st.caption("Aucun écrasement à 7 jours n'a encore été enregistré pour ce lot.")
 
     st.markdown("---")
     if not est_admin:
@@ -790,6 +815,10 @@ def afficher_module_validation_admin(supabase, est_admin=False):
             st.write(f"**Visa Responsable d'essai :** {info_b_sel.get('visa_resp')}")
         if info_b_sel.get("visa_chef"):
             st.write(f"**Visa Chef du laboratoire :** {info_b_sel.get('visa_chef')}")
+        if info_b_sel.get("date_validation"):
+            st.write(f"**Date de validation :** {info_b_sel.get('date_validation')}")
+        if info_b_sel.get("observations_admin"):
+            st.write(f"**Observations :** {info_b_sel.get('observations_admin')}")
     else:
         with st.form("form_valider_pv"):
             st.markdown("##### ✍️ Décision & Signatures Officielles")
@@ -808,26 +837,60 @@ def afficher_module_validation_admin(supabase, est_admin=False):
 
             if submit_val:
                 nouveau_statut = "✅ Validé & Signé" if "Valider" in statut_decision else "❌ Rejeté / En Révision"
+                anciennes_val_pv = {
+                    "statut_pv": info_b_sel.get("statut_pv"),
+                    "visa_resp": info_b_sel.get("visa_resp"),
+                    "visa_chef": info_b_sel.get("visa_chef"),
+                    "observations_admin": info_b_sel.get("observations_admin"),
+                }
                 update_payload = {
-                    "statut_pv": str(nouveau_statut),
-                    "visa_resp": str(resp_essai),
-                    "visa_chef": str(chef_labo),
-                    "observations_admin": str(comm_admin),
+                    "statut_pv": nouveau_statut,
+                    "visa_resp": resp_essai,
+                    "visa_chef": chef_labo,
+                    "observations_admin": comm_admin,
                     "date_validation": str(date.today())
                 }
                 try:
-                    supabase.table("suivi_betonnage").update(update_payload).eq("id", int(b_id_sel)).execute()
+                    supabase.table("suivi_betonnage").update(update_payload).eq("id", b_id_sel).execute()
+                    enregistrer_modification(
+                        supabase,
+                        table_concernee="suivi_betonnage",
+                        enregistrement_id=b_id_sel,
+                        action="VALIDATION",
+                        anciennes_valeurs=anciennes_val_pv,
+                        nouvelles_valeurs={
+                            "statut_pv": nouveau_statut,
+                            "visa_resp": resp_essai,
+                            "visa_chef": chef_labo,
+                            "observations_admin": comm_admin,
+                        },
+                    )
 
                     df_edit = st.session_state.get(df_key)
                     if df_edit is not None:
                         for _, r in df_edit.iterrows():
-                            ep_id_maj = int(r["ID"])
-                            nouvelles_force = {
-                                "force_kn": float(r["Force (kN)"]),
-                                "type_essai": str(r["Type Essai"]),
-                                "fc_mpa": float(r["Résistance (MPa)"]),
-                            }
-                            executer_update_eprouvette(supabase, ep_id_maj, nouvelles_force)
+                            try:
+                                ep_id_maj = int(r["ID"])
+                                anciennes_force = {
+                                    "force_kn": float(r.get("_force_orig", r["Force (kN)"])),
+                                    "fc_mpa": float(r.get("_fc_orig", r["Résistance (MPa)"])),
+                                }
+                                nouvelles_force = {
+                                    "force_kn": float(r["Force (kN)"]),
+                                    "fc_mpa": float(r["Résistance (MPa)"]),
+                                }
+                                supabase.table("suivi_controle_beton").update(nouvelles_force).eq("id", ep_id_maj).execute()
+                                enregistrer_modification(
+                                    supabase,
+                                    table_concernee="suivi_controle_beton",
+                                    enregistrement_id=ep_id_maj,
+                                    action="MODIFICATION",
+                                    anciennes_valeurs=anciennes_force,
+                                    nouvelles_valeurs=nouvelles_force,
+                                    commentaire="Correction de force par l'administrateur lors de la validation du PV",
+                                )
+                            except Exception as e_row:
+                                st.warning(f"⚠️ Éprouvette {r.get('Repère', '-')} : mise à jour de la force impossible ({e_row}).")
 
                     st.session_state.pop(df_key, None)
                     st.session_state.pop(f"{df_key}_len", None)
@@ -835,7 +898,10 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                     st.balloons()
                     st.rerun()
                 except Exception as e:
-                    st.error(f"❌ Erreur lors de la mise à jour du statut dans Supabase : {e}")
+                    st.error(f"❌ Erreur lors de la mise à jour du statut : {e}")
+
+    if est_admin:
+        afficher_historique_modifications(supabase, "suivi_betonnage", b_id_sel)
 
 
 # =========================================================
@@ -847,12 +913,25 @@ def show(supabase):
     st.session_state.setdefault("phase_actuelle", OPTIONS_ONGLETS[0])
     st.session_state.setdefault("nav_widget_seed", 0)
 
+    qr_en_attente = bool(st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"))
+    forcer_phase2_ce_run = qr_en_attente and not st.session_state.get("qr_nav_applied", False)
+    if forcer_phase2_ce_run:
+        st.session_state["phase_actuelle"] = OPTIONS_ONGLETS[2]
+        st.session_state["nav_widget_seed"] += 1
+        st.session_state["qr_nav_applied"] = True
+
     user_info = st.session_state.get("user", {})
     role_user = str(st.session_state.get("user_role") or st.session_state.get("role") or user_info.get("role", "")).lower()
     can_edit = st.session_state.get("can_edit", False) or bool(user_info.get("can_edit", False))
 
-    current_username = str(st.session_state.get("username") or user_info.get("username") or "").strip().upper()
-    is_baallal_admin = current_username == "BAALLAL" and (role_user == "admin" or st.session_state.get("is_admin", False))
+    current_username = str(
+        st.session_state.get("username")
+        or user_info.get("username")
+        or ""
+    ).strip().upper()
+    is_baallal_admin = current_username == "BAALLAL" and (
+        role_user == "admin" or st.session_state.get("is_admin", False)
+    )
 
     projet_id_actif = projets_config.projet_actif(user_info)
     if not projet_id_actif:
@@ -865,18 +944,39 @@ def show(supabase):
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔒 Mode Administration / Édition")
         mode_admin = st.sidebar.checkbox("Activer le Mode Admin / Édition", value=False)
+        if mode_admin:
+            st.sidebar.warning("⚠️ Mode Édition / Administrateur Actif.")
 
+    # NAVIGATION INTERACTIVE DES PHASES
     widget_key = f"nav_phase_widget_{st.session_state['nav_widget_seed']}"
     try:
-        onglet_courant = st.segmented_control("Navigation entre phases :", OPTIONS_ONGLETS, default=st.session_state["phase_actuelle"], key=widget_key)
+        onglet_courant = st.segmented_control(
+            "Navigation entre phases :",
+            OPTIONS_ONGLETS,
+            default=st.session_state["phase_actuelle"],
+            key=widget_key,
+        )
     except AttributeError:
-        onglet_courant = st.radio("Navigation entre phases :", OPTIONS_ONGLETS, index=OPTIONS_ONGLETS.index(st.session_state["phase_actuelle"]), horizontal=True, key=widget_key)
+        onglet_courant = st.radio(
+            "Navigation entre phases :",
+            OPTIONS_ONGLETS,
+            index=OPTIONS_ONGLETS.index(st.session_state["phase_actuelle"]),
+            horizontal=True,
+            key=widget_key,
+        )
+
+    if not onglet_courant:
+        onglet_courant = st.session_state.get("phase_actuelle", OPTIONS_ONGLETS[0])
+
+    if forcer_phase2_ce_run:
+        onglet_courant = OPTIONS_ONGLETS[2]
 
     st.session_state["phase_actuelle"] = onglet_courant
+    st.session_state["onglet_actif"] = onglet_courant
 
     betonnages_preleves = []
     try:
-        res_b = supabase.table("suivi_betonnage").select("*").eq("projet_id", convertir_projet_id(projet_id_actif)).order("id", desc=True).execute()
+        res_b = supabase.table("suivi_betonnage").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
         if res_b.data:
             betonnages_preleves = [b for b in res_b.data if b.get("prelevement") and str(b.get("prelevement")).upper().startswith("OUI")]
     except Exception as e:
@@ -885,213 +985,596 @@ def show(supabase):
     map_betonnages = {b.get("id"): b for b in betonnages_preleves}
 
     # =========================================================
-    # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION
+    # PHASE 0 : RÉCEPTION & SAISIE DU NUMÉRO DE RÉCEPTION + QR CODES
     # =========================================================
     if onglet_courant == OPTIONS_ONGLETS[0]:
         st.subheader("📋 0. Réception & Validation des Bétons")
-        st.info("💡 Saisissez le **N° Réception** pour débloquer la Phase 1 et générer les étiquettes QR Code.")
+        st.info("💡 **Condition requise** : Saisissez manuellement le **N° Réception**. Une fois enregistré, le numéro débloquera la Phase 1 et permettra la génération d'étiquettes **QR Code** étanches.")
 
-        if betonnages_preleves:
+        if not betonnages_preleves:
+            st.info("ℹ️ Aucun bétonnage prélevé dans la base de données.")
+        else:
             rows_reception = []
             for item in betonnages_preleves:
+                aff_val = item.get("affaissement") or item.get("slump") or "-"
+                temp_val = item.get("temperature") or item.get("temp_beton") or "-"
+                dt_livraison_exacte = extraire_date_coulee(item)
                 rows_reception.append({
                     "_id_beton": item.get("id"),
                     "1-Numero de reception": str(item.get("num_reception") or ""),
-                    "2-Date de livraison": extraire_date_coulee(item),
+                    "2-Date de livraison": dt_livraison_exacte,
                     "3-Nb d'éprouvettes": int(item.get("nb_eprouvettes") or 12),
-                    "4-Classe de béton": item.get("classe_beton") or "-",
+                    "4-Classe de béton": item.get("classe_beton") or item.get("classe") or "-",
                     "5-Ouvrage": item.get("ouvrage") or "-",
+                    "6-Affaissement": f"{aff_val} mm" if str(aff_val) != "-" and "mm" not in str(aff_val) else str(aff_val),
+                    "7-Temperature de béton frais": f"{temp_val} °C" if str(temp_val) != "-" and "°C" not in str(temp_val) else str(temp_val),
                 })
 
             df_edited = st.data_editor(
                 pd.DataFrame(rows_reception),
-                column_config={"_id_beton": None},
+                column_config={
+                    "_id_beton": None,
+                    "1-Numero de reception": st.column_config.TextColumn("1-N° Réception", help="Saisissez le N° de Réception ici", required=False),
+                    "2-Date de livraison": st.column_config.TextColumn("2-Date de livraison", disabled=True),
+                    "3-Nb d'éprouvettes": st.column_config.NumberColumn("3-Nb d'éprouvettes", disabled=True),
+                    "4-Classe de béton": st.column_config.TextColumn("4-Classe de béton", disabled=True),
+                    "5-Ouvrage": st.column_config.TextColumn("5-Ouvrage", disabled=True),
+                    "6-Affaissement": st.column_config.TextColumn("6-Affaissement", disabled=True),
+                    "7-Temperature de béton frais": st.column_config.TextColumn("7-Température béton", disabled=True),
+                },
                 use_container_width=True, hide_index=True, key="editor_reception_phase0",
             )
 
-            if st.button("💾 Enregistrer les N° de Réception", type="primary"):
-                try:
+            col_rec1, col_rec2 = st.columns(2)
+            with col_rec1:
+                if st.button("💾 Enregistrer les N° de Réception", type="primary", use_container_width=True):
+                    succes_rec, bloque_doublon, nouveaux_numeros = 0, False, {}
                     for _, row in df_edited.iterrows():
                         b_id, n_rec = int(row["_id_beton"]), str(row["1-Numero de reception"]).strip()
                         if n_rec and n_rec not in ["-", ""]:
-                            supabase.table("suivi_betonnage").update({"num_reception": n_rec}).eq("id", b_id).execute()
-                    st.success("✅ N° de Réception mis à jour !")
-                    st.rerun()
-                except Exception as err:
-                    st.error(f"❌ Erreur lors de la mise à jour des N° de Réception : {err}")
+                            if n_rec in nouveaux_numeros.values():
+                                st.error(f"❌ **Saisie Bloquée** : Le N° de réception `{n_rec}` est saisi en double !")
+                                bloque_doublon = True
+                                break
+                            if verifier_doublon_num_reception(supabase, n_rec, current_beton_id=b_id, projet_id=projet_id_actif):
+                                st.error(f"❌ **Enregistrement Bloqué** : Le N° de réception `{n_rec}` existe déjà dans la base !")
+                                bloque_doublon = True
+                                break
+                            nouveaux_numeros[b_id] = n_rec
+
+                    if not bloque_doublon:
+                        for b_id, n_rec in nouveaux_numeros.items():
+                            try:
+                                supabase.table("suivi_betonnage").update({"num_reception": n_rec}).eq("id", b_id).execute()
+                                succes_rec += 1
+                            except Exception:
+                                try:
+                                    supabase.table("suivi_betonnage").update({"n_reception": n_rec}).eq("id", b_id).execute()
+                                    succes_rec += 1
+                                except Exception as err:
+                                    st.error(f"Erreur d'enregistrement pour #{b_id} : {err}")
+                        if succes_rec > 0:
+                            st.success(f"✅ {succes_rec} N° de Réception enregistré(s) !")
+                            st.rerun()
+
+            with col_rec2:
+                df_visibles = df_edited[df_edited["1-Numero de reception"].str.strip().ne("") & df_edited["1-Numero de reception"].str.strip().ne("-")]
+                st.download_button(
+                    label="📊 Télécharger la liste des réceptions en Excel",
+                    data=exporter_dataframe_excel(df_visibles.drop(columns=["_id_beton"]), "Phase_0"),
+                    file_name=f"Reception_Beton_Phase_0_{date.today()}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True, key="btn_download_reception_excel",
+                )
+
+            # --- MODULE ÉTIQUETTES QR CODE ---
+            st.divider()
+            st.subheader("📱 Étiquettes QR Code")
+            
+            receptions_validees = [b for b in betonnages_preleves if b.get("num_reception") and str(b.get("num_reception")).strip() not in ["", "-", "None"]]
+
+            if not receptions_validees:
+                st.warning("⚠️ Renseignez et enregistrez un **N° de Réception** dans le tableau ci-dessus pour générer les QR Codes.")
+            else:
+                with st.expander("🖨️ Afficher & Imprimer les QR Codes des Éprouvettes", expanded=True):
+                    opt_qr = {f"Réception N° {b.get('num_reception')} | {b.get('ouvrage', '-')} ({extraire_date_coulee(b)})": b for b in receptions_validees}
+                    choix_qr_lab = st.selectbox("Choisir la Réception à étiqueter :", list(opt_qr.keys()), key="select_qr_reception")
+                    b_qr = opt_qr[choix_qr_lab]
+                    rec_num = b_qr.get("num_reception")
+                    nb_ep = int(b_qr.get("nb_eprouvettes") or 12)
+
+                    st.markdown(f"**Génération pour `{rec_num}` ({nb_ep} éprouvettes) :**")
+
+                    base_url = "https://smart-control-beton-lt7pusyvxjehm5kphd7hru.streamlit.app"
+
+                    qr_items = []  # (numero, bytes_png)
+                    cols_qr = st.columns(3)
+                    for i in range(1, nb_ep + 1):
+                        qr_payload = f"{base_url}/?rec={rec_num}&beton_id={b_qr.get('id')}&ep={i}"
+                        qr_bytes = generer_qr_code(qr_payload)
+                        qr_items.append((i, qr_bytes))
+                        with cols_qr[(i - 1) % 3]:
+                            st.caption(f"Éprouvette #{i} / {rec_num}")
+                            st.image(qr_bytes, width=140)
+                            st.download_button(
+                                label=f"📥 QR Épr. #{i}",
+                                data=qr_bytes,
+                                file_name=f"QR_{str(rec_num).replace('/', '_')}_Ep{i}.png",
+                                mime="image/png",
+                                key=f"btn_qr_{b_qr.get('id')}_{i}",
+                                use_container_width=True
+                            )
+
+                    etiquettes_html = "".join(
+                        f"""
+                        <div class="etiquette">
+                          <img src="data:image/png;base64,{base64.b64encode(qr_bytes).decode()}" />
+                          <div class="legende">Éprouvette #{num} / {rec_num}</div>
+                        </div>
+                        """
+                        for num, qr_bytes in qr_items
+                    )
+                    page_impression = f"""
+                    <html>
+                    <head>
+                    <style>
+                      body {{
+                        font-family: Arial, sans-serif;
+                        margin: 0;
+                        padding: 12px;
+                      }}
+                      .barre-actions {{
+                        margin-bottom: 14px;
+                      }}
+                      .barre-actions button {{
+                        background: #FF4B4B;
+                        color: white;
+                        border: none;
+                        padding: 10px 18px;
+                        border-radius: 6px;
+                        font-size: 15px;
+                        cursor: pointer;
+                      }}
+                      .grille {{
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 18px;
+                      }}
+                      .etiquette {{
+                        text-align: center;
+                        width: 150px;
+                        break-inside: avoid;
+                        page-break-inside: avoid;
+                      }}
+                      .etiquette img {{
+                        width: 140px;
+                        height: 140px;
+                      }}
+                      .legende {{
+                        font-size: 12px;
+                        margin-top: 4px;
+                      }}
+                      @media print {{
+                        .barre-actions {{ display: none; }}
+                      }}
+                    </style>
+                    </head>
+                    <body>
+                      <div class="barre-actions">
+                        <button onclick="window.print()">🖨️ Imprimer les étiquettes QR</button>
+                      </div>
+                      <div class="grille">
+                        {etiquettes_html}
+                      </div>
+                    </body>
+                    </html>
+                    """
+                    st.caption(
+                        "Le bouton ci-dessous n'imprime que les étiquettes"
+                        " QR (pas le reste de l'application) :"
+                    )
+                    components.html(page_impression, height=min(250 + 220 * ((nb_ep - 1) // 3 + 1), 900), scrolling=True)
 
     # =========================================================
-    # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES & TYPE D'ESSAI
+    # PHASE 1 : PROGRAMMATION DES ÉCHÉANCES
     # =========================================================
     elif onglet_courant == OPTIONS_ONGLETS[1]:
-        st.subheader("📅 1. Programmer les Échéances & Types d'Essai")
+        st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
         if can_edit:
+            # --- Correction en masse des dates déjà en base (données historiques) ---
+            with st.expander("🔧 Corriger en masse les dates d'écrasement incohérentes", expanded=False):
+                st.caption(
+                    "Recalcule `Date Écrasement Prévue = Date Coulée + Échéance Visée` "
+                    "pour TOUTES les éprouvettes en base, et corrige celles qui ne "
+                    "correspondent pas (ex: échéance modifiée sans mise à jour de la date à l'époque)."
+                )
+                if st.button("🔧 Recalculer et corriger toutes les dates d'écrasement", key="btn_fix_toutes_dates_ecrasement"):
+                    try:
+                        res_fix = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).execute()
+                        toutes_eprouvettes = res_fix.data or []
+                    except Exception as e:
+                        toutes_eprouvettes = []
+                        st.error(f"Erreur lors du chargement : {e}")
+
+                    nb_corrigees = 0
+                    nb_ignorees = 0
+                    for ep_fix in toutes_eprouvettes:
+                        dt_coulee_fix = str(ep_fix.get("date_coulee") or "").strip()
+                        echeance_fix = str(ep_fix.get("echeance") or "").strip()
+                        date_actuelle_fix = str(ep_fix.get("date_ecrasement") or "").strip()
+                        nb_j_fix = extraire_nb_jours(echeance_fix, default=None)
+                        if nb_j_fix is None or not dt_coulee_fix:
+                            nb_ignorees += 1
+                            continue
+                        try:
+                            dt_c_fix = datetime.strptime(dt_coulee_fix[:10], "%Y-%m-%d").date()
+                            date_correcte_fix = str(dt_c_fix + timedelta(days=nb_j_fix))
+                        except (ValueError, TypeError):
+                            nb_ignorees += 1
+                            continue
+
+                        if date_correcte_fix != date_actuelle_fix[:10]:
+                            try:
+                                supabase.table("suivi_controle_beton").update(
+                                    {"date_ecrasement": date_correcte_fix}
+                                ).eq("id", ep_fix["id"]).execute()
+                                nb_corrigees += 1
+                            except Exception as err_fix:
+                                st.error(f"Erreur pour #{ep_fix.get('id')} : {err_fix}")
+
+                    if nb_corrigees > 0:
+                        st.success(f"✅ {nb_corrigees} date(s) d'écrasement corrigée(s) !")
+                        st.rerun()
+                    else:
+                        st.info("👍 Toutes les dates d'écrasement étaient déjà cohérentes.")
+
             with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
                 try:
-                    res_p = supabase.table("suivi_controle_beton").select("*").eq("projet_id", convertir_projet_id(projet_id_actif)).order("id", desc=True).execute()
+                    res_p = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
                     eprouvettes_enregistrees = res_p.data or []
                 except Exception as e:
                     eprouvettes_enregistrees = []
+                    st.error(f"Erreur lors du chargement des programmations : {e}")
 
                 if eprouvettes_enregistrees:
-                    df_key_phase1 = "df_phase1_modification"
-                    
-                    if df_key_phase1 not in st.session_state or len(st.session_state[df_key_phase1]) != len(eprouvettes_enregistrees):
-                        df_display_prog = pd.DataFrame(eprouvettes_enregistrees)
-                        if "type_essai" not in df_display_prog.columns:
-                            df_display_prog["type_essai"] = "Compression"
-                        cols_ed = [c for c in ["id", "ref_controle", "repere_eprouvette", "type_essai", "echeance", "date_ecrasement", "date_coulee", "ouvrage"] if c in df_display_prog.columns]
-                        st.session_state[df_key_phase1] = df_display_prog[cols_ed].copy()
-
-                    editor_phase1_key = f"editor_{df_key_phase1}"
-
-                    # --- RECALCUL INTERACTIF DÈS LA MODIFICATION D'UNE ÉCHEANCE OU DATE DE COULÉE ---
-                    def _recalculer_date_ecrasement_mod_interactive():
-                        editor_state = st.session_state.get(editor_phase1_key, {})
-                        for row_idx, updated_cols in editor_state.get("edited_rows", {}).items():
-                            if "echeance" in updated_cols or "date_coulee" in updated_cols:
-                                nouv_ech = updated_cols.get("echeance", st.session_state[df_key_phase1].at[row_idx, "echeance"])
-                                nouv_coul = updated_cols.get("date_coulee", st.session_state[df_key_phase1].at[row_idx, "date_coulee"])
+                    dates_corrigees_count = 0
+                    for ep in eprouvettes_enregistrees:
+                        parent_beton = map_betonnages.get(ep.get("betonnage_id"))
+                        if parent_beton:
+                            date_coulee_correcte = extraire_date_coulee(parent_beton)
+                            dt_coulee_ep = str(ep.get("date_coulee") or "").strip()
+                            
+                            # Synchronisation automatique
+                            if dt_coulee_ep != date_coulee_correcte:
+                                ep["date_coulee"] = date_coulee_correcte
+                                nb_j = extraire_nb_jours(ep.get("echeance"), default=28)
                                 
-                                st.session_state[df_key_phase1].at[row_idx, "echeance"] = nouv_ech
-                                st.session_state[df_key_phase1].at[row_idx, "date_coulee"] = nouv_coul
-                                
-                                str_coul = str(nouv_coul).strip()
-                                if str_coul and str_coul not in ["-", "None", "NaN", ""]:
-                                    try:
-                                        d_coul = datetime.strptime(str_coul[:10], "%Y-%m-%d").date()
-                                        nb_j = extraire_nb_jours(nouv_ech)
-                                        st.session_state[df_key_phase1].at[row_idx, "date_ecrasement"] = str(d_coul + timedelta(days=nb_j))
-                                    except Exception:
-                                        pass
+                                try:
+                                    dt_c = datetime.strptime(date_coulee_correcte[:10], "%Y-%m-%d").date()
+                                    nouvelle_date_ecrasement = str(dt_c + timedelta(days=nb_j))
+                                    ep["date_ecrasement"] = nouvelle_date_ecrasement
+                                except Exception:
+                                    nouvelle_date_ecrasement = ep.get("date_ecrasement")
 
-                    st.data_editor(
-                        st.session_state[df_key_phase1],
+                                try:
+                                    supabase.table("suivi_controle_beton").update({
+                                        "date_coulee": date_coulee_correcte,
+                                        "date_ecrasement": nouvelle_date_ecrasement
+                                    }).eq("id", ep["id"]).execute()
+                                    dates_corrigees_count += 1
+                                except Exception:
+                                    pass
+
+                    if dates_corrigees_count > 0:
+                        st.success(f"🔄 **Synchronisation effectuée** : {dates_corrigees_count} date(s) de coulée réalignée(s) sur la Phase 0 !")
+
+                    df_edit_prog = pd.DataFrame(eprouvettes_enregistrees)
+                    cols_ed = [c for c in ["id", "betonnage_id", "ref_controle", "repere_eprouvette", "echeance", "date_ecrasement", "date_coulee", "ouvrage", "classe_beton"] if c in df_edit_prog.columns]
+                    df_display_prog = df_edit_prog[cols_ed].copy()
+
+                    etat_editeur_prog = st.session_state.get("editor_modification_phase1", {})
+                    edited_rows_prog = etat_editeur_prog.get("edited_rows", {})
+                    lignes_avec_date_manuelle = set()
+                    for idx_pos, changements in edited_rows_prog.items():
+                        idx_pos = int(idx_pos)
+                        if idx_pos < len(df_display_prog):
+                            for col_maj, val_maj in changements.items():
+                                if col_maj in df_display_prog.columns:
+                                    df_display_prog.iat[idx_pos, df_display_prog.columns.get_loc(col_maj)] = val_maj
+                            if "date_ecrasement" in changements:
+                                lignes_avec_date_manuelle.add(idx_pos)
+
+                    if "date_ecrasement" in df_display_prog.columns and "date_coulee" in df_display_prog.columns:
+                        col_idx_ecras = df_display_prog.columns.get_loc("date_ecrasement")
+                        for idx_pos in range(len(df_display_prog)):
+                            if idx_pos in lignes_avec_date_manuelle:
+                                continue
+                            ech_val = df_display_prog.iloc[idx_pos].get("echeance")
+                            coulee_val = df_display_prog.iloc[idx_pos].get("date_coulee")
+                            nb_j_apercu = extraire_nb_jours(ech_val, default=28)
+                            try:
+                                dt_c_apercu = datetime.strptime(str(coulee_val)[:10], "%Y-%m-%d").date()
+                                df_display_prog.iat[idx_pos, col_idx_ecras] = str(dt_c_apercu + timedelta(days=nb_j_apercu))
+                            except (ValueError, TypeError):
+                                pass
+
+                    df_prog_modifiee = st.data_editor(
+                        df_display_prog,
                         column_config={
                             "id": st.column_config.NumberColumn("ID", disabled=True),
-                            "type_essai": st.column_config.SelectboxColumn("Type d'essai", options=["Compression", "Traction par fendage"]),
+                            "betonnage_id": None,
+                            "ref_controle": st.column_config.TextColumn("Réf. Contrôle (N° Réception)"),
                             "echeance": st.column_config.SelectboxColumn("Échéance Visée", options=["3 jours", "7 jours", "28 jours", "90 jours"]),
-                            "date_ecrasement": st.column_config.TextColumn("Date Écrasement", help="Recalculée automatiquement dès le changement d'échéance"),
+                            "date_coulee": st.column_config.TextColumn("Date Coulée"),
+                            "date_ecrasement": st.column_config.TextColumn(
+                                "Date Écrasement Prévue",
+                                help="Calculée automatiquement = Date Coulée + Échéance Visée",
+                            ),
+                            "ouvrage": st.column_config.TextColumn("Ouvrage", disabled=True),
+                            "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
                         },
-                        use_container_width=True,
-                        hide_index=True,
-                        key=editor_phase1_key,
-                        on_change=_recalculer_date_ecrasement_mod_interactive,
+                        use_container_width=True, hide_index=True, key="editor_modification_phase1",
                     )
 
-                    if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", key="btn_save_mod_prog"):
-                        try:
-                            df_mod = st.session_state[df_key_phase1]
-                            for _, r_m in df_mod.iterrows():
-                                nouvelle_echeance = str(r_m.get("echeance", "")).strip()
-                                str_date_coulee = str(r_m.get("date_coulee", "")).strip()
+                    if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", use_container_width=True, key="btn_save_mod_prog"):
+                        bloque_mod = False
+                        for _, r_m in df_prog_modifiee.iterrows():
+                            ref_ctrl = str(r_m.get("ref_controle", "")).strip()
+                            if ref_ctrl and verifier_doublon_num_reception(supabase, ref_ctrl, current_beton_id=r_m.get("betonnage_id"), projet_id=projet_id_actif):
+                                st.error(f"❌ **Modification Bloquée** : La Réf `{ref_ctrl}` existe déjà !")
+                                bloque_mod = True
+                                break
 
-                                date_ecrasement_calculee = str(r_m.get("date_ecrasement", "")).strip()
-                                if str_date_coulee and str_date_coulee not in ["-", "None", "NaN", ""]:
+                        if not bloque_mod:
+                            orig_par_id_p1 = {ep["id"]: ep for ep in eprouvettes_enregistrees}
+                            nb_succes = 0
+                            for _, r_m in df_prog_modifiee.iterrows():
+                                ep_id, b_id = int(r_m["id"]), r_m.get("betonnage_id")
+                                ref_ctrl = str(r_m.get("ref_controle", "")).strip()
+                                ech_str = str(r_m.get("echeance", "")).strip()
+                                dt_coulee_str = str(r_m.get("date_coulee", "")).strip()
+
+                                dt_ecrasement_val = str(r_m.get("date_ecrasement", "")).strip()
+                                if not dt_ecrasement_val or dt_ecrasement_val.lower() in ["none", "nan", "-", ""]:
+                                    nb_j = extraire_nb_jours(ech_str, default=28)
                                     try:
-                                        d_coulee = datetime.strptime(str_date_coulee[:10], "%Y-%m-%d").date()
-                                        nb_j = extraire_nb_jours(nouvelle_echeance)
-                                        date_ecrasement_calculee = str(d_coulee + timedelta(days=nb_j))
-                                    except Exception:
-                                        pass
+                                        dt_c = datetime.strptime(dt_coulee_str[:10], "%Y-%m-%d").date()
+                                        dt_ecrasement_val = str(dt_c + timedelta(days=nb_j))
+                                    except (ValueError, TypeError):
+                                        dt_ecrasement_val = dt_coulee_str
 
                                 pay = {
-                                    "ref_controle": str(r_m.get("ref_controle", "")).strip(),
+                                    "ref_controle": ref_ctrl,
                                     "repere_eprouvette": str(r_m.get("repere_eprouvette", "")).strip(),
-                                    "type_essai": str(r_m.get("type_essai", "Compression")),
-                                    "echeance": nouvelle_echeance,
-                                    "date_coulee": str_date_coulee,
-                                    "date_ecrasement": date_ecrasement_calculee,
+                                    "echeance": ech_str,
+                                    "date_coulee": dt_coulee_str,
+                                    "date_ecrasement": dt_ecrasement_val,
                                 }
-                                executer_update_eprouvette(supabase, int(r_m["id"]), pay)
-                                
-                            st.session_state.pop(df_key_phase1, None)
-                            st.success("✅ Modifications enregistrées et dates d'écrasement mises à jour dans la base !")
-                            st.rerun()
-                        except Exception as err:
-                            st.error(f"❌ Erreur de mise à jour dans la base de données : {err}")
+                                try:
+                                    orig_row_p1 = orig_par_id_p1.get(ep_id, {})
+                                    supabase.table("suivi_controle_beton").update(pay).eq("id", ep_id).execute()
+                                    enregistrer_modification(
+                                        supabase,
+                                        table_concernee="suivi_controle_beton",
+                                        enregistrement_id=ep_id,
+                                        action="MODIFICATION",
+                                        anciennes_valeurs={k: orig_row_p1.get(k) for k in pay},
+                                        nouvelles_valeurs=pay,
+                                        commentaire="Ajustement de programmation (Phase 1)",
+                                    )
+                                    if b_id:
+                                        try: supabase.table("suivi_betonnage").update({"num_reception": ref_ctrl}).eq("id", b_id).execute()
+                                        except Exception: pass
+                                    nb_succes += 1
+                                except Exception as err:
+                                    st.error(f"Erreur pour #{ep_id} : {err}")
+                            if nb_succes > 0:
+                                st.success(f"✅ {nb_succes} programmation(s) mise(s) à jour avec recalcul automatique de la date d'écrasement !")
+                                st.rerun()
+
+                    st.markdown("---")
+                    st.markdown("##### 🗑️ Supprimer une ou plusieurs éprouvettes programmées par erreur")
+                    st.caption(
+                        "Utile si tu as saisi le mauvais nombre d'éprouvettes lors de la"
+                        " programmation (ex : 12 attendues, mais des éprouvettes en trop"
+                        " ont été ajoutées par erreur)."
+                    )
+
+                    lots_pour_suppression = {}
+                    for ep in eprouvettes_enregistrees:
+                        cle_lot_suppr = (
+                            f"{ep.get('ref_controle', '-')} — {ep.get('ouvrage', '-')}"
+                            f" (Lot #{ep.get('betonnage_id')})"
+                        )
+                        lots_pour_suppression.setdefault(cle_lot_suppr, []).append(ep)
+
+                    labels_lots_suppr = [
+                        f"{cle} — {len(eps)} éprouvette(s)"
+                        for cle, eps in lots_pour_suppression.items()
+                    ]
+                    mapping_label_vers_cle_lot = dict(
+                        zip(labels_lots_suppr, lots_pour_suppression.keys())
+                    )
+
+                    lot_choisi_suppr = st.selectbox(
+                        "1️⃣ Choisir le lot",
+                        options=labels_lots_suppr,
+                        key="select_lot_suppr_prog",
+                    )
+                    eprouvettes_du_lot_suppr = lots_pour_suppression.get(
+                        mapping_label_vers_cle_lot.get(lot_choisi_suppr), []
+                    )
+
+                    options_suppr = {
+                        f"#{ep['id']} — {ep.get('repere_eprouvette', '-')}"
+                        f" ({ep.get('echeance', '-')}, prévu le {ep.get('date_ecrasement', '-')})": ep["id"]
+                        for ep in eprouvettes_du_lot_suppr
+                    }
+                    choix_suppr = st.multiselect(
+                        "2️⃣ Choisir la ou les éprouvette(s) à supprimer dans ce lot",
+                        options=list(options_suppr.keys()),
+                        key="multiselect_suppr_prog",
+                    )
+                    if choix_suppr:
+                        st.warning(
+                            f"⚠️ {len(choix_suppr)} éprouvette(s) sélectionnée(s) pour"
+                            " suppression **définitive**. Cette action est irréversible."
+                        )
+                        confirmer_suppr = st.checkbox(
+                            "Je confirme vouloir supprimer définitivement ces éprouvettes",
+                            key="confirm_suppr_prog",
+                        )
+                        if st.button(
+                            "🗑️ Supprimer les éprouvettes sélectionnées",
+                            type="primary",
+                            disabled=not confirmer_suppr,
+                            key="btn_suppr_prog",
+                        ):
+                            orig_par_id_suppr = {ep["id"]: ep for ep in eprouvettes_enregistrees}
+                            nb_suppr = 0
+                            for label in choix_suppr:
+                                ep_id_suppr = options_suppr[label]
+                                try:
+                                    ep_avant_suppr = orig_par_id_suppr.get(ep_id_suppr, {})
+                                    supabase.table("suivi_controle_beton").delete().eq("id", ep_id_suppr).execute()
+                                    enregistrer_modification(
+                                        supabase,
+                                        table_concernee="suivi_controle_beton",
+                                        enregistrement_id=ep_id_suppr,
+                                        action="SUPPRESSION",
+                                        anciennes_valeurs={k: v for k, v in ep_avant_suppr.items() if k != "id"},
+                                        commentaire="Suppression d'une éprouvette programmée par erreur (Phase 1)",
+                                    )
+                                    nb_suppr += 1
+                                except Exception as err_suppr:
+                                    st.error(f"Erreur lors de la suppression de {label} : {err_suppr}")
+                            if nb_suppr > 0:
+                                st.success(f"✅ {nb_suppr} éprouvette(s) supprimée(s).")
+                                st.rerun()
+        else:
+            st.info("🔒 **Accès restreint :** La modification nécessite le droit `can_edit`.")
 
         st.divider()
         st.subheader("➕ Ajouter une Nouvelle Programmation")
 
-        if betonnages_preleves:
-            options_beton = {f"N° Réception: {b.get('num_reception')} | Ouvrage: {b.get('ouvrage')}": b for b in betonnages_preleves if b.get('num_reception')}
-            if options_beton:
-                choix_label_p = st.selectbox("Sélectionner la fiche de bétonnage :", list(options_beton.keys()), key="prog_beton_select")
-                beton_p = options_beton[choix_label_p]
-                b_id = beton_p.get("id")
+        prog_counts = {}
+        try:
+            res_deja = supabase.table("suivi_controle_beton").select("betonnage_id").eq("projet_id", projet_id_actif).execute()
+            for r in (res_deja.data or []):
+                b_id_v = r.get("betonnage_id")
+                if b_id_v: prog_counts[b_id_v] = prog_counts.get(b_id_v, 0) + 1
+        except Exception as e:
+            st.warning(f"Note lors du contrôle des quotas : {e}")
 
-                nb_ep_prelevees = int(beton_p.get("nb_eprouvettes") or 12)
+        betonnages_non_programmes, fiches_sans_num_reception = [], []
+        for b in betonnages_preleves:
+            num_rec = str(b.get("num_reception") or b.get("n_reception") or "").strip()
+            if not num_rec or num_rec.upper() in ["-", "NONE", "NAN", "N/A", "NULL"]:
+                fiches_sans_num_reception.append(b)
+                continue
+            total_prevu = int(b.get("nb_eprouvettes") or 12)
+            if (total_prevu - prog_counts.get(b.get("id"), 0)) > 0 or mode_admin:
+                betonnages_non_programmes.append(b)
 
-                try:
-                    res_ep_exist = supabase.table("suivi_controle_beton").select("id, echeance").eq("betonnage_id", int(b_id)).execute()
-                    eprouvettes_programmées_exist = res_ep_exist.data or []
-                except Exception as e:
-                    eprouvettes_programmées_exist = []
+        if fiches_sans_num_reception:
+            st.warning(f"⚠️ **{len(fiches_sans_num_reception)} fiche(s)** manquent de **N° de Réception**. Allez dans l'onglet Phase 0 pour le saisir.")
 
-                nb_ep_consommees = len(eprouvettes_programmées_exist)
-                nb_ep_restantes = max(0, nb_ep_prelevees - nb_ep_consommees)
-                echeances_deja_programmees = {str(item.get("echeance")).strip() for item in eprouvettes_programmées_exist if item.get("echeance")}
+        if betonnages_non_programmes:
+            options_beton = {
+                f"N° Réception: {b.get('num_reception') or b.get('n_reception')} | Date Coulée: {extraire_date_coulee(b)} | Classe: {b.get('classe_beton', 'N/A')} | Ouvrage: {b.get('ouvrage', 'N/A')} | BL: {extraire_num_bl(b)}": b
+                for b in betonnages_non_programmes
+            }
+            choix_label_p = st.selectbox("Sélectionner la fiche de bétonnage :", list(options_beton.keys()), key="prog_beton_select")
+            beton_p = options_beton[choix_label_p]
+            b_id = beton_p.get("id")
 
-                col_m1, col_m2, col_m3 = st.columns(3)
-                col_m1.metric("Éprouvettes Confectionnées", nb_ep_prelevees)
-                col_m2.metric("Éprouvettes Déjà Programmées", nb_ep_consommees)
-                col_m3.metric("Éprouvettes Restantes", nb_ep_restantes)
+            num_reception_p = beton_p.get("num_reception") or beton_p.get("n_reception")
+            num_bl_p = extraire_num_bl(beton_p, choix_label_p)
+            ouvrage_p, classe_beton_p = str(beton_p.get("ouvrage") or "-"), str(beton_p.get("classe_beton") or "-")
+            total_eprouvettes_prevues = int(beton_p.get("nb_eprouvettes") or 12)
+            eprouvettes_deja_prog = prog_counts.get(b_id, 0)
+            solde_disponible = max(0, total_eprouvettes_prevues - eprouvettes_deja_prog)
 
-                if nb_ep_restantes <= 0:
-                    st.error("⚠️ La capacité totale d'éprouvettes pour cette fiche de bétonnage a été atteinte. Impossible d'ajouter de nouvelles programmations.")
-                else:
-                    col_type, col_ech = st.columns(2)
-                    type_essai_p = col_type.selectbox("🧪 Type d'Essai", ["Compression", "Traction par fendage"], key=f"p_type_essai_{b_id}")
-                    
-                    echeances_disponibles = ["3 jours", "7 jours", "28 jours", "90 jours"]
-                    echeance_p = col_ech.selectbox("Âge / Échéance visée", echeances_disponibles, key=f"p_echeance_{b_id}")
+            date_coulee_raw = extraire_date_coulee(beton_p)
+            try: date_coulee_p = datetime.strptime(date_coulee_raw, "%Y-%m-%d").date()
+            except Exception: date_coulee_p = date.today()
 
-                    if str(echeance_p).strip() in echeances_deja_programmees:
-                        st.warning(f"❌ L'échéance **{echeance_p}** a DEJÀ été programmée pour ce lot/prélèvement. Saisie en double non autorisée.")
-                    else:
-                        date_coulee_p = datetime.strptime(extraire_date_coulee(beton_p), "%Y-%m-%d").date()
-                        nb_j = extraire_nb_jours(echeance_p)
-                        date_ecrasement_prevue = date_coulee_p + timedelta(days=nb_j)
+            st.markdown("---")
+            st.info(f"📌 **N° Réception : {num_reception_p}** | Total prévu : **{total_eprouvettes_prevues}** | Déjà programmée(s) : **{eprouvettes_deja_prog}** | Reste : **{solde_disponible}**")
 
-                        default_val_input = min(3, nb_ep_restantes)
-                        nb_eprouvettes_p = st.number_input(
-                            f"Nombre d'éprouvettes à programmer (Max autorisés: {nb_ep_restantes})",
-                            min_value=1,
-                            max_value=int(nb_ep_restantes),
-                            value=int(default_val_input),
-                            key=f"p_nb_ep_{b_id}"
-                        )
-                        forme_p = st.selectbox("Forme", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
+            ref_value = num_reception_p if num_reception_p and str(num_reception_p).strip() not in ["", "-", "None", "NaN", "N/A"] else determiner_ref_controle(supabase, b_id, beton_p, {})
+            ref_controle_p = st.text_input("🏷️ Référence de Contrôle", value=ref_value, disabled=True, key=f"p_ref_ctrl_{b_id}")
+            st.session_state[f"ref_controle_beton_{b_id}"] = ref_controle_p
 
-                        if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True):
-                            if int(nb_eprouvettes_p) > nb_ep_restantes:
-                                st.error(f"❌ Vous tentez de programmer {nb_eprouvettes_p} éprouvettes, mais il n'en reste que {nb_ep_restantes} disponibles !")
-                            else:
-                                try:
-                                    start_index = nb_ep_consommees + 1
-                                    for i in range(int(nb_eprouvettes_p)):
-                                        index_eprouvette = start_index + i
-                                        pay = {
-                                            "betonnage_id": int(b_id),
-                                            "type_essai": str(type_essai_p),
-                                            "num_bl": str(extraire_num_bl(beton_p)),
-                                            "ouvrage": str(beton_p.get("ouvrage", "")),
-                                            "classe_beton": str(beton_p.get("classe_beton", "")),
-                                            "date_coulee": str(date_coulee_p),
-                                            "echeance": str(echeance_p),
-                                            "date_ecrasement": str(date_ecrasement_prevue),
-                                            "ref_controle": str(beton_p.get("num_reception", "")),
-                                            "repere_eprouvette": f"/{index_eprouvette}",
-                                            "forme": str(forme_p),
-                                            "projet_id": convertir_projet_id(projet_id_actif),
-                                        }
-                                        supabase.table("suivi_controle_beton").insert(pay).execute()
-                                    st.success(f"✅ {nb_eprouvettes_p} éprouvette(s) programmée(s) avec succès !")
-                                    st.rerun()
-                                except Exception as err:
-                                    st.error(f"❌ Erreur lors de l'insertion dans Supabase : {err}")
+            st.markdown("---")
+            col1, col2, col3 = st.columns(3)
+            col1.text_input("N° Bon de Livraison (BL)", value=num_bl_p, disabled=True, key=f"p_bl_{b_id}")
+            col2.text_input("Ouvrage / Élément", value=ouvrage_p, disabled=True, key=f"p_ouv_{b_id}")
+            col3.text_input("Classe de Béton Spécifiée", value=classe_beton_p, disabled=True, key=f"p_classe_{b_id}")
+
+            options_echeances = ["3 jours", "7 jours", "28 jours", "90 jours"]
+            echeance_p = st.selectbox("Âge / Échéance visée", options_echeances, key=f"p_echeance_{b_id}")
+            
+            df_calcul_single = pd.DataFrame([{
+                'Date Coulée': str(date_coulee_p),
+                'Échéance Visée': echeance_p
+            }])
+            df_calcul_single_res = calculer_date_ecrasement(df_calcul_single)
+            date_ecrasement_calculee = datetime.strptime(df_calcul_single_res.at[0, 'Date Écrasement Prévue'], "%Y-%m-%d").date()
+
+            nb_j = extraire_nb_jours(echeance_p, default=28)
+
+            col_e1, col_e2, col_e3 = st.columns(3)
+            col_e1.date_input("Date de Coulée (Phase 0)", value=date_coulee_p, disabled=True, key=f"p_date_coul_{b_id}")
+            
+            date_ecrasement_prevue = col_e2.date_input("Date d'Écrasement Prévue", value=date_ecrasement_calculee, key=f"p_date_ecras_{b_id}_{nb_j}j")
+            
+            max_allowed = solde_disponible if not mode_admin else 50
+            nb_eprouvettes_p = col_e3.number_input("Nombre d'éprouvettes", min_value=(1 if max_allowed > 0 else 0), max_value=max_allowed, value=min(3, max_allowed) if max_allowed >= 3 else max_allowed, key=f"p_nb_ep_{b_id}_{nb_j}j")
+
+            forme_p = st.selectbox("Type / Forme d'éprouvette", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
+            sect_def = 176.71 if "150x300" in forme_p else (201.06 if "160x320" in forme_p else 78.54)
+
+            if int(nb_eprouvettes_p) > 0:
+                st.markdown("##### 🏷️ Repères codés des éprouvettes")
+                reperes_p = []
+                cols_rep = st.columns(min(int(nb_eprouvettes_p), 6))
+                for i in range(int(nb_eprouvettes_p)):
+                    with cols_rep[i % 6]:
+                        rep_val = st.text_input(f"Repère #{eprouvettes_deja_prog + i + 1}", value=f"/{eprouvettes_deja_prog + i + 1}", key=f"prog_rep_{b_id}_{nb_j}j_{i}")
+                        reperes_p.append(rep_val)
+
+                if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}_{nb_j}j"):
+                    try: supabase.table("suivi_betonnage").update({"ref_controle": ref_controle_p}).eq("id", b_id).execute()
+                    except Exception: pass
+
+                    succes_cnt = 0
+                    for rep in reperes_p:
+                        pay = {
+                            "betonnage_id": b_id, "num_bl": num_bl_p, "ouvrage": ouvrage_p, "classe_beton": classe_beton_p,
+                            "date_coulee": str(date_coulee_p), "echeance": echeance_p, "date_ecrasement": str(date_ecrasement_prevue),
+                            "ref_controle": ref_controle_p, "repere_eprouvette": rep, "forme": forme_p, "section": float(sect_def),
+                            "projet_id": projet_id_actif,
+                        }
+                        try:
+                            res_ins_prog = supabase.table("suivi_controle_beton").insert(pay).execute()
+                            if res_ins_prog.data:
+                                succes_cnt += 1
+                                nouvel_id_prog = res_ins_prog.data[0].get("id")
+                                enregistrer_modification(
+                                    supabase,
+                                    table_concernee="suivi_controle_beton",
+                                    enregistrement_id=nouvel_id_prog,
+                                    action="CREATION",
+                                    nouvelles_valeurs=pay,
+                                    commentaire="Programmation d'une nouvelle éprouvette",
+                                )
+                        except Exception as err: st.error(f"Erreur pour {rep} : {err}")
+
+                    if succes_cnt > 0:
+                        st.success(f"✅ {succes_cnt} éprouvette(s) programmée(s) pour le {date_ecrasement_prevue} ({echeance_p}) !")
+                        st.rerun()
 
     # =========================================================
     # PHASE 2 : PLANNING & SAISIE DES ÉCRASEMENTS
@@ -1099,100 +1582,395 @@ def show(supabase):
     elif onglet_courant == OPTIONS_ONGLETS[2]:
         st.subheader("💥 2. Planning des Échéances & Saisie des Écrasements")
 
+        scan_rec = st.session_state.get("pending_qr_rec")
+        scan_b_id = st.session_state.get("pending_qr_bid")
+        if scan_rec or scan_b_id:
+            col_qr_info, col_qr_btn = st.columns([4, 1])
+            col_qr_info.success(f"🎯 **Accès direct QR Code actif** (Réception / ID : `{scan_rec or scan_b_id}`)")
+            if col_qr_btn.button("✖ Revenir au normal", use_container_width=True):
+                st.session_state.pop("pending_qr_rec", None)
+                st.session_state.pop("pending_qr_bid", None)
+                st.session_state.pop("qr_nav_applied", None)
+                st.rerun()
+
+        today_date = date.today()
+        today_str = str(today_date)
+
+        date_filtre = st.date_input("📅 Choisir une date à consulter", value=today_date, key="filtre_date_planning")
+        date_filtre_str = str(date_filtre)
+        debut_semaine = date_filtre - timedelta(days=date_filtre.weekday())
+        fin_semaine = debut_semaine + timedelta(days=6)
+
+        # Retards
         try:
-            res_att = supabase.table("suivi_controle_beton").select("*").eq("projet_id", convertir_projet_id(projet_id_actif)).or_("force_kn.is.null,force_kn.eq.0").order("id", desc=False).execute()
-            eprouvettes_en_attente = res_att.data or []
+            res_retards = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).lte("date_ecrasement", today_str).or_("force_kn.is.null,force_kn.eq.0").order("date_ecrasement", desc=False).execute()
+            retards_list = res_retards.data or []
+        except Exception as e:
+            retards_list = []
+            st.warning(f"Note retards : {e}")
+
+        if retards_list:
+            st.error(f"🚨 **ATTENTION : {len(retards_list)} éprouvette(s) non écrasée(s) ont atteint ou dépassé leur date d'échéance !**")
+            rows_retard = []
+            for ep in retards_list:
+                row = _format_ep_row(ep, date_ref=today_date)
+                dt_e = datetime.strptime(str(ep.get("date_ecrasement"))[:10], "%Y-%m-%d").date() if ep.get("date_ecrasement") else today_date
+                priorite = f"⚠️ En Retard ({(today_date - dt_e).days} jour(s))" if dt_e < today_date else "🔥 Prévu Aujourd'hui"
+                rows_retard.append({
+                    "Priorité": priorite, "Date Écrasement Prévue": row["Date Écrasement Prévue"],
+                    "Référence / Repère": row["Référence / Repère"], "N° BL": row["N° BL"], "Ouvrage": row["Ouvrage"],
+                    "Classe Béton": row["Classe Béton"], "Date Coulée": row["Date Coulée"], "Échéance Visée": row["Échéance Visée"], "Âge Actuel Réel": row["Âge Théorique"]
+                })
+            st.dataframe(pd.DataFrame(rows_retard), use_container_width=True, hide_index=True)
+            st.markdown("---")
+
+        # Jour et Semaine
+        try:
+            eprouvettes_date_sel = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).eq("date_ecrasement", date_filtre_str).order("id", desc=False).execute().data or []
+            eprouvettes_semaine = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).gte("date_ecrasement", str(debut_semaine)).lte("date_ecrasement", str(fin_semaine)).order("date_ecrasement", desc=False).execute().data or []
+        except Exception as e:
+            eprouvettes_date_sel, eprouvettes_semaine = [], []
+            st.warning(f"Note chargement planning : {e}")
+
+        df_sel = pd.DataFrame([_format_ep_row(ep) for ep in eprouvettes_date_sel])
+        df_semaine = pd.DataFrame([_format_ep_row(ep) for ep in eprouvettes_semaine])
+
+        with st.expander(f"📆 Éprouvettes programmées spécifiquement pour le : {date_filtre_str} ({len(eprouvettes_date_sel)} éprouvette(s))", expanded=True):
+            if not df_sel.empty: st.dataframe(df_sel, use_container_width=True, hide_index=True)
+            else: st.info(f"ℹ️ Aucune éprouvette programmée pour le {date_filtre_str}.")
+
+            st.markdown("---")
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                if not df_sel.empty:
+                    st.download_button(f"📊 Télécharger la liste du jour ({date_filtre_str})", exporter_dataframe_excel(df_sel, date_filtre_str), file_name=f"Planning_Ecrasement_{date_filtre_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="btn_download_planning_excel")
+            with col_exp2:
+                if not df_semaine.empty:
+                    st.download_button(f"📅 Télécharger la liste de la semaine ({debut_semaine} au {fin_semaine})", exporter_dataframe_excel(df_semaine, f"Sem_{debut_semaine}"), file_name=f"Planning_Semaine_{debut_semaine}_au_{fin_semaine}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="btn_download_planning_semaine_excel")
+
+        st.markdown("---")
+
+        try:
+            if mode_admin:
+                res_att = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).order("id", desc=False).execute()
+                eprouvettes_en_attente = res_att.data or []
+            else:
+                res_att = (
+                    supabase.table("suivi_controle_beton")
+                    .select("*")
+                    .eq("projet_id", projet_id_actif)
+                    .or_("force_kn.is.null,force_kn.eq.0")
+                    .order("id", desc=False)
+                    .execute()
+                )
+                eprouvettes_en_attente = res_att.data or []
         except Exception as e:
             eprouvettes_en_attente = []
+            st.error(f"Erreur de chargement des essais : {e}")
 
         if not eprouvettes_en_attente:
             st.info("👍 Aucune éprouvette en attente de saisie.")
         else:
             groupes_lots = {}
-            for ep in eprouvettes_en_attente:
-                ref_ctrl = ep.get("ref_controle", "N/A")
-                t_essai = ep.get("type_essai", "Compression")
-                cle_groupe = f"Réf: {ref_ctrl} | Type: {t_essai} | Échéance: {ep.get('echeance')} | Ouvrage: {ep.get('ouvrage')} (Lot #{ep.get('betonnage_id')})"
-                groupes_lots.setdefault(cle_groupe, []).append(ep)
+            index_selectionne = 0
 
-            choix_lot = st.selectbox("📦 Sélectionner le lot à écraser :", list(groupes_lots.keys()))
-            lot_selected = groupes_lots[choix_lot]
-
-            st.markdown("##### 📝 Saisie des Forces de Rupture (kN)")
-
-            type_essai_lot = st.radio("Type d'essai pour ce lot :", ["Compression", "Traction par fendage"], index=0 if lot_selected[0].get("type_essai") != "Traction par fendage" else 1, horizontal=True)
-
-            df_saisie_key = f"df_saisie_p2_{lot_selected[0].get('betonnage_id')}_{lot_selected[0].get('echeance')}"
-
-            if df_saisie_key not in st.session_state or len(st.session_state[df_saisie_key]) != len(lot_selected):
-                rows_saisie = []
-                for ep in lot_selected:
-                    f_kn = float(ep.get("force_kn") or 0.0)
-                    forme_ep = ep.get("forme", "Cylindrique 150x300")
-                    fc_calc = calculer_resistance_mpa(f_kn, type_essai_lot, forme_ep)
-                    rows_saisie.append({
-                        "ID": ep["id"],
-                        "Repère": ep.get("repere_eprouvette"),
-                        "Type Essai": type_essai_lot,
-                        "Forme": forme_ep,
-                        "Force (kN)": f_kn,
-                        "Résistance (MPa)": fc_calc,
-                    })
-                st.session_state[df_saisie_key] = pd.DataFrame(rows_saisie)
-
-            editor_p2_key = f"editor_p2_{df_saisie_key}"
-
-            def _maj_resistance_phase2():
-                editor_state = st.session_state.get(editor_p2_key, {})
-                for row_idx, updated_cols in editor_state.get("edited_rows", {}).items():
-                    if "Force (kN)" in updated_cols or "Type Essai" in updated_cols:
-                        try:
-                            new_force = float(updated_cols.get("Force (kN)", st.session_state[df_saisie_key].at[row_idx, "Force (kN)"]))
-                        except (ValueError, TypeError):
-                            new_force = 0.0
-                        t_essai = type_essai_lot
-                        forme_v = st.session_state[df_saisie_key].at[row_idx, "Forme"]
-
-                        st.session_state[df_saisie_key].at[row_idx, "Force (kN)"] = new_force
-                        st.session_state[df_saisie_key].at[row_idx, "Résistance (MPa)"] = calculer_resistance_mpa(new_force, t_essai, forme_v)
-
-            st.data_editor(
-                st.session_state[df_saisie_key],
-                column_config={
-                    "ID": None,
-                    "Forme": None,
-                    "Repère": st.column_config.TextColumn("Repère", disabled=True),
-                    "Type Essai": st.column_config.TextColumn("Type d'essai", disabled=True),
-                    "Force (kN)": st.column_config.NumberColumn("⚡ Force (kN)", min_value=0.0, max_value=3000.0, step=0.1, format="%.1f"),
-                    "Résistance (MPa)": st.column_config.NumberColumn("Résistance (MPa)", disabled=True, format="%.2f"),
-                },
-                use_container_width=True,
-                hide_index=True,
-                key=editor_p2_key,
-                on_change=_maj_resistance_phase2,
+            parents_dict = obtenir_infos_betonnage_parents_bulk(
+                supabase, [ep.get("betonnage_id") for ep in eprouvettes_en_attente]
             )
 
-            if st.button("💾 Enregistrer la Saisie du Lot", type="primary", use_container_width=True):
-                try:
-                    df_to_save = st.session_state[df_saisie_key]
-                    for _, r in df_to_save.iterrows():
-                        f_kn = float(r["Force (kN)"])
-                        if f_kn > 0:
-                            fc_val = float(calculer_resistance_mpa(f_kn, type_essai_lot, r["Forme"]))
-                            pay_update = {
-                                "force_kn": f_kn,
-                                "fc_mpa": fc_val,
-                                "type_essai": str(type_essai_lot),
-                                "date_ecrasement": str(date.today()),
-                                "technicien": str(st.session_state.get("username", "Technicien")),
-                            }
-                            executer_update_eprouvette(supabase, int(r["ID"]), pay_update)
+            for idx_key, ep in enumerate(eprouvettes_en_attente):
+                dt_ecras_str = str(ep.get("date_ecrasement") or "")[:10]
+                
+                if not mode_admin and dt_ecras_str:
+                    try:
+                        dt_ecras_obj = datetime.strptime(dt_ecras_str, "%Y-%m-%d").date()
+                        if dt_ecras_obj > today_date:
+                            is_scanned = (scan_rec and str(scan_rec).strip().lower() in str(ep.get("ref_controle") or "").lower()) or \
+                                         (scan_b_id and str(scan_b_id).strip() == str(ep.get("betonnage_id")).strip())
+                            if not is_scanned:
+                                continue
+                    except Exception:
+                        pass
 
-                    st.session_state.pop(df_saisie_key, None)
-                    st.success("✅ Résultats enregistrés avec succès !")
-                    st.rerun()
-                except Exception as err:
-                    st.error(f"❌ Échec de l'enregistrement PostgREST / Supabase : {err}")
+                b_id_ep = ep.get("betonnage_id")
+                info_b_temp = parents_dict.get(b_id_ep, {})
+                ref_ctrl = determiner_ref_controle(supabase, b_id_ep, info_b_temp, ep)
+                num_rec_parent = str((info_b_temp or {}).get("num_reception") or "").strip()
+                classe_ep = ep.get("classe_beton") or (info_b_temp.get("classe_beton") if info_b_temp else "-")
+                
+                prefixe_retard = ""
+                if dt_ecras_str:
+                    try:
+                        dt_e = datetime.strptime(dt_ecras_str, "%Y-%m-%d").date()
+                        if dt_e < today_date:
+                            prefixe_retard = f"🚨 [RETARD {(today_date - dt_e).days}j] "
+                        elif dt_e == today_date:
+                            prefixe_retard = "⚠️ [À ÉCRASER AUJOURD'HUI] "
+                    except Exception:
+                        pass
+
+                cle_groupe = f"{prefixe_retard}Référence : {ref_ctrl} | Classe : {classe_ep} | Ouvrage : {ep.get('ouvrage', '-')} | Échéance : {ep.get('echeance', '28 jours')} (Date Prévue : {dt_ecras_str or '-'}) | Lot ID #{b_id_ep}"
+
+                if cle_groupe not in groupes_lots:
+                    if scan_rec and (str(scan_rec).strip().lower() in ref_ctrl.lower() or str(scan_rec).strip().lower() in num_rec_parent.lower()):
+                        index_selectionne = len(groupes_lots)
+                    elif scan_b_id and str(scan_b_id).strip() == str(b_id_ep).strip():
+                        index_selectionne = len(groupes_lots)
+                    groupes_lots[cle_groupe] = []
+
+                groupes_lots[cle_groupe].append(ep)
+
+            options_lots = list(groupes_lots.keys())
+
+            if not options_lots:
+                st.info("ℹ️ Aucune éprouvette à écraser pour la date d'aujourd'hui ou en retard.")
+            else:
+                index_defaut = min(index_selectionne, len(options_lots) - 1) if options_lots else 0
+
+                choix_lot = st.selectbox("📦 Sélectionner le lot d'éprouvettes à écraser / modifier :", options_lots, index=index_defaut, key="select_lot_saisie")
+                lot_selected = groupes_lots[choix_lot]
+                sample = lot_selected[0]
+                betonnage_id = sample.get("betonnage_id")
+
+                info_betonnage = parents_dict.get(betonnage_id, {}) or obtenir_infos_betonnage_parent(supabase, betonnage_id)
+                historique_complet = obtenir_historique_betonnage(supabase, betonnage_id)
+                exact_bl_phase1 = extraire_num_bl(sample, info_betonnage or {}, choix_lot)
+                num_reception_affiche = sample.get("num_reception") or sample.get("n_reception") or ((info_betonnage or {}).get("num_reception") or "-")
+
+                col_l1, col_l2, col_l3, col_l4 = st.columns(4)
+                col_l1.metric("N° Réception", str(num_reception_affiche))
+                col_l2.metric("N° Bon Livraison", exact_bl_phase1)
+                col_l3.metric("Ouvrage", str(((info_betonnage or {}).get("ouvrage")) or sample.get("ouvrage") or "-"))
+                col_l4.metric("Échéance Visée", str(sample.get("echeance", "-")))
+
+                if extraire_nb_jours(sample.get("echeance"), default=28) == 28:
+                    ep_7j_rappel = [
+                        e for e in (historique_complet or [])
+                        if extraire_nb_jours(e.get("echeance")) == 7
+                    ]
+                    st.warning(
+                        f"🔔 **Rappel** — Résultats à 7 jours déjà enregistrés pour"
+                        f" ce même lot (Réf: {exact_bl_phase1 or num_reception_affiche}) :"
+                    )
+                    if ep_7j_rappel:
+                        rows_rappel_7j = []
+                        for e in ep_7j_rappel:
+                            sec_r = float(e.get("section") or 176.71)
+                            f_kn_r = float(e.get("force_kn") or 0.0)
+                            fc_r = float(
+                                e.get("fc_mpa")
+                                or (round((f_kn_r * 10.0) / sec_r, 1) if f_kn_r > 0 else 0.0)
+                            )
+                            rows_rappel_7j.append({
+                                "Repère": e.get("repere_eprouvette", "-"),
+                                "Date Écrasement": e.get("date_ecrasement", "-"),
+                                "Force (kN)": f_kn_r,
+                                "Résistance (MPa)": fc_r,
+                            })
+                        st.dataframe(
+                            pd.DataFrame(rows_rappel_7j), use_container_width=True, hide_index=True
+                        )
+                    else:
+                        st.caption("Aucun écrasement à 7 jours n'a encore été enregistré pour ce lot.")
+
+                scan_ep = st.session_state.get("pending_qr_ep")
+                eprouvette_ciblee = None
+                if scan_ep:
+                    for ep_c in lot_selected:
+                        rep_c = str(ep_c.get("repere_eprouvette", "")).strip()
+                        if rep_c in (f"/{scan_ep}", str(scan_ep)):
+                            eprouvette_ciblee = ep_c
+                            break
+
+                if eprouvette_ciblee is not None:
+                    st.markdown("---")
+                    st.success(f"🎯 **Saisie rapide — Éprouvette {eprouvette_ciblee.get('repere_eprouvette', '?')}** (scannée)")
+                    col_q1, col_q2, col_q3 = st.columns([1.5, 2, 1.5])
+                    with col_q1:
+                        st.metric("Repère", eprouvette_ciblee.get("repere_eprouvette", "-"))
+                    with col_q2:
+                        force_rapide = st.number_input(
+                            "⚡ Force (kN) — saisie directe",
+                            min_value=0.0, max_value=3000.0, step=0.1,
+                            value=float(eprouvette_ciblee.get("force_kn") or 0.0),
+                            key=f"force_rapide_{eprouvette_ciblee['id']}",
+                        )
+                    with col_q3:
+                        st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+                        if st.button("💾 Enregistrer cette éprouvette", type="primary", use_container_width=True, key=f"btn_save_rapide_{eprouvette_ciblee['id']}"):
+                            sec_q = float(eprouvette_ciblee.get("section") or 176.71)
+                            fc_q = round((force_rapide * 10.0) / sec_q, 1) if sec_q > 0 and force_rapide > 0 else 0.0
+                            try:
+                                me_user = st.session_state.get("username") or user_info.get("username") or "Technicien"
+                                me_date = str(date.today())
+                                me_pay = {
+                                    "force_kn": force_rapide,
+                                    "fc_mpa": fc_q,
+                                    "date_essai": me_date,
+                                    "technicien": me_user,
+                                }
+                                me_anc = {
+                                    "force_kn": float(eprouvette_ciblee.get("force_kn") or 0.0),
+                                    "fc_mpa": float(eprouvette_ciblee.get("fc_mpa") or 0.0),
+                                }
+                                supabase.table("suivi_controle_beton").update(me_pay).eq("id", eprouvette_ciblee["id"]).execute()
+                                enregistrer_modification(
+                                    supabase,
+                                    table_concernee="suivi_controle_beton",
+                                    enregistrement_id=eprouvette_ciblee["id"],
+                                    action="SAISIE_RAPIDE",
+                                    anciennes_valeurs=me_anc,
+                                    nouvelles_valeurs=me_pay,
+                                    commentaire="Saisie rapide par scan QR",
+                                )
+                                st.session_state.pop("pending_qr_ep", None)
+                                st.success("✅ Éprouvette mise à jour avec succès !")
+                                st.rerun()
+                            except Exception as e_rap:
+                                st.error(f"❌ Erreur lors de la sauvegarde : {e_rap}")
+
+                st.markdown("---")
+                st.markdown("##### 📝 Saisie des Écrasements du Lot")
+
+                df_lot_data = []
+                for ep in lot_selected:
+                    f_kn_ep = float(ep.get("force_kn") or 0.0)
+                    sec_ep = float(ep.get("section") or 176.71)
+                    fc_ep = float(ep.get("fc_mpa") or (round((f_kn_ep * 10.0) / sec_ep, 1) if f_kn_ep > 0 else 0.0))
+                    dt_essai_ep = ep.get("date_essai") or str(date.today())
+                    df_lot_data.append({
+                        "ID": ep.get("id"),
+                        "Repère": ep.get("repere_eprouvette", "-"),
+                        "Forme / Section": ep.get("forme", "Cylindrique 150x300"),
+                        "Section (cm²)": sec_ep,
+                        "Force (kN)": f_kn_ep,
+                        "Résistance (MPa)": fc_ep,
+                        "Date Essai": dt_essai_ep,
+                        "Opérateur": ep.get("technicien") or current_username or "Technicien",
+                        "_orig_force": f_kn_ep,
+                        "_orig_fc": fc_ep,
+                    })
+
+                df_lot_saisie = pd.DataFrame(df_lot_data)
+                key_saisie_lot = f"editor_saisie_lot_{betonnage_id}_{sample.get('id')}"
+
+                def _recalculer_fc_lot():
+                    st_editor = st.session_state.get(key_saisie_lot, {})
+                    for r_idx, chg in st_editor.get("edited_rows", {}).items():
+                        if "Force (kN)" in chg:
+                            try:
+                                f_val = float(chg["Force (kN)"])
+                            except (ValueError, TypeError):
+                                f_val = 0.0
+                            sec_val = float(df_lot_saisie.at[r_idx, "Section (cm²)"])
+                            df_lot_saisie.at[r_idx, "Force (kN)"] = f_val
+                            df_lot_saisie.at[r_idx, "Résistance (MPa)"] = (
+                                round((f_val * 10.0) / sec_val, 1) if sec_val > 0 and f_val > 0 else 0.0
+                            )
+
+                df_edited_lot = st.data_editor(
+                    df_lot_saisie,
+                    column_config={
+                        "ID": None,
+                        "_orig_force": None,
+                        "_orig_fc": None,
+                        "Repère": st.column_config.TextColumn("Repère", disabled=True),
+                        "Forme / Section": st.column_config.TextColumn("Forme", disabled=True),
+                        "Section (cm²)": st.column_config.NumberColumn("Section (cm²)", disabled=True, format="%.2f"),
+                        "Force (kN)": st.column_config.NumberColumn(
+                            "⚡ Force (kN)",
+                            min_value=0.0, max_value=3000.0, step=0.1, format="%.1f",
+                        ),
+                        "Résistance (MPa)": st.column_config.NumberColumn("Résistance (MPa)", disabled=True, format="%.1f"),
+                        "Date Essai": st.column_config.TextColumn("Date Essai"),
+                        "Opérateur": st.column_config.TextColumn("Opérateur"),
+                    },
+                    use_container_width=True, hide_index=True, key=key_saisie_lot, on_change=_recalculer_fc_lot,
+                )
+
+                col_btn_s1, col_btn_s2 = st.columns(2)
+                with col_btn_s1:
+                    if st.button("💾 Enregistrer la Saisie des Écrasements", type="primary", use_container_width=True, key=f"btn_save_lot_{betonnage_id}"):
+                        succes_saisie = 0
+                        for _, row_s in df_edited_lot.iterrows():
+                            ep_id_s = int(row_s["ID"])
+                            f_kn_s = float(row_s["Force (kN)"])
+                            sec_s = float(row_s["Section (cm²)"])
+                            fc_s = round((f_kn_s * 10.0) / sec_s, 1) if sec_s > 0 and f_kn_s > 0 else 0.0
+                            
+                            pay_s = {
+                                "force_kn": f_kn_s,
+                                "fc_mpa": fc_s,
+                                "date_essai": str(row_s.get("Date Essai") or date.today()),
+                                "technicien": str(row_s.get("Opérateur") or "Technicien"),
+                            }
+                            anc_s = {
+                                "force_kn": float(row_s.get("_orig_force", 0.0)),
+                                "fc_mpa": float(row_s.get("_orig_fc", 0.0)),
+                            }
+                            try:
+                                supabase.table("suivi_controle_beton").update(pay_s).eq("id", ep_id_s).execute()
+                                enregistrer_modification(
+                                    supabase,
+                                    table_concernee="suivi_controle_beton",
+                                    enregistrement_id=ep_id_s,
+                                    action="SAISIE_ECRASEMENT",
+                                    anciennes_valeurs=anc_s,
+                                    nouvelles_valeurs=pay_s,
+                                    commentaire="Saisie/Mise à jour des résultats d'écrasement (Phase 2)",
+                                )
+                                succes_saisie += 1
+                            except Exception as err_s:
+                                st.error(f"Erreur pour l'éprouvette #{ep_id_s} : {err_s}")
+
+                        if succes_saisie > 0:
+                            st.success(f"✅ {succes_saisie} résultat(s) d'écrasement enregistré(s) avec succès !")
+                            st.balloons()
+                            st.rerun()
+
+                with col_btn_s2:
+                    # Bouton d'exportation de PV au format Excel
+                    pv_export_data = []
+                    for idx_item, ep_item in enumerate(historique_complet if historique_complet else lot_selected):
+                        pv_export_data.append({
+                            "repere_eprouvette": ep_item.get("repere_eprouvette") or f"B/{idx_item+1:02d}",
+                            "date_essai": ep_item.get("date_essai") or str(date.today()),
+                            "age": ep_item.get("echeance") or "28 jours",
+                            "force_kn": ep_item.get("force_kn") or 0.0,
+                            "fc_mpa": ep_item.get("fc_mpa") or 0.0,
+                            "statut": "Écrasée" if float(ep_item.get("force_kn") or 0) > 0 else "En cours"
+                        })
+
+                    pv_header_infos = {
+                        "re_num": f"25/260/LGV/ B/{num_reception_affiche}",
+                        "dossier": (info_betonnage or {}).get("dossier") or "2025-260-05985-2025-0247",
+                        "client": (info_betonnage or {}).get("client") or "TGCC",
+                        "date_coulee": extraire_date_coulee(info_betonnage or sample),
+                        "lieu_prelevement": (info_betonnage or {}).get("lieu_prelevement") or sample.get("ouvrage") or "-",
+                        "chantier": (info_betonnage or {}).get("chantier") or "Augmentation de la capacité ferroviaire Kénitra-Marrakech / Gare Casa Sud",
+                        "classe_beton": sample.get("classe_beton") or (info_betonnage or {}).get("classe_beton") or "C35/45",
+                        "centrale": (info_betonnage or {}).get("centrale") or "Centrale à Béton",
+                        "forme": sample.get("forme") or "Cylindrique 150x300",
+                        "affaissement": (info_betonnage or {}).get("affaissement") or "-",
+                        "temperature": (info_betonnage or {}).get("temperature") or "-",
+                        "technicien": sample.get("technicien") or "LPEE",
+                        "num_bl": exact_bl_phase1,
+                        "ouvrage": sample.get("ouvrage") or "-",
+                        "observations": (info_betonnage or {}).get("observations_admin") or "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+                    }
+
+                    excel_pv_bytes = generer_pv_excel(pv_export_data, pv_header_infos)
+                    st.download_button(
+                        label="📄 Générer & Télécharger le PV Officiel (Excel)",
+                        data=excel_pv_bytes,
+                        file_name=f"PV_Ecrasement_LPEE_Rec_{str(num_reception_affiche).replace('/', '_')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key=f"btn_dl_pv_excel_{betonnage_id}"
+                    )
+
+                if mode_admin:
+                    afficher_historique_modifications(supabase, "suivi_controle_beton", sample.get("id"))
 
     # =========================================================
     # PHASE 3 : VALIDATION ADMIN (PVs)
