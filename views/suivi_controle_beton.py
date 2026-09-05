@@ -820,7 +820,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
     if df_key not in st.session_state or st.session_state.get(f"{df_key}_len") != len(ep_sel_list):
         rows_val = []
         for ep in ep_sel_list:
-            sec = float(ep.get("section") or 176.71)
+            sec = float(ep.get("section") or 0)
             f_kn = float(ep.get("force_kn") or 0.0)
             type_ep = normaliser_type_essai(ep.get("type_essai"))
             fc = calculer_resistance_mpa(f_kn, type_ep, ep.get("forme"), sec)
@@ -900,7 +900,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         if ep_7j:
             rows_7j = []
             for ep in ep_7j:
-                sec = float(ep.get("section") or 176.71)
+                sec = float(ep.get("section") or 0)
                 f_kn = float(ep.get("force_kn") or 0.0)
                 type_ep = normaliser_type_essai(ep.get("type_essai"))
                 fc = calculer_resistance_mpa(f_kn, type_ep, ep.get("forme"), sec)
@@ -1942,7 +1942,7 @@ def show(supabase):
                     if ep_7j_rappel:
                         rows_rappel_7j = []
                         for e in ep_7j_rappel:
-                            sec_r = float(e.get("section") or 176.71)
+                            sec_r = float(e.get("section") or 0)
                             f_kn_r = float(e.get("force_kn") or 0.0)
                             type_r = normaliser_type_essai(e.get("type_essai"))
                             fc_r = calculer_resistance_mpa(f_kn_r, type_r, e.get("forme"), sec_r)
@@ -1983,7 +1983,7 @@ def show(supabase):
                     with col_q3:
                         st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
                         if st.button("💾 Enregistrer cette éprouvette", type="primary", use_container_width=True, key=f"btn_save_rapide_{eprouvette_ciblee['id']}"):
-                            sec_q = float(eprouvette_ciblee.get("section") or 176.71)
+                            sec_q = float(eprouvette_ciblee.get("section") or 0)
                             type_q = normaliser_type_essai(eprouvette_ciblee.get("type_essai"))
                             fc_q = calculer_resistance_mpa(force_rapide, type_q, eprouvette_ciblee.get("forme"), sec_q)
                             try:
@@ -2021,7 +2021,7 @@ def show(supabase):
                 if lot_key not in st.session_state or mode_admin:
                     rows_list = []
                     for ep in lot_selected:
-                        sec = float(ep.get("section") or 176.71)
+                        sec = float(ep.get("section") or 0)
                         try:
                             f_kn = float(ep.get("force_kn") or 0.0)
                         except (ValueError, TypeError):
