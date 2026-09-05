@@ -1553,7 +1553,7 @@ def show(supabase):
         data = res.data if res else []
 
         classes_j = ["Toutes"]
-        ouvrages_j = ["Tous"]
+        ouvrages_j = []
         if data:
           df_temp = pd.DataFrame(data)
           if "classe_beton" in df_temp.columns:
@@ -1561,23 +1561,23 @@ def show(supabase):
                 list(df_temp["classe_beton"].dropna().unique())
             )
           if "ouvrage" in df_temp.columns:
-            ouvrages_j += sorted(list(df_temp["ouvrage"].dropna().unique()))
+            ouvrages_j = sorted(list(df_temp["ouvrage"].dropna().unique()))
 
         with col2:
           selected_class = st.selectbox(
               "Filtrer par classe de béton :", classes_j, key="b_class_j"
           )
         with col3:
-          selected_ouvrage = st.selectbox(
-              "Filtrer par ouvrage :", ouvrages_j, key="b_ouv_j"
+          selected_ouvrages = st.multiselect(
+              "Filtrer par ouvrage :", ouvrages_j, default=[], key="b_ouv_j"
           )
 
         if data:
           df = pd.DataFrame(data)
           if selected_class != "Toutes":
             df = df[df["classe_beton"] == selected_class]
-          if selected_ouvrage != "Tous":
-            df = df[df["ouvrage"] == selected_ouvrage]
+          if selected_ouvrages:
+            df = df[df["ouvrage"].isin(selected_ouvrages)]
 
           if df.empty:
             st.info("Aucun coulage enregistré pour les critères sélectionnés.")
@@ -1716,7 +1716,7 @@ def show(supabase):
         data_m = res_m.data if res_m else []
 
         classes_m = ["Toutes"]
-        ouvrages_m = ["Tous"]
+        ouvrages_m = []
         if data_m:
           df_m_temp = pd.DataFrame(data_m)
           if "classe_beton" in df_m_temp.columns:
@@ -1724,23 +1724,23 @@ def show(supabase):
                 list(df_m_temp["classe_beton"].dropna().unique())
             )
           if "ouvrage" in df_m_temp.columns:
-            ouvrages_m += sorted(list(df_m_temp["ouvrage"].dropna().unique()))
+            ouvrages_m = sorted(list(df_m_temp["ouvrage"].dropna().unique()))
 
         with col_m2:
           selected_class_m = st.selectbox(
               "Filtrer par classe :", classes_m, key="b_class_m"
           )
         with col_m3:
-          selected_ouvrage_m = st.selectbox(
-              "Filtrer par ouvrage :", ouvrages_m, key="b_ouv_m"
+          selected_ouvrages_m = st.multiselect(
+              "Filtrer par ouvrage :", ouvrages_m, default=[], key="b_ouv_m"
           )
 
         if data_m:
           df_m = pd.DataFrame(data_m)
           if selected_class_m != "Toutes":
             df_m = df_m[df_m["classe_beton"] == selected_class_m]
-          if selected_ouvrage_m != "Tous":
-            df_m = df_m[df_m["ouvrage"] == selected_ouvrage_m]
+          if selected_ouvrages_m:
+            df_m = df_m[df_m["ouvrage"].isin(selected_ouvrages_m)]
 
           if df_m.empty:
             st.info("Aucun coulage enregistré pour ces critères.")
@@ -1850,14 +1850,14 @@ def show(supabase):
       df_merged = pd.DataFrame()
 
     classes_dispo = ["Toutes"]
-    ouvrages_dispo = ["Tous"]
+    ouvrages_dispo = []
     if not df_merged.empty:
       if "Classe Béton" in df_merged.columns:
         classes_dispo += sorted(
             list(df_merged["Classe Béton"].dropna().unique())
         )
       if "Ouvrage" in df_merged.columns:
-        ouvrages_dispo += sorted(list(df_merged["Ouvrage"].dropna().unique()))
+        ouvrages_dispo = sorted(list(df_merged["Ouvrage"].dropna().unique()))
 
     with tab_j_c:
       st.markdown("### Filtrage journalier par classe et ouvrage")
@@ -1871,8 +1871,8 @@ def show(supabase):
             "Filtrer par classe :", classes_dispo, key="c_class_j"
         )
       with col3:
-        selected_ouvrage_cj = st.selectbox(
-            "Filtrer par ouvrage :", ouvrages_dispo, key="c_ouv_j"
+        selected_ouvrages_cj = st.multiselect(
+            "Filtrer par ouvrage :", ouvrages_dispo, default=[], key="c_ouv_j"
         )
 
       if df_merged.empty:
@@ -1885,10 +1885,10 @@ def show(supabase):
         ):
           df_j_c = df_j_c[df_j_c["Classe Béton"] == selected_class_cj]
         if (
-            selected_ouvrage_cj != "Tous"
+            selected_ouvrages_cj
             and "Ouvrage" in df_j_c.columns
         ):
-          df_j_c = df_j_c[df_j_c["Ouvrage"] == selected_ouvrage_cj]
+          df_j_c = df_j_c[df_j_c["Ouvrage"].isin(selected_ouvrages_cj)]
 
         if df_j_c.empty:
           st.info("Aucun contrôle enregistré pour les critères sélectionnés.")
@@ -1951,8 +1951,8 @@ def show(supabase):
             "Filtrer par classe :", classes_dispo, key="c_class_m"
         )
       with col_m3:
-        selected_ouvrage_cm = st.selectbox(
-            "Filtrer par ouvrage :", ouvrages_dispo, key="c_ouv_m"
+        selected_ouvrages_cm = st.multiselect(
+            "Filtrer par ouvrage :", ouvrages_dispo, default=[], key="c_ouv_m"
         )
 
       if df_merged.empty:
@@ -1968,10 +1968,10 @@ def show(supabase):
         ):
           df_m_c = df_m_c[df_m_c["Classe Béton"] == selected_class_cm]
         if (
-            selected_ouvrage_cm != "Tous"
+            selected_ouvrages_cm
             and "Ouvrage" in df_m_c.columns
         ):
-          df_m_c = df_m_c[df_m_c["Ouvrage"] == selected_ouvrage_cm]
+          df_m_c = df_m_c[df_m_c["Ouvrage"].isin(selected_ouvrages_cm)]
 
         if df_m_c.empty:
           st.info("Aucun contrôle enregistré pour ces critères.")
