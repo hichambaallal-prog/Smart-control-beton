@@ -27,54 +27,10 @@ OPTIONS_ONGLETS = [
 ]
 
 # ==============================================================================
-# FONCTIONS UTILITAIRES : EXTRACTION DE DATES ET DÉLAIS (DAP-PANDAS & REGEX)
+# OUTILS ESSAIS : COMPRESSION / TRACTION PAR FENDAGE
 # ==============================================================================
-def calculer_date_ecrasement(df):
-    """
-    Calcule la 'Date Écrasement Prévue' à partir de 'Date Coulée'
-    et du délai spécifié dans 'Échéance Visée' ou 'echeance' (ex: '7 jours', '28 jours').
-    """
-    df_result = df.copy()
-
-    # Détection de la colonne d'échéance disponible
-    col_ech = next((c for c in ['Échéance Visée', 'echeance', 'Échéance'] if c in df_result.columns), None)
-    col_coul = next((c for c in ['Date Coulée', 'date_coulee'] if c in df_result.columns), None)
-
-    if not col_coul or not col_ech:
-        return df_result
-
-    # 1. Conversion de Date Coulée au format datetime
-    df_result['Date Coulée'] = pd.to_datetime(df_result[col_coul], errors='coerce')
-
-    # 2. Extraction du nombre de jours
-    nb_jours = (
-        df_result[col_ech]
-        .astype(str)
-        .str.extract(r'(\d+)')
-        .fillna(28)[0]
-        .astype(int)
-    )
-
-    # 3. Calcul de la Date Écrasement Prévue en ajoutant le nombre de jours
-    df_result['Date Écrasement Prévue'] = df_result['Date Coulée'] + pd.to_timedelta(nb_jours, unit='D')
-
-    # 4. Formate les dates au format YYYY-MM-DD
-    df_result['Date Coulée'] = df_result['Date Coulée'].dt.strftime('%Y-%m-%d')
-    df_result['Date Écrasement Prévue'] = df_result['Date Écrasement Prévue'].dt.strftime('%Y-%m-%d')
-
-    return df_result
-
-
-def extraire_nb_jours(echeance_str, default=28):
-    """Extrait le nombre de jours numérique à partir d'une chaîne (ex: '28 jours', '7 J')."""
-    if pd.isna(echeance_str) or not echeance_str:
-        return default
-    match = re.search(r'\d+', str(echeance_str))
-    return int(match.group()) if match else default
-
-
 def normaliser_type_essai(type_essai):
-    """Normalise le type d'essai et conserve la compatibilité avec les anciennes données."""
+    """Normalise le type d'essai et reste compatible avec les anciennes donnees."""
     s = unicodedata.normalize("NFKD", str(type_essai or "").strip().lower()).encode("ascii", "ignore").decode("ascii")
     if "traction" in s or "fendage" in s or "split" in s:
         return "Traction par fendage"
@@ -82,7 +38,7 @@ def normaliser_type_essai(type_essai):
 
 
 def dimensions_eprouvette(forme_ep):
-    """Retourne diamètre et longueur (mm) depuis une forme du type Cylindrique 150x300."""
+    """Retourne diametre et longueur (mm) depuis une forme du type Cylindrique 150x300."""
     forme = str(forme_ep or "Cylindrique 150x300").lower().replace(" ", "")
     match = re.search(r"(\d+(?:[.,]\d+)?)x(\d+(?:[.,]\d+)?)", forme)
     if match:
@@ -93,10 +49,17 @@ def dimensions_eprouvette(forme_ep):
 
 
 def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindrique 150x300", section=None):
-    """
-    Calcule la résistance à partir de la force de rupture en kN.
-    Compression : fc = F / A, avec A = pi*d²/4.
-    Traction par fendage : fct = 2F / (pi*L*d).
+    """Calcule la resistance en MPa a partir de la charge de rupture en kN.
+
+    IMPORTANT : la section enregistree dans la base peut etre en cm² (ex. 176.71).
+    Pour eviter toute erreur d unite, le calcul de compression est base en priorite
+    sur le diametre reel de l eprouvette extrait de ``forme``.
+
+    Compression : fc = F / A, avec F en N et A en mm².
+    Traction par fendage : fct = 2F / (pi*L*d), avec F en N et L,d en mm.
+    Pour 150x300 mm :
+      - compression : fc = F(kN) / 17.671
+      - fendage : fct = F(kN) / 70.686
     """
     try:
         f_kn = float(force_kn or 0.0)
@@ -108,21 +71,29 @@ def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindriq
 
     type_n = normaliser_type_essai(type_essai)
     d_mm, l_mm = dimensions_eprouvette(forme)
+    pi = 3.141592653589793
 
     if type_n == "Traction par fendage":
-        # F(kN) -> N ; d et L en mm ; résultat en N/mm² = MPa
-        return round((2.0 * f_kn * 1000.0) / (3.141592653589793 * l_mm * d_mm), 1)
+        # F(kN) -> N ; resultat en N/mm² = MPa
+        return round((2.0 * f_kn * 1000.0) / (pi * l_mm * d_mm), 1)
 
-    # Compression : priorité à la section réellement enregistrée si disponible.
-    try:
-        sec = float(section) if section is not None else 0.0
-    except (ValueError, TypeError):
-        sec = 0.0
-    if sec <= 0:
-        sec = 3.141592653589793 * (d_mm ** 2) / 4.0
+    # Compression : toujours recalculer A a partir du diametre en mm.
+    # Cela evite de traiter par erreur une section stockee en cm² comme si
+    # elle etait en mm² (176.71 cm² = 17671 mm² pour un cylindre 150 mm).
+    aire_mm2 = pi * (d_mm ** 2) / 4.0
+    if aire_mm2 <= 0:
+        # Secours uniquement si la forme est inconnue.
+        try:
+            sec = float(section) if section is not None else 0.0
+        except (ValueError, TypeError):
+            sec = 0.0
+        # Une valeur proche de 176.71 correspond tres probablement a des cm².
+        if 10.0 < sec < 1000.0:
+            aire_mm2 = sec * 100.0
+        elif sec > 1000.0:
+            aire_mm2 = sec
 
-    return round((f_kn * 1000.0) / sec, 1)
-
+    return round((f_kn * 1000.0) / aire_mm2, 1)
 
 # ==============================================================================
 # 1. GESTION DES UTILISATEURS ET CONNEXION SUPABASE
