@@ -1473,7 +1473,35 @@ def show(supabase):
                                 }
                                 try:
                                     orig_row_p1 = orig_par_id_p1.get(ep_id, {})
-                                    supabase.table("suivi_controle_beton").update(pay).eq("id", ep_id).execute()
+                                    resp_upd = supabase.table("suivi_controle_beton").update(pay).eq("id", ep_id).execute()
+
+                                    # Diagnostic : si Supabase ne renvoie aucune ligne
+                                    # affectée, la mise à jour n'a PAS eu lieu côté base
+                                    # (cas typique : une règle de sécurité RLS bloque
+                                    # silencieusement l'UPDATE sans lever d'erreur Python).
+                                    lignes_affectees = getattr(resp_upd, "data", None) or []
+                                    if not lignes_affectees:
+                                        st.error(
+                                            f"⚠️ Éprouvette #{ep_id} : la base de données n'a "
+                                            "renvoyé AUCUNE ligne modifiée pour cette mise à "
+                                            "jour (l'échéance et la date n'ont probablement PAS "
+                                            "été enregistrées). Cause la plus probable : une "
+                                            "règle de sécurité (RLS) sur la table "
+                                            "'suivi_controle_beton' bloque cette modification "
+                                            "pour ton compte — à vérifier côté Supabase."
+                                        )
+                                    else:
+                                        # Double vérification : on relit la ligne telle
+                                        # qu'elle est VRAIMENT en base après l'update.
+                                        valeur_reelle = lignes_affectees[0].get("echeance")
+                                        if str(valeur_reelle).strip() != ech_str:
+                                            st.error(
+                                                f"⚠️ Éprouvette #{ep_id} : la base renvoie "
+                                                f"l'échéance '{valeur_reelle}' au lieu de "
+                                                f"'{ech_str}' — la modification n'a pas été "
+                                                "appliquée correctement."
+                                            )
+
                                     enregistrer_modification(
                                         supabase,
                                         table_concernee="suivi_controle_beton",
