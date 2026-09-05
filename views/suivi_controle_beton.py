@@ -1290,122 +1290,60 @@ def show(supabase):
         st.subheader("📅 1. Programmer les Échéances d'Écrasement")
 
         if can_edit:
-            # --- Correction en masse des dates déjà en base (données historiques) ---
-            # Le calcul automatique (ci-dessous) ne s'applique qu'aux MODIFICATIONS
-            # futures faites depuis ce tableau. Pour corriger d'un coup les
-            # éprouvettes déjà enregistrées avec une date d'écrasement incohérente
-            # (ex : échéance changée de 7 à 28 jours sans que la date ait suivi à
-            # l'époque), ce bouton recalcule et corrige tout en une fois.
-            with st.expander("🔧 Corriger en masse les dates d'écrasement incohérentes", expanded=False):
-                st.caption(
-                    "Recalcule `Date Écrasement Prévue = Date Coulée + Échéance Visée` "
-                    "pour TOUTES les éprouvettes en base, et corrige celles qui ne "
-                    "correspondent pas (ex: échéance modifiée sans mise à jour de la date à l'époque)."
-                )
-                if st.button("🔧 Recalculer et corriger toutes les dates d'écrasement", key="btn_fix_toutes_dates_ecrasement"):
-                    try:
-                        res_fix = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).execute()
-                        toutes_eprouvettes = res_fix.data or []
-                    except Exception as e:
-                        toutes_eprouvettes = []
-                        st.error(f"Erreur lors du chargement : {e}")
+            # --- Corrections automatiques et silencieuses des données déjà en base ---
+            # Ces corrections tournaient auparavant via deux boutons visibles ;
+            # elles s'appliquent maintenant automatiquement, une fois par session
+            # et par projet (pour ne pas re-solliciter la base à chaque
+            # interaction), sans rien afficher à l'écran :
+            #  1) Date Écrasement Prévue incohérente avec Date Coulée + Échéance
+            #     (ex : échéance changée sans que la date suive à l'époque).
+            #  2) Section (mm²) erronée (ex : ancien défaut bugué 176,71 mm² au
+            #     lieu de la vraie section d'un cylindre, confusion cm²/mm²), et
+            #     Résistance (MPa) déjà enregistrée avec cette mauvaise section.
+            cle_correction_auto = f"correction_auto_p1_faite_{projet_id_actif}"
+            if not st.session_state.get(cle_correction_auto):
+                try:
+                    res_fix = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).execute()
+                    toutes_eprouvettes_fix = res_fix.data or []
+                except Exception:
+                    toutes_eprouvettes_fix = []
 
-                    nb_corrigees = 0
-                    nb_ignorees = 0
-                    for ep_fix in toutes_eprouvettes:
-                        dt_coulee_fix = str(ep_fix.get("date_coulee") or "").strip()
-                        echeance_fix = str(ep_fix.get("echeance") or "").strip()
-                        date_actuelle_fix = str(ep_fix.get("date_ecrasement") or "").strip()
-                        nb_j_fix = extraire_nb_jours(echeance_fix, default=None)
-                        if nb_j_fix is None or not dt_coulee_fix:
-                            nb_ignorees += 1
-                            continue
+                for ep_fix in toutes_eprouvettes_fix:
+                    payload_fix = {}
+
+                    # 1) Date Écrasement Prévue = Date Coulée + Échéance Visée
+                    dt_coulee_fix = str(ep_fix.get("date_coulee") or "").strip()
+                    echeance_fix = str(ep_fix.get("echeance") or "").strip()
+                    date_actuelle_fix = str(ep_fix.get("date_ecrasement") or "").strip()
+                    nb_j_fix = extraire_nb_jours(echeance_fix, default=None)
+                    if nb_j_fix is not None and dt_coulee_fix:
                         try:
                             dt_c_fix = datetime.strptime(dt_coulee_fix[:10], "%Y-%m-%d").date()
                             date_correcte_fix = str(dt_c_fix + timedelta(days=nb_j_fix))
+                            if date_correcte_fix != date_actuelle_fix[:10]:
+                                payload_fix["date_ecrasement"] = date_correcte_fix
                         except (ValueError, TypeError):
-                            nb_ignorees += 1
-                            continue
+                            pass
 
-                        if date_correcte_fix != date_actuelle_fix[:10]:
-                            try:
-                                supabase.table("suivi_controle_beton").update(
-                                    {"date_ecrasement": date_correcte_fix}
-                                ).eq("id", ep_fix["id"]).execute()
-                                nb_corrigees += 1
-                            except Exception as err_fix:
-                                st.error(f"Erreur pour #{ep_fix.get('id')} : {err_fix}")
+                    # 2) Section (mm²) + Résistance (MPa) déjà enregistrée
+                    forme_fix = ep_fix.get("forme") or "Cylindrique 150x300"
+                    d_fix, l_fix = dimensions_eprouvette(forme_fix)
+                    section_correcte = round(3.141592653589793 * (d_fix ** 2) / 4.0, 2)
+                    section_actuelle = float(ep_fix.get("section") or 0)
+                    if abs(section_actuelle - section_correcte) > 1.0:
+                        payload_fix["section"] = section_correcte
+                        force_fix = float(ep_fix.get("force_kn") or 0)
+                        if force_fix > 0:
+                            type_fix = normaliser_type_essai(ep_fix.get("type_essai"))
+                            payload_fix["fc_mpa"] = calculer_resistance_mpa(force_fix, type_fix, forme_fix, section_correcte)
 
-                    if nb_corrigees > 0:
-                        st.success(f"✅ {nb_corrigees} date(s) d'écrasement corrigée(s) !")
-                        st.rerun()
-                    else:
-                        st.info("👍 Toutes les dates d'écrasement étaient déjà cohérentes.")
+                    if payload_fix:
+                        try:
+                            supabase.table("suivi_controle_beton").update(payload_fix).eq("id", ep_fix["id"]).execute()
+                        except Exception:
+                            pass
 
-            # --- Correction en masse des sections/résistances déjà en base ---
-            # D'anciennes éprouvettes ont pu être enregistrées avec une section
-            # (aire de la face d'appui, en mm²) erronée — notamment l'ancien
-            # défaut bugué de 176,71 mm² (confusion cm²/mm²) au lieu de la vraie
-            # section d'un cylindre 150x300 (17671,46 mm²). Comme la Résistance
-            # (MPa) = Force / Section, une section 100x trop petite donne une
-            # résistance ~100x trop grande (ex : 2582 MPa au lieu de ~25,8 MPa).
-            # Ce bouton recalcule la bonne section à partir de la Forme
-            # d'éprouvette de chaque ligne, corrige la colonne "section", et
-            # recalcule la Résistance (MPa) déjà enregistrée si une force de
-            # rupture existe déjà.
-            with st.expander("🔧 Corriger en masse les sections / résistances (MPa) erronées", expanded=False):
-                st.caption(
-                    "Recalcule la section (mm²) de chaque éprouvette à partir de sa "
-                    "Forme d'éprouvette, corrige celles qui sont manifestement "
-                    "fausses (ex : ancien défaut bugué 176,71 mm²), et recalcule la "
-                    "Résistance (MPa) déjà enregistrée en conséquence."
-                )
-                if st.button("🔧 Recalculer et corriger toutes les sections / résistances", key="btn_fix_sections_resistances"):
-                    try:
-                        res_fix_sec = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).execute()
-                        toutes_eprouvettes_sec = res_fix_sec.data or []
-                    except Exception as e:
-                        toutes_eprouvettes_sec = []
-                        st.error(f"Erreur lors du chargement : {e}")
-
-                    nb_sections_corrigees = 0
-                    nb_resistances_corrigees = 0
-                    for ep_fix_sec in toutes_eprouvettes_sec:
-                        forme_fix = ep_fix_sec.get("forme") or "Cylindrique 150x300"
-                        d_fix, l_fix = dimensions_eprouvette(forme_fix)
-                        section_correcte = round(3.141592653589793 * (d_fix ** 2) / 4.0, 2)
-
-                        section_actuelle = float(ep_fix_sec.get("section") or 0)
-                        # Tolérance de 1 mm² pour ignorer les simples arrondis déjà
-                        # corrects, et ne corriger que les écarts réels.
-                        if abs(section_actuelle - section_correcte) > 1.0:
-                            payload_sec = {"section": section_correcte}
-
-                            # Si une force de rupture est déjà enregistrée, la
-                            # Résistance (MPa) stockée a été calculée avec la
-                            # mauvaise section : on la recalcule avec la bonne.
-                            force_fix = float(ep_fix_sec.get("force_kn") or 0)
-                            if force_fix > 0:
-                                type_fix = normaliser_type_essai(ep_fix_sec.get("type_essai"))
-                                nouvelle_resistance = calculer_resistance_mpa(force_fix, type_fix, forme_fix, section_correcte)
-                                payload_sec["fc_mpa"] = nouvelle_resistance
-                                nb_resistances_corrigees += 1
-
-                            try:
-                                supabase.table("suivi_controle_beton").update(payload_sec).eq("id", ep_fix_sec["id"]).execute()
-                                nb_sections_corrigees += 1
-                            except Exception as err_fix_sec:
-                                st.error(f"Erreur pour #{ep_fix_sec.get('id')} : {err_fix_sec}")
-
-                    if nb_sections_corrigees > 0:
-                        st.success(
-                            f"✅ {nb_sections_corrigees} section(s) corrigée(s), dont "
-                            f"{nb_resistances_corrigees} résistance(s) (MPa) recalculée(s) "
-                            "en conséquence !"
-                        )
-                        st.rerun()
-                    else:
-                        st.info("👍 Toutes les sections étaient déjà correctes.")
+                st.session_state[cle_correction_auto] = True
 
             with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
                 # Affiche les messages de la dernière tentative d'enregistrement
