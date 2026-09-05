@@ -1456,28 +1456,31 @@ def show(supabase):
                         if not bloque_mod:
                             orig_par_id_p1 = {ep["id"]: ep for ep in eprouvettes_enregistrees}
                             nb_succes = 0
-                            for _, r_m in df_prog_modifiee.iterrows():
+                            for idx_row, r_m in df_prog_modifiee.iterrows():
                                 ep_id, b_id = int(r_m["id"]), r_m.get("betonnage_id")
                                 ref_ctrl = str(r_m.get("ref_controle", "")).strip()
                                 ech_str = str(r_m.get("echeance", "")).strip()
                                 dt_coulee_str = str(r_m.get("date_coulee", "")).strip()
 
-                                # La colonne "date_ecrasement" affichée dans le tableau
-                                # reflète déjà soit le calcul automatique (Date Coulée +
-                                # Échéance), soit une correction manuelle directe de
-                                # l'utilisateur (cf. logique d'aperçu ci-dessus qui
-                                # respecte les deux cas) : on enregistre donc cette
-                                # valeur telle quelle, sans la recalculer ici — la
-                                # recalculer aurait pour effet d'écraser silencieusement
-                                # toute correction manuelle de la date d'écrasement.
-                                dt_ecrasement_val = str(r_m.get("date_ecrasement", "")).strip()
-                                if not dt_ecrasement_val or dt_ecrasement_val.lower() in ["none", "nan", "-", ""]:
+                                # Par défaut, la Date Écrasement Prévue est TOUJOURS
+                                # recalculée = Date Coulée + Échéance Visée, pour que
+                                # changer l'échéance (ex : 7 -> 28 jours ou l'inverse)
+                                # mette bien à jour la date automatiquement, même si la
+                                # cellule contenait déjà une ancienne valeur. On ne
+                                # respecte la valeur affichée telle quelle que si
+                                # l'utilisateur a modifié la date à la main (cellule
+                                # "date_ecrasement") dans CETTE session d'édition
+                                # (cf. lignes_avec_date_manuelle calculé plus haut pour
+                                # l'aperçu live).
+                                if idx_row in lignes_avec_date_manuelle:
+                                    dt_ecrasement_val = str(r_m.get("date_ecrasement", "")).strip()
+                                else:
                                     nb_j = extraire_nb_jours(ech_str, default=28)
                                     try:
                                         dt_c = datetime.strptime(dt_coulee_str[:10], "%Y-%m-%d").date()
                                         dt_ecrasement_val = str(dt_c + timedelta(days=nb_j))
                                     except (ValueError, TypeError):
-                                        dt_ecrasement_val = dt_coulee_str
+                                        dt_ecrasement_val = str(r_m.get("date_ecrasement", "")).strip() or dt_coulee_str
 
                                 pay = {
                                     "ref_controle": ref_ctrl,
