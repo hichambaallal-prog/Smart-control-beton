@@ -1343,6 +1343,15 @@ def show(supabase):
                         st.info("👍 Toutes les dates d'écrasement étaient déjà cohérentes.")
 
             with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
+                # Affiche les messages de la dernière tentative d'enregistrement
+                # (stockés avant le st.rerun() qui suit la sauvegarde, pour qu'ils
+                # ne disparaissent pas instantanément avant que l'utilisateur ait
+                # pu les lire).
+                msgs_precedents = st.session_state.pop("msgs_save_phase1", None)
+                if msgs_precedents:
+                    for niveau, texte in msgs_precedents:
+                        getattr(st, niveau)(texte)
+
                 try:
                     res_p = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
                     eprouvettes_enregistrees = res_p.data or []
@@ -1438,6 +1447,7 @@ def show(supabase):
                         if not bloque_mod:
                             orig_par_id_p1 = {ep["id"]: ep for ep in eprouvettes_enregistrees}
                             nb_succes = 0
+                            messages_save = []
                             for idx_row, r_m in df_prog_modifiee.iterrows():
                                 ep_id, b_id = int(r_m["id"]), r_m.get("betonnage_id")
                                 ref_ctrl = str(r_m.get("ref_controle", "")).strip()
@@ -1481,7 +1491,7 @@ def show(supabase):
                                     # silencieusement l'UPDATE sans lever d'erreur Python).
                                     lignes_affectees = getattr(resp_upd, "data", None) or []
                                     if not lignes_affectees:
-                                        st.error(
+                                        messages_save.append(("error",
                                             f"⚠️ Éprouvette #{ep_id} : la base de données n'a "
                                             "renvoyé AUCUNE ligne modifiée pour cette mise à "
                                             "jour (l'échéance et la date n'ont probablement PAS "
@@ -1489,18 +1499,18 @@ def show(supabase):
                                             "règle de sécurité (RLS) sur la table "
                                             "'suivi_controle_beton' bloque cette modification "
                                             "pour ton compte — à vérifier côté Supabase."
-                                        )
+                                        ))
                                     else:
                                         # Double vérification : on relit la ligne telle
                                         # qu'elle est VRAIMENT en base après l'update.
                                         valeur_reelle = lignes_affectees[0].get("echeance")
                                         if str(valeur_reelle).strip() != ech_str:
-                                            st.error(
+                                            messages_save.append(("error",
                                                 f"⚠️ Éprouvette #{ep_id} : la base renvoie "
                                                 f"l'échéance '{valeur_reelle}' au lieu de "
                                                 f"'{ech_str}' — la modification n'a pas été "
                                                 "appliquée correctement."
-                                            )
+                                            ))
 
                                     enregistrer_modification(
                                         supabase,
@@ -1516,10 +1526,11 @@ def show(supabase):
                                         except Exception: pass
                                     nb_succes += 1
                                 except Exception as err:
-                                    st.error(f"Erreur pour #{ep_id} : {err}")
+                                    messages_save.append(("error", f"Erreur pour #{ep_id} : {err}"))
                             if nb_succes > 0:
-                                st.success(f"✅ {nb_succes} programmation(s) mise(s) à jour avec recalcul automatique de la date d'écrasement !")
-                                st.rerun()
+                                messages_save.append(("success", f"✅ {nb_succes} programmation(s) mise(s) à jour avec recalcul automatique de la date d'écrasement !"))
+                            st.session_state["msgs_save_phase1"] = messages_save
+                            st.rerun()
 
                     st.markdown("---")
                     st.markdown("##### 🗑️ Supprimer une ou plusieurs éprouvettes programmées par erreur")
