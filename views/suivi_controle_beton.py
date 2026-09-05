@@ -1342,6 +1342,71 @@ def show(supabase):
                     else:
                         st.info("👍 Toutes les dates d'écrasement étaient déjà cohérentes.")
 
+            # --- Correction en masse des sections/résistances déjà en base ---
+            # D'anciennes éprouvettes ont pu être enregistrées avec une section
+            # (aire de la face d'appui, en mm²) erronée — notamment l'ancien
+            # défaut bugué de 176,71 mm² (confusion cm²/mm²) au lieu de la vraie
+            # section d'un cylindre 150x300 (17671,46 mm²). Comme la Résistance
+            # (MPa) = Force / Section, une section 100x trop petite donne une
+            # résistance ~100x trop grande (ex : 2582 MPa au lieu de ~25,8 MPa).
+            # Ce bouton recalcule la bonne section à partir de la Forme
+            # d'éprouvette de chaque ligne, corrige la colonne "section", et
+            # recalcule la Résistance (MPa) déjà enregistrée si une force de
+            # rupture existe déjà.
+            with st.expander("🔧 Corriger en masse les sections / résistances (MPa) erronées", expanded=False):
+                st.caption(
+                    "Recalcule la section (mm²) de chaque éprouvette à partir de sa "
+                    "Forme d'éprouvette, corrige celles qui sont manifestement "
+                    "fausses (ex : ancien défaut bugué 176,71 mm²), et recalcule la "
+                    "Résistance (MPa) déjà enregistrée en conséquence."
+                )
+                if st.button("🔧 Recalculer et corriger toutes les sections / résistances", key="btn_fix_sections_resistances"):
+                    try:
+                        res_fix_sec = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).execute()
+                        toutes_eprouvettes_sec = res_fix_sec.data or []
+                    except Exception as e:
+                        toutes_eprouvettes_sec = []
+                        st.error(f"Erreur lors du chargement : {e}")
+
+                    nb_sections_corrigees = 0
+                    nb_resistances_corrigees = 0
+                    for ep_fix_sec in toutes_eprouvettes_sec:
+                        forme_fix = ep_fix_sec.get("forme") or "Cylindrique 150x300"
+                        d_fix, l_fix = dimensions_eprouvette(forme_fix)
+                        section_correcte = round(3.141592653589793 * (d_fix ** 2) / 4.0, 2)
+
+                        section_actuelle = float(ep_fix_sec.get("section") or 0)
+                        # Tolérance de 1 mm² pour ignorer les simples arrondis déjà
+                        # corrects, et ne corriger que les écarts réels.
+                        if abs(section_actuelle - section_correcte) > 1.0:
+                            payload_sec = {"section": section_correcte}
+
+                            # Si une force de rupture est déjà enregistrée, la
+                            # Résistance (MPa) stockée a été calculée avec la
+                            # mauvaise section : on la recalcule avec la bonne.
+                            force_fix = float(ep_fix_sec.get("force_kn") or 0)
+                            if force_fix > 0:
+                                type_fix = normaliser_type_essai(ep_fix_sec.get("type_essai"))
+                                nouvelle_resistance = calculer_resistance_mpa(force_fix, type_fix, forme_fix, section_correcte)
+                                payload_sec["fc_mpa"] = nouvelle_resistance
+                                nb_resistances_corrigees += 1
+
+                            try:
+                                supabase.table("suivi_controle_beton").update(payload_sec).eq("id", ep_fix_sec["id"]).execute()
+                                nb_sections_corrigees += 1
+                            except Exception as err_fix_sec:
+                                st.error(f"Erreur pour #{ep_fix_sec.get('id')} : {err_fix_sec}")
+
+                    if nb_sections_corrigees > 0:
+                        st.success(
+                            f"✅ {nb_sections_corrigees} section(s) corrigée(s), dont "
+                            f"{nb_resistances_corrigees} résistance(s) (MPa) recalculée(s) "
+                            "en conséquence !"
+                        )
+                        st.rerun()
+                    else:
+                        st.info("👍 Toutes les sections étaient déjà correctes.")
+
             with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
                 # Affiche les messages de la dernière tentative d'enregistrement
                 # (stockés avant le st.rerun() qui suit la sauvegarde, pour qu'ils
