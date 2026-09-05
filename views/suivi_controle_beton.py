@@ -1386,40 +1386,13 @@ def show(supabase):
                     cols_ed = [c for c in ["id", "betonnage_id", "ref_controle", "repere_eprouvette", "echeance", "date_ecrasement", "date_coulee", "ouvrage", "classe_beton"] if c in df_edit_prog.columns]
                     df_display_prog = df_edit_prog[cols_ed].copy()
 
-                    # --- Aperçu live : "Date Écrasement Prévue" = Date Coulée + Échéance ---
-                    # On applique d'abord les éditions non-encore-enregistrées de
-                    # l'utilisateur (stockées par Streamlit dans session_state sous
-                    # la clé du data_editor) avant de recalculer, pour que la date
-                    # affichée se mette à jour DÈS qu'on change l'échéance dans le
-                    # tableau — sans attendre le clic sur "Enregistrer".
-                    etat_editeur_prog = st.session_state.get("editor_modification_phase1", {})
-                    edited_rows_prog = etat_editeur_prog.get("edited_rows", {})
-                    lignes_avec_date_manuelle = set()
-                    for idx_pos, changements in edited_rows_prog.items():
-                        idx_pos = int(idx_pos)
-                        if idx_pos < len(df_display_prog):
-                            for col_maj, val_maj in changements.items():
-                                if col_maj in df_display_prog.columns:
-                                    df_display_prog.iat[idx_pos, df_display_prog.columns.get_loc(col_maj)] = val_maj
-                            if "date_ecrasement" in changements:
-                                # L'utilisateur a directement modifié cette date : on la
-                                # respecte, on ne doit pas l'écraser par l'auto-calcul
-                                # ci-dessous.
-                                lignes_avec_date_manuelle.add(idx_pos)
-
-                    if "date_ecrasement" in df_display_prog.columns and "date_coulee" in df_display_prog.columns:
-                        col_idx_ecras = df_display_prog.columns.get_loc("date_ecrasement")
-                        for idx_pos in range(len(df_display_prog)):
-                            if idx_pos in lignes_avec_date_manuelle:
-                                continue
-                            ech_val = df_display_prog.iloc[idx_pos].get("echeance")
-                            coulee_val = df_display_prog.iloc[idx_pos].get("date_coulee")
-                            nb_j_apercu = extraire_nb_jours(ech_val, default=28)
-                            try:
-                                dt_c_apercu = datetime.strptime(str(coulee_val)[:10], "%Y-%m-%d").date()
-                                df_display_prog.iat[idx_pos, col_idx_ecras] = str(dt_c_apercu + timedelta(days=nb_j_apercu))
-                            except (ValueError, TypeError):
-                                pass  # Date Coulée invalide/absente : on laisse la valeur enregistrée telle quelle
+                    st.caption(
+                        "ℹ️ Si tu changes l'Échéance Visée d'une ligne, la Date"
+                        " Écrasement Prévue sera recalculée automatiquement"
+                        " (Date Coulée + Échéance) dès que tu cliques sur"
+                        " « 💾 Enregistrer les Modifications de Programmation »"
+                        " ci-dessous."
+                    )
 
                     df_prog_modifiee = st.data_editor(
                         df_display_prog,
@@ -1431,18 +1404,27 @@ def show(supabase):
                             "date_coulee": st.column_config.TextColumn("Date Coulée"),
                             "date_ecrasement": st.column_config.TextColumn(
                                 "Date Écrasement Prévue",
-                                help="Calculée automatiquement = Date Coulée + Échéance"
-                                     " Visée, mais modifiable directement si besoin (ex :"
-                                     " décalage logistique, jour férié). Une valeur saisie"
-                                     " ici manuellement est conservée telle quelle tant que"
-                                     " l'Échéance ou la Date Coulée de cette ligne ne"
-                                     " changent pas à leur tour.",
+                                help="Recalculée automatiquement = Date Coulée + Échéance"
+                                     " Visée au moment de l'enregistrement. Modifiable"
+                                     " directement si besoin (ex : décalage logistique,"
+                                     " jour férié) : une valeur saisie ici manuellement est"
+                                     " alors conservée telle quelle plutôt que recalculée.",
                             ),
                             "ouvrage": st.column_config.TextColumn("Ouvrage", disabled=True),
                             "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
                         },
                         use_container_width=True, hide_index=True, key="editor_modification_phase1",
                     )
+
+                    # Lignes où l'utilisateur a modifié la date d'écrasement à la main
+                    # (à ne pas écraser par le recalcul automatique lors de
+                    # l'enregistrement) — calculé APRÈS le rendu du tableau, sur son
+                    # propre état interne, pour ne pas interférer avec lui.
+                    edited_rows_prog = st.session_state.get("editor_modification_phase1", {}).get("edited_rows", {})
+                    lignes_avec_date_manuelle = {
+                        int(idx_pos) for idx_pos, changements in edited_rows_prog.items()
+                        if "date_ecrasement" in changements
+                    }
 
                     if st.button("💾 Enregistrer les Modifications de Programmation", type="primary", use_container_width=True, key="btn_save_mod_prog"):
                         bloque_mod = False
