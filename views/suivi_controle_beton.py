@@ -26,7 +26,6 @@ OPTIONS_ONGLETS = [
     "🛡️ Phase 3 : Validation Admin (PVs)",
 ]
 
-
 # ==============================================================================
 # FONCTIONS UTILITAIRES : EXTRACTION DE DATES ET DÉLAIS (DAP-PANDAS & REGEX)
 # ==============================================================================
