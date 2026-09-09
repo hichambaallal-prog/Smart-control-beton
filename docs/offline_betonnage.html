@@ -327,8 +327,8 @@
 // =====================================================================
 // CONFIGURATION — à adapter avec vos propres identifiants Supabase
 // =====================================================================
-const SUPABASE_URL = "https://yqijsvxyrdymcnqluipa.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_m8g5mocsCDgk3JpS1lpuCQ_3wOPyet1";
+const SUPABASE_URL = "https://votre-projet.supabase.co";
+const SUPABASE_ANON_KEY = "VOTRE_CLE_PUBLISHABLE_ICI";
 const TABLE = "suivi_betonnage";
 
 // Doit être IDENTIQUE au code configuré côté Supabase (politique RLS) et
@@ -526,18 +526,27 @@ document.getElementById("btn-enregistrer").addEventListener("click", async () =>
     cree_le: new Date().toISOString(),
   };
 
-  await ajouterFicheEnAttente(fiche);
-  viderFormulaire();
-  await rafraichirListeAttente();
+  try {
+    await ajouterFicheEnAttente(fiche);
+    viderFormulaire();
+    await rafraichirListeAttente();
 
-  afficherMessage(
-    navigator.onLine
-      ? "✅ Fiche enregistrée — synchronisation en cours..."
-      : "✅ Fiche enregistrée localement (hors-ligne). Elle sera envoyée dès que la connexion reviendra.",
-    "succes"
-  );
+    afficherMessage(
+      navigator.onLine
+        ? "✅ Fiche enregistrée — synchronisation en cours..."
+        : "✅ Fiche enregistrée localement (hors-ligne). Elle sera envoyée dès que la connexion reviendra.",
+      "succes"
+    );
 
-  if (navigator.onLine) synchroniser();
+    if (navigator.onLine) synchroniser();
+  } catch (err) {
+    console.error("Erreur lors de l'enregistrement local :", err);
+    afficherMessage(
+      "❌ Impossible d'enregistrer la fiche sur cet appareil : " + (err && err.message ? err.message : err) +
+      " (astuce : la navigation privée bloque parfois le stockage local — réessaie en navigation normale).",
+      "erreur"
+    );
+  }
 });
 
 // =====================================================================
