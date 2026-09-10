@@ -17,76 +17,6 @@ import projets_config
 
 
 # ==============================================================================
-# OUTILS ESSAIS : COMPRESSION / TRACTION PAR FENDAGE
-# ==============================================================================
-def normaliser_type_essai(type_essai):
-    """Normalise le type d'essai et reste compatible avec les anciennes donnees."""
-    s = unicodedata.normalize("NFKD", str(type_essai or "").strip().lower()).encode("ascii", "ignore").decode("ascii")
-    if "traction" in s or "fendage" in s or "split" in s:
-        return "Traction par fendage"
-    return "Compression"
-
-
-def dimensions_eprouvette(forme_ep):
-    """Retourne diametre et longueur (mm) depuis une forme du type Cylindrique 150x300."""
-    forme = str(forme_ep or "Cylindrique 150x300").lower().replace(" ", "")
-    match = re.search(r"(\d+(?:[.,]\d+)?)x(\d+(?:[.,]\d+)?)", forme)
-    if match:
-        d = float(match.group(1).replace(",", "."))
-        l = float(match.group(2).replace(",", "."))
-        return d, l
-    return 150.0, 300.0
-
-
-def calculer_resistance_mpa(force_kn, type_essai="Compression", forme="Cylindrique 150x300", section=None):
-    """Calcule la resistance en MPa a partir de la charge de rupture en kN.
-
-    IMPORTANT : la section enregistree dans la base peut etre en cm² (ex. 176.71).
-    Pour eviter toute erreur d unite, le calcul de compression est base en priorite
-    sur le diametre reel de l eprouvette extrait de ``forme``.
-
-    Compression : fc = F / A, avec F en N et A en mm².
-    Traction par fendage : fct = 2F / (pi*L*d), avec F en N et L,d en mm.
-    Pour 150x300 mm :
-      - compression : fc = F(kN) / 17.671
-      - fendage : fct = F(kN) / 70.686
-    """
-    try:
-        f_kn = float(force_kn or 0.0)
-    except (ValueError, TypeError):
-        f_kn = 0.0
-
-    if f_kn <= 0:
-        return 0.0
-
-    type_n = normaliser_type_essai(type_essai)
-    d_mm, l_mm = dimensions_eprouvette(forme)
-    pi = 3.141592653589793
-
-    if type_n == "Traction par fendage":
-        # F(kN) -> N ; resultat en N/mm² = MPa
-        return round((2.0 * f_kn * 1000.0) / (pi * l_mm * d_mm), 1)
-
-    # Compression : toujours recalculer A a partir du diametre en mm.
-    # Cela evite de traiter par erreur une section stockee en cm² comme si
-    # elle etait en mm² (176.71 cm² = 17671 mm² pour un cylindre 150 mm).
-    aire_mm2 = pi * (d_mm ** 2) / 4.0
-    if aire_mm2 <= 0:
-        # Secours uniquement si la forme est inconnue.
-        try:
-            sec = float(section) if section is not None else 0.0
-        except (ValueError, TypeError):
-            sec = 0.0
-        # Une valeur proche de 176.71 correspond tres probablement a des cm².
-        if 10.0 < sec < 1000.0:
-            aire_mm2 = sec * 100.0
-        elif sec > 1000.0:
-            aire_mm2 = sec
-
-    return round((f_kn * 1000.0) / aire_mm2, 1)
-
-
-# ==============================================================================
 # 1. GESTION UTILISATEURS & SUPABASE
 # ==============================================================================
 def connecter_utilisateur(supabase, nom_utilisateur, mot_de_passe):
@@ -221,6 +151,272 @@ def formater_date_nom_fichier(dt_str):
 # 2. GÉNÉRATION DU PROCÈS-VERBAL PDF (FORMAT LPEE)
 # ==============================================================================
 @st.cache_data(show_spinner=False)
+def generer_pv_excel(export_data, infos_header):
+  """Génère le PV d'écrasement en Excel (.xlsx), avec exactement la même
+  mise en page, les mêmes sections et les mêmes données que le PDF
+  (generer_pv_pdf) — pour un usage interne/éditable, réservé à BAALLAL."""
+  wb = openpyxl.Workbook()
+  ws = wb.active
+  ws.title = "PV"
+  ws.sheet_view.showGridLines = False
+  ws.page_setup.orientation = "portrait"
+  ws.page_setup.paperSize = ws.PAPERSIZE_A4
+  ws.page_margins = PageMargins(left=0.3, right=0.3, top=0.4, bottom=0.4)
+
+  DARK_FILL = PatternFill("solid", fgColor="1F4E78")
+  TABLE_FILL = PatternFill("solid", fgColor="D9E1F2")
+  LABEL_FILL = PatternFill("solid", fgColor="F2F2F2")
+  WHITE_FONT_BOLD = Font(bold=True, color="FFFFFF", size=11)
+  BLACK = "000000"
+  THIN = Side(style="thin", color="808080")
+  BORDER_ALL = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
+
+  default_bl = extraire_num_bl(infos_header)
+
+  def clean_na(val, fallback=default_bl):
+    v = str(val).strip() if val is not None else ""
+    return fallback if v.upper() in ["N/A", "NONE", "NAN", "", "-"] else val
+
+  def set_cell(row, col, value, bold=False, size=8.5, fill=None, color=BLACK,
+               align="center", wrap=False, italic=False):
+    c = ws.cell(row=row, column=col, value=value)
+    c.font = Font(bold=bold, size=size, color=color, italic=italic)
+    c.alignment = Alignment(horizontal=align, vertical="center", wrap_text=wrap)
+    c.border = BORDER_ALL
+    if fill is not None:
+      c.fill = fill
+    return c
+
+  def merge(r1, c1, r2, c2):
+    ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+
+  # Largeurs de colonnes (mêmes proportions que le PDF)
+  widths = {"A": 16, "B": 12, "C": 12, "D": 10, "E": 18, "F": 14, "G": 12, "H": 12}
+  for col, w in widths.items():
+    ws.column_dimensions[col].width = w
+
+  # ---- Row 1 : LPEE / CTR CSB | RE N° | Réf ----
+  merge(1, 1, 1, 4)
+  set_cell(1, 1, "LPEE / CTR CSB", bold=True, size=11, fill=DARK_FILL, color="FFFFFF")
+  set_cell(1, 5, "RE N° :", bold=True)
+  merge(1, 6, 1, 7)
+  set_cell(1, 6, clean_na(infos_header.get("re_num"), "25/260/LGV/ B/"), bold=True, align="right")
+  ref_h1 = clean_na(
+      infos_header.get("num_reception")
+      or infos_header.get("ref_controle")
+      or infos_header.get("reference"),
+      "B/406",
+  )
+  set_cell(1, 8, ref_h1, bold=True, align="left")
+
+  # ---- Rows 2-3 : Laboratoire | DOSSIER / CLIENT ----
+  merge(2, 1, 3, 4)
+  set_cell(2, 1, "Laboratoire de Contrôle Externe", bold=True, fill=DARK_FILL, color="FFFFFF")
+  for rr in range(2, 4):
+    set_cell(rr, 1, None, fill=DARK_FILL)  # cellules fusionnées : style cohérent
+  set_cell(2, 5, "DOSSIER :", bold=True)
+  merge(2, 6, 2, 8)
+  set_cell(2, 6, clean_na(infos_header.get("dossier"), "2025-260-05985-2025-0247"))
+  set_cell(3, 5, "CLIENT :", bold=True)
+  merge(3, 6, 3, 8)
+  set_cell(3, 6, clean_na(infos_header.get("client"), "TGCC"), bold=True)
+
+  # ---- Row 4 : Titre ----
+  merge(4, 1, 4, 8)
+  set_cell(4, 1, "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE", bold=True, size=13, fill=DARK_FILL, color="FFFFFF")
+
+  # ---- Row 5 : Compression / Traction ----
+  merge(5, 1, 5, 4)
+  set_cell(5, 1, "[X] COMPRESSION NF EN 12390-3 (2019)", bold=True)
+  merge(5, 5, 5, 8)
+  set_cell(5, 5, "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)", bold=True)
+
+  # ---- Row 6 : Presse / Classe ----
+  merge(6, 1, 6, 6)
+  set_cell(6, 1, "Presse : Marque: Controls", bold=True, align="right")
+  merge(6, 7, 6, 8)
+  set_cell(6, 7, "Classe : A", bold=True)
+
+  # ---- Row 7 : Date / Lieu de prélèvement ----
+  date_fab_header = clean_na(infos_header.get("date_coulee"), "-")
+  set_cell(7, 1, "Date de\nprélèvement", bold=True, fill=LABEL_FILL, wrap=True)
+  set_cell(7, 2, str(date_fab_header), bold=True)
+  merge(7, 3, 7, 4)
+  set_cell(7, 3, "Lieu de\nprélèvement", bold=True, fill=LABEL_FILL, wrap=True)
+  merge(7, 5, 7, 8)
+  set_cell(7, 5, clean_na(infos_header.get("lieu_prelevement", infos_header.get("ouvrage")), "-"), bold=True)
+  ws.row_dimensions[7].height = 30
+
+  # ---- Row 8 : Chantier / Type de béton ----
+  set_cell(8, 1, "Chantier", bold=True, fill=LABEL_FILL)
+  merge(8, 2, 8, 4)
+  set_cell(8, 2, clean_na(
+      infos_header.get("chantier"),
+      "LGV-Travaux d'exécution de terrassement, ouvrages d'art et"
+      " rétablissement de communication entre PK 5+500 et PK"
+      " 10+000-GARE CASA SUD.",
+  ), size=7, wrap=True)
+  merge(8, 5, 8, 6)
+  set_cell(8, 5, "Type de béton", bold=True, fill=LABEL_FILL)
+  merge(8, 7, 8, 8)
+  set_cell(8, 7, str(clean_na(infos_header.get("classe_beton"), "C35/45")).upper(), bold=True)
+  ws.row_dimensions[8].height = 34
+
+  # ---- Row 9 : Centrale / Dimensions ----
+  merge(9, 1, 9, 2)
+  set_cell(9, 1, clean_na(infos_header.get("centrale"), "Centrale à Béton"), bold=True, fill=LABEL_FILL)
+  set_cell(9, 3, "- Dimensions", align="left")
+  merge(9, 4, 9, 8)
+  set_cell(9, 4, clean_na(infos_header.get("forme"), "Cylindrique 150x300"), bold=True)
+
+  # ---- Row 10 : Affaissement / Mode confection ----
+  merge(10, 1, 10, 2)
+  set_cell(10, 1, "Affaissement au cône d'abrams NF EN 12350-2", size=7, fill=LABEL_FILL, wrap=True)
+  set_cell(10, 3, str(clean_na(infos_header.get("affaissement"), "-")), bold=True)
+  set_cell(10, 4, "- Mode confection", align="left", size=7)
+  merge(10, 5, 10, 8)
+  set_cell(10, 5, "Par vibration NF EN 12390-2 (2019)", bold=True)
+  ws.row_dimensions[10].height = 26
+
+  # ---- Row 11 : Température / Mode conservation ----
+  merge(11, 1, 11, 2)
+  set_cell(11, 1, "Température °C", bold=True, fill=LABEL_FILL)
+  set_cell(11, 3, str(clean_na(infos_header.get("temperature"), "-")), bold=True)
+  set_cell(11, 4, "- Mode conservation", align="left", size=7)
+  merge(11, 5, 11, 8)
+  set_cell(11, 5, "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C", bold=True, size=7.5, wrap=True)
+  ws.row_dimensions[11].height = 26
+
+  # ---- Row 12 : Prélèvement effectué par / N° BL ----
+  tech = clean_na(
+      infos_header.get("technicien_prelevement")
+      or infos_header.get("preleve_par")
+      or infos_header.get("technicien"),
+      "Technicien LPEE",
+  )
+  merge(12, 1, 12, 3)
+  set_cell(12, 1, f"prélèvement effectué par {tech}", size=7, fill=LABEL_FILL, wrap=True)
+  merge(12, 4, 12, 5)
+  set_cell(12, 4, "N° de bon de livraison", bold=True, fill=LABEL_FILL)
+  merge(12, 6, 12, 8)
+  set_cell(12, 6, default_bl, bold=True)
+
+  # ---- Rows 13-14 : entête du tableau de résultats ----
+  merge(13, 1, 14, 1)
+  set_cell(13, 1, "Réf,", bold=True, fill=TABLE_FILL)
+  set_cell(14, 1, None, fill=TABLE_FILL)
+  merge(13, 2, 13, 3)
+  set_cell(13, 2, "Date", bold=True, fill=TABLE_FILL)
+  set_cell(14, 2, "Fabri", bold=True, fill=TABLE_FILL)
+  set_cell(14, 3, "Essai", bold=True, fill=TABLE_FILL)
+  merge(13, 4, 14, 4)
+  set_cell(13, 4, "Age (jours)", bold=True, fill=TABLE_FILL)
+  merge(13, 5, 14, 5)
+  set_cell(13, 5, "Charge rupture(KN)", bold=True, fill=TABLE_FILL)
+  merge(13, 6, 13, 8)
+  set_cell(13, 6, "Résistance (MPa)", bold=True, fill=TABLE_FILL)
+  set_cell(14, 6, "Compression", bold=True, fill=TABLE_FILL)
+  set_cell(14, 7, "Traction", bold=True, fill=TABLE_FILL)
+  set_cell(14, 8, "Moyenne", bold=True, fill=TABLE_FILL)
+
+  # ---- Lignes de résultats ----
+  ligne_courante = 15
+  groupes_lots = {}
+  for item in export_data:
+    f_kn = float(item.get("force_kn", 0.0) or 0.0)
+    is_en_cours = str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
+    dt_essai = item.get("date_essai")
+    age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
+
+    date_essai_affichage = "-"
+    if not is_en_cours and dt_essai and str(dt_essai).strip() not in ["-", "", "None", "NaN"]:
+      date_essai_affichage = str(clean_na(dt_essai, "-"))
+    else:
+      try:
+        df_obj = datetime.strptime(str(date_fab_header).strip()[:10], "%Y-%m-%d")
+        date_essai_affichage = (df_obj + timedelta(days=int(age_val))).strftime("%Y-%m-%d")
+      except Exception:
+        date_essai_affichage = "-"
+
+    set_cell(ligne_courante, 1, str(item.get("repere_eprouvette", "B/01")))
+    set_cell(ligne_courante, 2, str(date_fab_header))
+    set_cell(ligne_courante, 3, date_essai_affichage)
+    set_cell(ligne_courante, 4, str(age_val))
+    if is_en_cours:
+      set_cell(ligne_courante, 5, "En cours")
+      set_cell(ligne_courante, 6, "En cours")
+    else:
+      set_cell(ligne_courante, 5, f"{f_kn:.1f}")
+      set_cell(ligne_courante, 6, f"{float(item.get('fc_mpa', 0.0)):.1f}")
+    set_cell(ligne_courante, 7, "-")
+
+    cle = f"{age_val}_{dt_essai}"
+    groupes_lots.setdefault(cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val})["lignes"].append(ligne_courante)
+    ligne_courante += 1
+
+  # Fusion des moyennes par groupe (échéance + date d'essai)
+  a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
+  for gdata in groupes_lots.values():
+    lignes, age = gdata["lignes"], gdata["age"]
+    start_r, end_r = min(lignes), max(lignes)
+    if start_r != end_r:
+      merge(start_r, 8, end_r, 8)
+    if gdata["en_cours"]:
+      set_cell(start_r, 8, "En cours", bold=True)
+    else:
+      vals = []
+      for li in lignes:
+        try:
+          vals.append(float(ws.cell(row=li, column=6).value))
+        except (ValueError, TypeError):
+          pass
+      moy = round(sum(vals) / len(vals), 1) if vals else 0.0
+      set_cell(start_r, 8, f"{moy:.1f}", bold=True)
+      if int(age) >= 28:
+        moyenne_28j_val = moy
+    if int(age) >= 28:
+      a_des_28j = True
+      if gdata["en_cours"]:
+        est_en_cours_28j = True
+
+  # ---- Commentaire de conformité ----
+  seuil = next(
+      (s for k, s in [("C25/30", 25.0), ("C30/37", 30.0), ("C35/45", 35.0), ("C40/50", 40.0)]
+       if k in str(clean_na(infos_header.get("classe_beton"), "C35/45")).upper()),
+      35.0,
+  )
+  if not a_des_28j or est_en_cours_28j or moyenne_28j_val is None:
+    comment_valeur = "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
+  elif moyenne_28j_val >= seuil:
+    comment_valeur = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
+  else:
+    comment_valeur = "PERFORMANCES MECANIQUES NON CONFORMES"
+
+  row_comment = ligne_courante
+  set_cell(row_comment, 1, "Commentaire :", bold=True, fill=LABEL_FILL, align="left")
+  merge(row_comment, 2, row_comment, 8)
+  set_cell(row_comment, 2, comment_valeur, bold=True, align="left")
+
+  # ---- Visas ----
+  row_visa_titre = row_comment + 1
+  merge(row_visa_titre, 2, row_visa_titre, 4)
+  set_cell(row_visa_titre, 2, "Visa Responsable d'essai", bold=True)
+  merge(row_visa_titre, 6, row_visa_titre, 8)
+  set_cell(row_visa_titre, 6, "Visa Chef du laboratoire", bold=True)
+
+  row_visa_nom = row_visa_titre + 1
+  merge(row_visa_nom, 2, row_visa_nom, 4)
+  set_cell(row_visa_nom, 2, "O.IKKEN", bold=True, align="center")
+  merge(row_visa_nom, 6, row_visa_nom, 8)
+  set_cell(row_visa_nom, 6, "H.BAALLAL", bold=True, align="center")
+  ws.row_dimensions[row_visa_nom].height = 60
+
+  buf = io.BytesIO()
+  wb.save(buf)
+  buf.seek(0)
+  return buf.getvalue()
+
+
 def generer_pv_pdf(export_data, infos_header):
   """Génère le PV d'écrasement en PDF, avec la même mise en page (mêmes
   sections, mêmes libellés, même grille) que l'ancienne version Excel.
@@ -337,25 +533,9 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((0, row3, 7, row3, "Helvetica-Bold", 11, WHITE))
 
   # ---- Row 4 : Compression / Traction ----
-  # Les cases sont cochées uniquement si le PV contient réellement le type d'essai.
-  types_pv = {
-      normaliser_type_essai(item.get("type_essai"))
-      for item in export_data
-  }
-  has_compression = "Compression" in types_pv
-  has_traction = "Traction par fendage" in types_pv
-
   r = blank_row()
-  r[0] = (
-      "[X] COMPRESSION NF EN 12390-3 (2019)"
-      if has_compression else
-      "[ ] COMPRESSION NF EN 12390-3 (2019)"
-  )
-  r[4] = (
-      "[X] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
-      if has_traction else
-      "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
-  )
+  r[0] = "[X] COMPRESSION NF EN 12390-3 (2019)"
+  r[4] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
   data.append(r)
   row4 = len(data) - 1
   spans += [(0, row4, 3, row4), (4, row4, 7, row4)]
@@ -513,144 +693,81 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((0, row12, 7, row13, "Helvetica-Bold", 8.5, BLACK))
 
   # ---- Lignes de résultats (une par éprouvette) ----
-  # IMPORTANT : le regroupement d'une moyenne se fait par LOT + AGE + DATE + TYPE
-  # d'essai. Ainsi, deux lots différents ne peuvent jamais être mélangés,
-  # et une série à 28 j en compression ne peut jamais être mélangée avec
-  # une série à 28 j en traction par fendage.
   row_indices_body = []
   groupes_lots = {}
-
-  numero_eprouvette = 0
-
   for item in export_data:
-      numero_eprouvette += 1
-      f_kn = float(item.get("force_kn", 0.0) or 0.0)
-      is_en_cours = (
-          str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
-      )
-      dt_essai = item.get("date_essai")
-      age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
-      type_essai = normaliser_type_essai(item.get("type_essai"))
-      forme_item = item.get("forme", infos_header.get("forme", "Cylindrique 150x300"))
-      section_item = item.get("section")
+    f_kn = float(item.get("force_kn", 0.0) or 0.0)
+    is_en_cours = (
+        str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
+    )
+    dt_essai = item.get("date_essai")
+    age_val = calculer_age_jours(date_fab_header, dt_essai, item.get("age"))
 
-      # Recalcul de la résistance selon le type d'essai.
-      # On ne reprend pas aveuglément fc_mpa : cela évite qu'une traction soit
-      # affichée par erreur dans la colonne Compression.
-      resistance_mpa = calculer_resistance_mpa(
-          f_kn,
-          type_essai=type_essai,
-          forme=forme_item,
-          section=section_item,
-      )
+    date_essai_affichage = "-"
+    if (
+        not is_en_cours
+        and dt_essai
+        and str(dt_essai).strip() not in ["-", "", "None", "NaN"]
+    ):
+      date_essai_affichage = str(clean_na(dt_essai, "-"))
+    else:
+      try:
+        df_obj = datetime.strptime(
+            str(date_fab_header).strip()[:10], "%Y-%m-%d"
+        )
+        date_essai_affichage = (
+            df_obj + timedelta(days=int(age_val))
+        ).strftime("%Y-%m-%d")
+      except Exception:
+        date_essai_affichage = "-"
 
-      date_essai_affichage = "-"
-      if (
-          not is_en_cours
-          and dt_essai
-          and str(dt_essai).strip() not in ["-", "", "None", "NaN"]
-      ):
-        date_essai_affichage = str(clean_na(dt_essai, "-"))
-      else:
-        try:
-          df_obj = datetime.strptime(
-              str(date_fab_header).strip()[:10], "%Y-%m-%d"
-          )
-          date_essai_affichage = (
-              df_obj + timedelta(days=int(age_val))
-          ).strftime("%Y-%m-%d")
-        except Exception:
-          date_essai_affichage = "-"
+    r = blank_row()
+    r[0] = str(item.get("repere_eprouvette", "B/01"))
+    r[1] = str(date_fab_header)
+    r[2] = date_essai_affichage
+    r[3] = str(age_val)
+    if is_en_cours:
+      r[4] = "En cours"
+      r[5] = "En cours"
+    else:
+      r[4] = f"{f_kn:.1f}"
+      r[5] = f"{float(item.get('fc_mpa', 0.0)):.1f}"
+    r[6] = "-"
+    data.append(r)
+    r_idx = len(data) - 1
+    row_indices_body.append(r_idx)
+    fonts.append((0, r_idx, 7, r_idx, "Helvetica", 8.5, BLACK))
 
-      r = blank_row()
-      r[0] = f"{ref_h1}/{numero_eprouvette}"
-      r[1] = str(date_fab_header)
-      r[2] = date_essai_affichage
-      r[3] = str(age_val)
+    cle = f"{age_val}_{dt_essai}"
+    groupes_lots.setdefault(
+        cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
+    )["lignes"].append(r_idx)
 
-      if is_en_cours:
-        r[4] = "En cours"
-        if type_essai == "Traction par fendage":
-          r[6] = "En cours"
-        else:
-          r[5] = "En cours"
-      else:
-        r[4] = f"{f_kn:.1f}"
-        if type_essai == "Traction par fendage":
-          r[6] = f"{resistance_mpa:.1f}"
-        else:
-          r[5] = f"{resistance_mpa:.1f}"
-
-      data.append(r)
-      r_idx = len(data) - 1
-      row_indices_body.append(r_idx)
-      fonts.append((0, r_idx, 7, r_idx, "Helvetica", 8.5, BLACK))
-
-      # Chaque moyenne est indépendante par LOT + AGE + DATE + TYPE D ESSAI.
-      # Le lot correspond ici au bétonnage_id. Cette clé empêche qu un même âge
-      # et un même type provenant de deux lots différents soient regroupés.
-      lot_id = item.get("betonnage_id") or item.get("lot_id") or item.get("lot") or "LOT_INCONNU"
-      cle = (str(lot_id), int(age_val), str(dt_essai), type_essai)
-      groupes_lots.setdefault(
-          cle,
-          {
-              "lignes": [],
-              "en_cours": False,
-              "lot_id": str(lot_id),
-              "age": int(age_val),
-              "type_essai": type_essai,
-          },
-      )
-      groupes_lots[cle]["lignes"].append(r_idx)
-      if is_en_cours:
-        groupes_lots[cle]["en_cours"] = True
-
-  # Fusion des moyennes : une moyenne distincte pour chaque lot,
-  # chaque âge et chaque type d'essai.
-  a_des_28j = False
-  moyenne_28j_compression = None
-  moyenne_28j_traction = None
-  en_cours_28j_compression = False
-  en_cours_28j_traction = False
-
+  # Fusion des moyennes (comme les cellules H fusionnées côté Excel)
+  a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
   for gdata in groupes_lots.values():
-    lignes = gdata["lignes"]
-    age = gdata["age"]
-    type_essai = gdata["type_essai"]
+    lignes, age = gdata["lignes"], gdata["age"]
     start_r, end_r = min(lignes), max(lignes)
-
     if start_r != end_r:
       spans.append((7, start_r, 7, end_r))
-
     if gdata["en_cours"]:
       data[start_r][7] = "En cours"
     else:
       vals = []
-      col_resultat = 6 if type_essai == "Traction par fendage" else 5
       for li in lignes:
         try:
-          vals.append(float(data[li][col_resultat]))
+          vals.append(float(data[li][5]))
         except (ValueError, TypeError):
           pass
-
       moy = round(sum(vals) / len(vals), 1) if vals else 0.0
       data[start_r][7] = f"{moy:.1f}"
-
       if int(age) >= 28:
-        if type_essai == "Traction par fendage":
-          moyenne_28j_traction = moy
-        else:
-          moyenne_28j_compression = moy
-
+        moyenne_28j_val = moy
     fonts.append((7, start_r, 7, end_r, "Helvetica-Bold", 8.5, BLACK))
-
     if int(age) >= 28:
       a_des_28j = True
       if gdata["en_cours"]:
-        if type_essai == "Traction par fendage":
-          en_cours_28j_traction = True
-        else:
-          en_cours_28j_compression = True
+        est_en_cours_28j = True
 
   # ---- Commentaire de conformité ----
   seuil = next(
@@ -667,30 +784,14 @@ def generer_pv_pdf(export_data, infos_header):
       ),
       35.0,
   )
-  # La conformité automatique reste basée sur la moyenne de compression à
-  # 28 jours lorsqu'elle existe. La traction par fendage est affichée et
-  # moyennée séparément, sans être comparée au seuil de classe de compression.
-  if (
-      not a_des_28j
-      or en_cours_28j_compression
-      or (
-          moyenne_28j_compression is None
-          and moyenne_28j_traction is None
-      )
-  ):
+  if not a_des_28j or est_en_cours_28j or moyenne_28j_val is None:
     comment_valeur = (
         "PERFORMANCES MECANIQUES A 28 JOURS SERONT DONNES ULTERIEUREMENT."
     )
-  elif moyenne_28j_compression is not None:
-    if moyenne_28j_compression >= seuil:
-      comment_valeur = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
-    else:
-      comment_valeur = "PERFORMANCES MECANIQUES NON CONFORMES"
+  elif moyenne_28j_val >= seuil:
+    comment_valeur = "PERFORMANCES MECANIQUES A 28 JOURS SONT CONFORMES"
   else:
-    comment_valeur = (
-        "RESULTATS DE TRACTION PAR FENDAGE A 28 JOURS : "
-        "MOYENNE DISPONIBLE DANS LE TABLEAU."
-    )
+    comment_valeur = "PERFORMANCES MECANIQUES NON CONFORMES"
 
   r = blank_row()
   r[0] = "Commentaire :"
@@ -915,6 +1016,7 @@ def show(supabase):
       role in ["admin", "responsable_labo"]
       or st.session_state.get("is_admin", False)
   )
+  is_baallal_admin = str(user_info.get("username", "")).strip().upper() == "BAALLAL" and role == "admin"
 
   if (
       role not in ["laboratoire", "labo", "admin", "responsable_labo", "qualite"]
@@ -1115,26 +1217,14 @@ def show(supabase):
               date_coulee_h, dt_essai_item, item.get("age")
           )
 
-          type_essai_item = normaliser_type_essai(item.get("type_essai"))
-          forme_item = item.get("forme", "Cylindrique 150x300")
-          resistance_item = calculer_resistance_mpa(
-              f_kn,
-              type_essai=type_essai_item,
-              forme=forme_item,
-              section=sec,
-          )
-
           export_data_h.append({
-              "repere_eprouvette": rep_s,
-              "betonnage_id": b_id_h,
-              "lot_id": b_id_h,
-              "forme": forme_item,
+              "repere_eprouvette": f"{ref_p}{rep_s}" if ref_p else rep_s,
+              "forme": item.get("forme", "Cylindrique 150x300"),
               "section": sec,
               "force_kn": f_kn,
-              "fc_mpa": resistance_item,
+              "fc_mpa": fc,
               "date_essai": dt_essai_item,
               "age": age_real,
-              "type_essai": type_essai_item,
               "statut": "En cours" if f_kn == 0 else "Réalisé",
           })
 
@@ -1193,6 +1283,17 @@ def show(supabase):
             type="primary",
             key="btn_download_hist",
         )
+
+        if is_baallal_admin:
+          nom_fichier_pv_xlsx = f"PV_{nom_rec_clean}_{date_fab_clean}.xlsx"
+          st.download_button(
+              label=f"📊 Télécharger le PV en Excel ({nom_fichier_pv_xlsx}) — BAALLAL",
+              data=generer_pv_excel(export_data_h, infos_header_h),
+              file_name=nom_fichier_pv_xlsx,
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True,
+              key="btn_download_hist_excel",
+          )
 
     # Base de données globale
     st.markdown("---")
