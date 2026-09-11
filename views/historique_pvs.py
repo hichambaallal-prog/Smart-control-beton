@@ -1222,6 +1222,12 @@ def show(supabase):
         export_data_h = []
         for item in essais_h:
           sec = float(item.get("section") or 176.71)
+          # Sécurité : une section > 1000 est très probablement enregistrée
+          # en mm² par erreur (ex: 17671 au lieu de 176.71 cm² pour un
+          # cylindre 150x300) — sans cette correction, la résistance
+          # recalculée serait fausse d'un facteur ~100.
+          if sec > 1000:
+            sec = sec / 100.0
           f_kn = float(item.get("force_kn") or 0.0)
           fc = float(
               item.get("fc_mpa")
