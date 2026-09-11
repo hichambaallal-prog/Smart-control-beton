@@ -212,8 +212,6 @@ def generer_pv_excel(export_data, infos_header):
   # ---- Rows 2-3 : Laboratoire | DOSSIER / CLIENT ----
   merge(2, 1, 3, 4)
   set_cell(2, 1, "Laboratoire de Contrôle Externe", bold=True, fill=DARK_FILL, color="FFFFFF")
-  for rr in range(2, 4):
-    set_cell(rr, 1, None, fill=DARK_FILL)  # cellules fusionnées : style cohérent
   set_cell(2, 5, "DOSSIER :", bold=True)
   merge(2, 6, 2, 8)
   set_cell(2, 6, clean_na(infos_header.get("dossier"), "2025-260-05985-2025-0247"))
@@ -304,7 +302,6 @@ def generer_pv_excel(export_data, infos_header):
   # ---- Rows 13-14 : entête du tableau de résultats ----
   merge(13, 1, 14, 1)
   set_cell(13, 1, "Réf,", bold=True, fill=TABLE_FILL)
-  set_cell(14, 1, None, fill=TABLE_FILL)
   merge(13, 2, 13, 3)
   set_cell(13, 2, "Date", bold=True, fill=TABLE_FILL)
   set_cell(14, 2, "Fabri", bold=True, fill=TABLE_FILL)
@@ -357,12 +354,17 @@ def generer_pv_excel(export_data, infos_header):
   # Fusion des moyennes par groupe (échéance + date d'essai)
   a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
   for gdata in groupes_lots.values():
-    lignes, age = gdata["lignes"], gdata["age"]
+    lignes, age = sorted(gdata["lignes"]), gdata["age"]
     start_r, end_r = min(lignes), max(lignes)
-    if start_r != end_r:
-      merge(start_r, 8, end_r, 8)
+    # Une fusion n'est sûre que si les lignes du groupe sont réellement
+    # consécutives : sinon elle chevaucherait par erreur la zone d'un autre
+    # groupe déjà écrite/fusionnée juste avant (cause exacte de l'erreur
+    # "MergedCell... read-only" rencontrée après une correction post-
+    # validation, qui peut changer l'ordre des lignes).
+    contigu = (end_r - start_r + 1) == len(lignes)
+
     if gdata["en_cours"]:
-      set_cell(start_r, 8, "En cours", bold=True)
+      valeur_moy = "En cours"
     else:
       vals = []
       for li in lignes:
@@ -371,9 +373,17 @@ def generer_pv_excel(export_data, infos_header):
         except (ValueError, TypeError):
           pass
       moy = round(sum(vals) / len(vals), 1) if vals else 0.0
-      set_cell(start_r, 8, f"{moy:.1f}", bold=True)
+      valeur_moy = f"{moy:.1f}"
       if int(age) >= 28:
         moyenne_28j_val = moy
+
+    if contigu and start_r != end_r:
+      merge(start_r, 8, end_r, 8)
+      set_cell(start_r, 8, valeur_moy, bold=True)
+    else:
+      for li in lignes:
+        set_cell(li, 8, valeur_moy, bold=True)
+
     if int(age) >= 28:
       a_des_28j = True
       if gdata["en_cours"]:
@@ -746,12 +756,12 @@ def generer_pv_pdf(export_data, infos_header):
   # Fusion des moyennes (comme les cellules H fusionnées côté Excel)
   a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
   for gdata in groupes_lots.values():
-    lignes, age = gdata["lignes"], gdata["age"]
+    lignes, age = sorted(gdata["lignes"]), gdata["age"]
     start_r, end_r = min(lignes), max(lignes)
-    if start_r != end_r:
-      spans.append((7, start_r, 7, end_r))
+    contigu = (end_r - start_r + 1) == len(lignes)
+
     if gdata["en_cours"]:
-      data[start_r][7] = "En cours"
+      valeur_moy = "En cours"
     else:
       vals = []
       for li in lignes:
@@ -760,10 +770,19 @@ def generer_pv_pdf(export_data, infos_header):
         except (ValueError, TypeError):
           pass
       moy = round(sum(vals) / len(vals), 1) if vals else 0.0
-      data[start_r][7] = f"{moy:.1f}"
+      valeur_moy = f"{moy:.1f}"
       if int(age) >= 28:
         moyenne_28j_val = moy
-    fonts.append((7, start_r, 7, end_r, "Helvetica-Bold", 8.5, BLACK))
+
+    if contigu and start_r != end_r:
+      spans.append((7, start_r, 7, end_r))
+      data[start_r][7] = valeur_moy
+      fonts.append((7, start_r, 7, end_r, "Helvetica-Bold", 8.5, BLACK))
+    else:
+      for li in lignes:
+        data[li][7] = valeur_moy
+        fonts.append((7, li, 7, li, "Helvetica-Bold", 8.5, BLACK))
+
     if int(age) >= 28:
       a_des_28j = True
       if gdata["en_cours"]:
