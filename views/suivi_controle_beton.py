@@ -606,8 +606,15 @@ def obtenir_infos_betonnage_parents_bulk(supabase, betonnage_ids):
 
 def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
     session_key = f"ref_controle_beton_{betonnage_id}"
-    if st.session_state.get(session_key): return st.session_state[session_key]
 
+    # Toujours privilégier la valeur réelle et à jour de num_reception /
+    # ref_controle si elle est disponible MAINTENANT — même si une valeur
+    # de repli a été mise en cache plus tôt dans la session, avant que
+    # cette référence ne soit renseignée ou corrigée en base. Sans cette
+    # vérification en priorité, une correction ultérieure de la référence
+    # (ex: "B/424") ne serait jamais reflétée ailleurs dans l'application
+    # tant que la session reste ouverte, qui continuerait d'afficher
+    # l'ancien nom de repli auto-généré (ex: "REF-25-...").
     num_rec = (info_betonnage or {}).get("num_reception")
     if num_rec and str(num_rec).strip() not in ["", "-", "None", "NaN", "N/A"]:
         st.session_state[session_key] = str(num_rec).strip()
@@ -617,6 +624,12 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
         if candidate and str(candidate).strip():
             st.session_state[session_key] = str(candidate).strip()
             return str(candidate).strip()
+
+    # Aucune référence valide disponible actuellement : on réutilise la
+    # valeur de repli déjà calculée si elle existe (stabilité d'un rerun à
+    # l'autre), sinon on en génère une nouvelle.
+    if st.session_state.get(session_key):
+        return st.session_state[session_key]
 
     defaut = f"REF-{betonnage_id}-{(info_betonnage or {}).get('ouvrage', 'N/A')}"
     st.session_state[session_key] = defaut
