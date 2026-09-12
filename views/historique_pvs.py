@@ -159,7 +159,7 @@ def generer_pv_excel(export_data, infos_header):
   ws = wb.active
   ws.title = "PV"
   ws.sheet_view.showGridLines = False
-  ws.page_setup.orientation = "landscape"
+  ws.page_setup.orientation = "portrait"
   ws.page_setup.paperSize = ws.PAPERSIZE_A4
   ws.page_margins = PageMargins(left=0.3, right=0.3, top=0.4, bottom=0.4)
   # Mise à l'échelle automatique sur UNE SEULE page (largeur ET hauteur) :
@@ -1001,10 +1001,15 @@ def obtenir_infos_betonnage_parents_bulk(supabase, betonnage_ids):
 
 
 def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
-  """Calcule la référence de contrôle prioritaire."""
+  """Calcule la référence de contrôle prioritaire.
+
+  Priorité TOUJOURS donnée à la valeur réelle et à jour de num_reception /
+  ref_controle, même si une valeur de repli a été mise en cache plus tôt
+  dans la session (avant que la référence ne soit renseignée/corrigée en
+  base) — st.session_state est partagé par toute l'application, donc une
+  valeur figée ici contaminerait aussi bien Suivi Contrôle Béton que
+  l'historique et les PV générés."""
   key = f"ref_controle_beton_{betonnage_id}"
-  if key in st.session_state and st.session_state[key]:
-    return st.session_state[key]
 
   num_rec = (info_betonnage or {}).get("num_reception")
   if num_rec and str(num_rec).strip().upper() not in [
@@ -1015,13 +1020,19 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
       "N/A",
   ]:
     ref = str(num_rec).strip()
-  else:
-    ref = (
-        (info_betonnage or {}).get("ref_controle")
-        or (sample_ep or {}).get("ref_controle")
-        or f"REF-{betonnage_id}-{(info_betonnage or {}).get('ouvrage', 'N/A')}"
-    ).strip()
+    st.session_state[key] = ref
+    return ref
 
+  candidat = (info_betonnage or {}).get("ref_controle") or (sample_ep or {}).get("ref_controle")
+  if candidat and str(candidat).strip():
+    ref = str(candidat).strip()
+    st.session_state[key] = ref
+    return ref
+
+  if key in st.session_state and st.session_state[key]:
+    return st.session_state[key]
+
+  ref = f"REF-{betonnage_id}-{(info_betonnage or {}).get('ouvrage', 'N/A')}"
   st.session_state[key] = ref
   return ref
 
