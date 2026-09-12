@@ -159,9 +159,17 @@ def generer_pv_excel(export_data, infos_header):
   ws = wb.active
   ws.title = "PV"
   ws.sheet_view.showGridLines = False
-  ws.page_setup.orientation = "portrait"
+  ws.page_setup.orientation = "landscape"
   ws.page_setup.paperSize = ws.PAPERSIZE_A4
   ws.page_margins = PageMargins(left=0.3, right=0.3, top=0.4, bottom=0.4)
+  # Mise à l'échelle automatique sur UNE SEULE page (largeur ET hauteur) :
+  # les largeurs de colonnes ci-dessous sont en "caractères" (unité Excel),
+  # une mesure différente des points utilisés côté PDF — les recopier
+  # telles quelles produisait un tableau trop large, débordant sur une 2e
+  # page. Le fit-to-page évite d'avoir à deviner la bonne largeur exacte.
+  ws.sheet_properties.pageSetUpPr.fitToPage = True
+  ws.page_setup.fitToWidth = 1
+  ws.page_setup.fitToHeight = 1
 
   DARK_FILL = PatternFill("solid", fgColor="1F4E78")
   TABLE_FILL = PatternFill("solid", fgColor="D9E1F2")
@@ -420,6 +428,8 @@ def generer_pv_excel(export_data, infos_header):
   merge(row_visa_nom, 6, row_visa_nom, 8)
   set_cell(row_visa_nom, 6, "H.BAALLAL", bold=True, align="center")
   ws.row_dimensions[row_visa_nom].height = 60
+
+  ws.print_area = f"A1:H{row_visa_nom}"
 
   buf = io.BytesIO()
   wb.save(buf)
