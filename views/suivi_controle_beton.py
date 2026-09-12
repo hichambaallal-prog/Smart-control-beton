@@ -1380,6 +1380,65 @@ def show(supabase):
                     else:
                         st.info("👍 Toutes les dates d'écrasement étaient déjà cohérentes.")
 
+            # --- Correction en masse des références de contrôle incohérentes ---
+            # Certaines éprouvettes ont été enregistrées avec une référence de
+            # repli auto-générée (ex: "REF-25-OA-Sous RN11/...") au lieu de la
+            # vraie référence du bétonnage parent (ex: "B/424"), typiquement
+            # parce que num_reception n'était pas encore renseigné au moment
+            # de la création. Ce bouton aligne toutes les éprouvettes sur la
+            # référence réelle et à jour de leur bétonnage parent.
+            with st.expander("🔧 Corriger en masse les références de contrôle incohérentes", expanded=False):
+                st.caption(
+                    "Remplace, pour toutes les éprouvettes de ce projet, une"
+                    " référence de repli auto-générée (commençant par « REF-»)"
+                    " par la vraie référence (N° Réception) du bétonnage parent,"
+                    " quand celle-ci est disponible et différente."
+                )
+                if st.button("🔧 Recalculer et corriger toutes les références de contrôle", key="btn_fix_toutes_ref_controle"):
+                    try:
+                        res_fix_ref = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).execute()
+                        toutes_eprouvettes_ref = res_fix_ref.data or []
+                    except Exception as e:
+                        toutes_eprouvettes_ref = []
+                        st.error(f"Erreur lors du chargement : {e}")
+
+                    b_ids_ref = list({ep.get("betonnage_id") for ep in toutes_eprouvettes_ref if ep.get("betonnage_id")})
+                    parents_ref = obtenir_infos_betonnage_parents_bulk(supabase, b_ids_ref)
+
+                    nb_corrigees_ref = 0
+                    for ep_fix in toutes_eprouvettes_ref:
+                        parent_fix = parents_ref.get(ep_fix.get("betonnage_id"), {})
+                        num_rec_fix = str(parent_fix.get("num_reception") or "").strip()
+                        ref_actuelle_fix = str(ep_fix.get("ref_controle") or "").strip()
+
+                        if not num_rec_fix or num_rec_fix.upper() in ["", "-", "NONE", "NAN", "N/A"]:
+                            continue  # Rien de fiable à appliquer pour ce lot.
+                        if ref_actuelle_fix == num_rec_fix:
+                            continue  # Déjà correct.
+
+                        try:
+                            supabase.table("suivi_controle_beton").update(
+                                {"ref_controle": num_rec_fix}
+                            ).eq("id", ep_fix["id"]).execute()
+                            enregistrer_modification(
+                                supabase,
+                                table_concernee="suivi_controle_beton",
+                                enregistrement_id=ep_fix["id"],
+                                action="MODIFICATION",
+                                anciennes_valeurs={"ref_controle": ref_actuelle_fix},
+                                nouvelles_valeurs={"ref_controle": num_rec_fix},
+                                commentaire="Correction en masse : alignement sur la référence du bétonnage parent",
+                            )
+                            nb_corrigees_ref += 1
+                        except Exception as err_fix_ref:
+                            st.error(f"Erreur pour #{ep_fix.get('id')} : {err_fix_ref}")
+
+                    if nb_corrigees_ref > 0:
+                        st.success(f"✅ {nb_corrigees_ref} référence(s) de contrôle corrigée(s) !")
+                        st.rerun()
+                    else:
+                        st.info("👍 Toutes les références de contrôle étaient déjà cohérentes.")
+
             with st.expander("✏️ Modification / Ajustement d'une Programmation Existante", expanded=False):
                 try:
                     res_p = supabase.table("suivi_controle_beton").select("*").eq("projet_id", projet_id_actif).order("id", desc=True).execute()
