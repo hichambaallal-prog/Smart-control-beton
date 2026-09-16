@@ -1123,11 +1123,15 @@ def show(supabase):
       except (ValueError, TypeError):
         a_force = False
 
+      # Seul le statut du bétonnage PARENT fait foi : c'est le seul champ
+      # jamais écrit par la vraie validation admin (Phase 3). Se fier aussi
+      # au statut d'une éprouvette individuelle (row) créait une faille :
+      # une valeur laissée par erreur (ex: modification manuelle directe
+      # dans Table Editor) suffisait à faire apparaître un PV dans
+      # l'historique sans qu'il soit jamais passé par la validation.
       statut_valide = (
           est_valide_val(parent.get("statut_pv"))
           or est_valide_val(parent.get("validation_admin"))
-          or est_valide_val(row.get("statut_pv"))
-          or est_valide_val(row.get("validation_admin"))
       )
 
       return a_force and statut_valide
