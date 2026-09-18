@@ -1133,16 +1133,15 @@ def show(supabase):
       except (ValueError, TypeError):
         a_force = False
 
-      # Seul le statut du bétonnage PARENT fait foi : c'est le seul champ
-      # jamais écrit par la vraie validation admin (Phase 3). Se fier aussi
-      # au statut d'une éprouvette individuelle (row) créait une faille :
-      # une valeur laissée par erreur (ex: modification manuelle directe
-      # dans Table Editor) suffisait à faire apparaître un PV dans
-      # l'historique sans qu'il soit jamais passé par la validation.
-      statut_valide = (
-          est_valide_val(parent.get("statut_pv"))
-          or est_valide_val(parent.get("validation_admin"))
-      )
+      # Seul le statut de CETTE ÉPROUVETTE (row) fait foi. La validation
+      # admin (Phase 3) écrit désormais le statut par groupe (bétonnage +
+      # échéance précise), directement sur chaque éprouvette du groupe —
+      # jamais sur le bétonnage parent dans son ensemble. Se fier au statut
+      # du parent créait une fuite : un lot dont une échéance (ex: 7 jours)
+      # avait été validée faisait apparaître à tort une AUTRE échéance du
+      # même lot (ex: 28 jours) comme validée elle aussi, alors qu'elle
+      # n'était jamais passée par sa propre validation.
+      statut_valide = est_valide_val(row.get("statut_pv"))
 
       return a_force and statut_valide
 
@@ -1157,20 +1156,25 @@ def show(supabase):
         else set()
     )
     lots_manquants = []
-    for b_id, info_b in unique_parents.items():
-      statut_admin_valide = est_valide_val(
-          info_b.get("statut_pv")
-      ) or est_valide_val(info_b.get("validation_admin"))
+    groupes_lot_echeance = {}
+    for _, r in df_all.iterrows():
+      cle_groupe = (r.get("betonnage_id"), str(r.get("echeance", "-")).strip())
+      groupes_lot_echeance.setdefault(cle_groupe, []).append(r)
+
+    for (b_id, echeance_grp), rows_grp in groupes_lot_echeance.items():
+      # Le statut fait foi au niveau de CE groupe (lot + échéance), comme
+      # écrit par la validation admin — jamais au niveau du bétonnage
+      # entier, qui ne distingue pas les échéances.
+      statut_admin_valide = any(est_valide_val(r.get("statut_pv")) for r in rows_grp)
       if statut_admin_valide and b_id not in b_ids_dans_liste:
-        rows_lot = df_all[df_all["betonnage_id"] == b_id]
-        a_au_moins_une_force = (
-            bool((rows_lot["force_kn"].fillna(0).astype(float) > 0).any())
-            if not rows_lot.empty
-            else False
+        a_au_moins_une_force = any(
+            pd.notnull(r.get("force_kn")) and float(r.get("force_kn") or 0) > 0
+            for r in rows_grp
         )
         lots_manquants.append({
             "Lot ID": b_id,
-            "Statut (admin)": info_b.get("statut_pv"),
+            "Échéance": echeance_grp,
+            "Statut (admin)": rows_grp[0].get("statut_pv"),
             "Au moins 1 force > 0 ?": "Oui" if a_au_moins_une_force else "Non",
         })
 
