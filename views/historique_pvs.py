@@ -232,10 +232,15 @@ def generer_pv_excel(export_data, infos_header):
   set_cell(4, 1, "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE", bold=True, size=13, fill=DARK_FILL, color="FFFFFF")
 
   # ---- Row 5 : Compression / Traction ----
+  est_fendage = any(
+      "fendage" in str(item.get("type_essai", "")).strip().lower()
+      or str(item.get("type_essai", "")).strip().lower().startswith("traction")
+      for item in export_data
+  )
   merge(5, 1, 5, 4)
-  set_cell(5, 1, "[X] COMPRESSION NF EN 12390-3 (2019)", bold=True)
+  set_cell(5, 1, f"[{'X' if not est_fendage else ' '}] COMPRESSION NF EN 12390-3 (2019)", bold=True)
   merge(5, 5, 5, 8)
-  set_cell(5, 5, "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)", bold=True)
+  set_cell(5, 5, f"[{'X' if est_fendage else ' '}] TRACTION PAR FENDAGE NF EN 12390-6 (2019)", bold=True)
 
   # ---- Row 6 : Presse / Classe ----
   merge(6, 1, 6, 6)
@@ -553,9 +558,14 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((0, row3, 7, row3, "Helvetica-Bold", 11, WHITE))
 
   # ---- Row 4 : Compression / Traction ----
+  est_fendage = any(
+      "fendage" in str(item.get("type_essai", "")).strip().lower()
+      or str(item.get("type_essai", "")).strip().lower().startswith("traction")
+      for item in export_data
+  )
   r = blank_row()
-  r[0] = "[X] COMPRESSION NF EN 12390-3 (2019)"
-  r[4] = "[ ] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
+  r[0] = f"[{'X' if not est_fendage else ' '}] COMPRESSION NF EN 12390-3 (2019)"
+  r[4] = f"[{'X' if est_fendage else ' '}] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
   data.append(r)
   row4 = len(data) - 1
   spans += [(0, row4, 3, row4), (4, row4, 7, row4)]
@@ -1254,10 +1264,16 @@ def show(supabase):
           if sec > 1000:
             sec = sec / 100.0
           f_kn = float(item.get("force_kn") or 0.0)
-          fc = float(
-              item.get("fc_mpa")
-              or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0)
-          )
+          type_essai_item = str(item.get("type_essai") or "Compression (NF EN 12390-3)").strip()
+          if "fendage" in type_essai_item.lower() or type_essai_item.lower().startswith("traction"):
+            # Traction par fendage (NF EN 12390-6) : ft = 2xFx1000 / (π×D×L),
+            # dimensions extraites de la forme (ex: "Cylindrique 150x300").
+            m_dim = re.search(r"(\d+)\s*x\s*(\d+)", str(item.get("forme") or ""))
+            diam_mm, long_mm = (float(m_dim.group(1)), float(m_dim.group(2))) if m_dim else (150.0, 300.0)
+            fc_calc = round((2.0 * f_kn * 1000.0) / (3.14159265 * diam_mm * long_mm), 2) if f_kn > 0 else 0.0
+          else:
+            fc_calc = round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0
+          fc = float(item.get("fc_mpa") or fc_calc)
           ref_p = str(item.get("ref_controle") or "").strip()
           rep_s = str(item.get("repere_eprouvette", f"/{item['id']}")).strip()
           dt_essai_item = item.get("date_ecrasement", "-")
@@ -1270,6 +1286,7 @@ def show(supabase):
           export_data_h.append({
               "repere_eprouvette": f"{ref_p}{rep_s}" if ref_p else rep_s,
               "forme": item.get("forme", "Cylindrique 150x300"),
+              "type_essai": type_essai_item,
               "section": sec,
               "force_kn": f_kn,
               "fc_mpa": fc,
