@@ -785,7 +785,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                 for ep in ep_dv_list:
                     sec = section_normalisee(ep.get("section"))
                     f_kn = float(ep.get("force_kn") or 0.0)
-                    type_essai_ep = str(ep.get("type_essai") or "Compression (NF EN 12390-3)").strip()
+                    type_essai_ep = str(ep.get("type_essai") or "Compression").strip()
                     forme_ep = str(ep.get("forme") or "Cylindrique 150x300").strip()
                     fc = float(ep.get("fc_mpa") or (calculer_resistance_mpa(f_kn, sec, type_essai=type_essai_ep, forme=forme_ep) if f_kn > 0 else 0.0))
                     rows_dv.append({
@@ -905,7 +905,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         for ep in ep_sel_list:
             sec = section_normalisee(ep.get("section"))
             f_kn = float(ep.get("force_kn") or 0.0)
-            type_essai_ep = str(ep.get("type_essai") or "Compression (NF EN 12390-3)").strip()
+            type_essai_ep = str(ep.get("type_essai") or "Compression").strip()
             forme_ep = str(ep.get("forme") or "Cylindrique 150x300").strip()
             fc = float(ep.get("fc_mpa") or (calculer_resistance_mpa(f_kn, sec, type_essai=type_essai_ep, forme=forme_ep) if f_kn > 0 else 0.0))
             rows_val.append({
@@ -988,7 +988,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
             for ep in ep_7j:
                 sec = section_normalisee(ep.get("section"))
                 f_kn = float(ep.get("force_kn") or 0.0)
-                type_essai_ep = str(ep.get("type_essai") or "Compression (NF EN 12390-3)").strip()
+                type_essai_ep = str(ep.get("type_essai") or "Compression").strip()
                 forme_ep = str(ep.get("forme") or "Cylindrique 150x300").strip()
                 fc = float(ep.get("fc_mpa") or (calculer_resistance_mpa(f_kn, sec, type_essai=type_essai_ep, forme=forme_ep) if f_kn > 0 else 0.0))
                 rows_7j.append({
@@ -1532,7 +1532,7 @@ def show(supabase):
                     cols_ed = [c for c in ["id", "betonnage_id", "ref_controle", "repere_eprouvette", "echeance", "date_ecrasement", "date_coulee", "ouvrage", "classe_beton", "type_essai", "forme"] if c in df_edit_prog.columns]
                     df_display_prog = df_edit_prog[cols_ed].copy()
                     if "type_essai" in df_display_prog.columns:
-                        df_display_prog["type_essai"] = df_display_prog["type_essai"].fillna("Compression (NF EN 12390-3)")
+                        df_display_prog["type_essai"] = df_display_prog["type_essai"].fillna("Compression")
 
                     # --- Aperçu live : "Date Écrasement Prévue" = Date Coulée + Échéance ---
                     # On applique d'abord les éditions non-encore-enregistrées de
@@ -1590,7 +1590,7 @@ def show(supabase):
                             "classe_beton": st.column_config.TextColumn("Classe Béton", disabled=True),
                             "type_essai": st.column_config.SelectboxColumn(
                                 "🧪 Type d'essai",
-                                options=["Compression (NF EN 12390-3)", "Traction par fendage (NF EN 12390-6)"],
+                                options=["Compression", "Traction par fendage"],
                                 help="Détermine la formule utilisée pour calculer la"
                                      " résistance à la saisie des résultats.",
                             ),
@@ -1643,7 +1643,7 @@ def show(supabase):
                                     "echeance": ech_str,
                                     "date_coulee": dt_coulee_str,
                                     "date_ecrasement": dt_ecrasement_val,
-                                    "type_essai": str(r_m.get("type_essai", "") or "Compression (NF EN 12390-3)").strip(),
+                                    "type_essai": str(r_m.get("type_essai", "") or "Compression").strip(),
                                     "forme": str(r_m.get("forme", "") or "Cylindrique 150x300").strip(),
                                 }
                                 try:
@@ -1833,7 +1833,7 @@ def show(supabase):
             forme_p = st.selectbox("Type / Forme d'éprouvette", ["Cylindrique 150x300", "Cylindrique 160x320", "Cylindrique 100x200"], key=f"p_forme_{b_id}")
             type_essai_p = st.selectbox(
                 "Type d'essai",
-                ["Compression (NF EN 12390-3)", "Traction par fendage (NF EN 12390-6)"],
+                ["Compression", "Traction par fendage"],
                 key=f"p_type_essai_{b_id}",
                 help="Détermine la formule de résistance utilisée lors de la"
                      " saisie des résultats, et la case cochée sur le PV.",
@@ -2147,7 +2147,7 @@ def show(supabase):
                             f_kn = float(ep.get("force_kn") or 0.0)
                         except (ValueError, TypeError):
                             f_kn = 0.0
-                        type_essai_ep = str(ep.get("type_essai") or "Compression (NF EN 12390-3)").strip()
+                        type_essai_ep = str(ep.get("type_essai") or "Compression").strip()
                         forme_ep = str(ep.get("forme") or "Cylindrique 150x300").strip()
                         fc = calculer_resistance_mpa(f_kn, sec, type_essai=type_essai_ep, forme=forme_ep) if f_kn > 0 else 0.0
                         rows_list.append({
