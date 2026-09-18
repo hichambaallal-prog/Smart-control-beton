@@ -1264,7 +1264,7 @@ def show(supabase):
           if sec > 1000:
             sec = sec / 100.0
           f_kn = float(item.get("force_kn") or 0.0)
-          type_essai_item = str(item.get("type_essai") or "Compression (NF EN 12390-3)").strip()
+          type_essai_item = str(item.get("type_essai") or "Compression").strip()
           if "fendage" in type_essai_item.lower() or type_essai_item.lower().startswith("traction"):
             # Traction par fendage (NF EN 12390-6) : ft = 2xFx1000 / (π×D×L),
             # dimensions extraites de la forme (ex: "Cylindrique 150x300").
