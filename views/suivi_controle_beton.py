@@ -785,7 +785,9 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                 for ep in ep_dv_list:
                     sec = section_normalisee(ep.get("section"))
                     f_kn = float(ep.get("force_kn") or 0.0)
-                    fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+                    type_essai_ep = str(ep.get("type_essai") or "Compression (NF EN 12390-3)").strip()
+                    forme_ep = str(ep.get("forme") or "Cylindrique 150x300").strip()
+                    fc = float(ep.get("fc_mpa") or (calculer_resistance_mpa(f_kn, sec, type_essai=type_essai_ep, forme=forme_ep) if f_kn > 0 else 0.0))
                     rows_dv.append({
                         "ID": ep.get("id"),
                         "Repère": ep.get("repere_eprouvette", "-"),
@@ -795,6 +797,8 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                         "_section": sec,
                         "_force_orig": f_kn,
                         "_fc_orig": fc,
+                        "_type_essai": type_essai_ep,
+                        "_forme": forme_ep,
                     })
                 st.session_state[df_key_dv] = pd.DataFrame(rows_dv)
                 st.session_state[f"{df_key_dv}_len"] = len(ep_dv_list)
@@ -810,15 +814,19 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                         except (ValueError, TypeError):
                             new_force = 0.0
                         sec = float(st.session_state[df_key_dv].at[row_idx, "_section"])
+                        type_essai_row = st.session_state[df_key_dv].at[row_idx, "_type_essai"]
+                        forme_row = st.session_state[df_key_dv].at[row_idx, "_forme"]
                         st.session_state[df_key_dv].at[row_idx, "Force (kN)"] = new_force
                         st.session_state[df_key_dv].at[row_idx, "Résistance (MPa)"] = (
-                            round((new_force * 10.0) / sec, 1) if sec > 0 and new_force > 0 else 0.0
+                            calculer_resistance_mpa(new_force, sec, type_essai=type_essai_row, forme=forme_row)
+                            if new_force > 0 else 0.0
                         )
 
             st.data_editor(
                 st.session_state[df_key_dv],
                 column_config={
-                    "ID": None, "_section": None, "_force_orig": None, "_fc_orig": None,
+                    "ID": None, "_section": None, "_force_orig": None, "_fc_orig": None, "_forme": None,
+                    "_type_essai": st.column_config.TextColumn("🧪 Type d'essai", disabled=True),
                     "Repère": st.column_config.TextColumn("Repère", disabled=True),
                     "Échéance": st.column_config.TextColumn("Échéance", disabled=True),
                     "Force (kN)": st.column_config.NumberColumn(
@@ -897,7 +905,9 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         for ep in ep_sel_list:
             sec = section_normalisee(ep.get("section"))
             f_kn = float(ep.get("force_kn") or 0.0)
-            fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+            type_essai_ep = str(ep.get("type_essai") or "Compression (NF EN 12390-3)").strip()
+            forme_ep = str(ep.get("forme") or "Cylindrique 150x300").strip()
+            fc = float(ep.get("fc_mpa") or (calculer_resistance_mpa(f_kn, sec, type_essai=type_essai_ep, forme=forme_ep) if f_kn > 0 else 0.0))
             rows_val.append({
                 "ID": ep.get("id"),
                 "Repère": ep.get("repere_eprouvette", "-"),
@@ -909,6 +919,8 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                 "_section": sec,
                 "_force_orig": f_kn,
                 "_fc_orig": fc,
+                "_type_essai": type_essai_ep,
+                "_forme": forme_ep,
             })
         st.session_state[df_key] = pd.DataFrame(rows_val)
         st.session_state[f"{df_key}_len"] = len(ep_sel_list)
@@ -925,9 +937,12 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                 except (ValueError, TypeError):
                     new_force = 0.0
                 sec = float(st.session_state[df_key].at[row_idx, "_section"])
+                type_essai_row = st.session_state[df_key].at[row_idx, "_type_essai"]
+                forme_row = st.session_state[df_key].at[row_idx, "_forme"]
                 st.session_state[df_key].at[row_idx, "Force (kN)"] = new_force
                 st.session_state[df_key].at[row_idx, "Résistance (MPa)"] = (
-                    round((new_force * 10.0) / sec, 1) if sec > 0 and new_force > 0 else 0.0
+                    calculer_resistance_mpa(new_force, sec, type_essai=type_essai_row, forme=forme_row)
+                    if new_force > 0 else 0.0
                 )
 
     if est_admin:
@@ -945,6 +960,8 @@ def afficher_module_validation_admin(supabase, est_admin=False):
             "_section": None,
             "_force_orig": None,
             "_fc_orig": None,
+            "_forme": None,
+            "_type_essai": st.column_config.TextColumn("🧪 Type d'essai", disabled=True),
             "Repère": st.column_config.TextColumn("Repère", disabled=True),
             "Échéance": st.column_config.TextColumn("Échéance", disabled=True),
             "Date Écrasement": st.column_config.TextColumn("Date Écrasement", disabled=True),
@@ -971,7 +988,9 @@ def afficher_module_validation_admin(supabase, est_admin=False):
             for ep in ep_7j:
                 sec = section_normalisee(ep.get("section"))
                 f_kn = float(ep.get("force_kn") or 0.0)
-                fc = float(ep.get("fc_mpa") or (round((f_kn * 10.0) / sec, 1) if f_kn > 0 else 0.0))
+                type_essai_ep = str(ep.get("type_essai") or "Compression (NF EN 12390-3)").strip()
+                forme_ep = str(ep.get("forme") or "Cylindrique 150x300").strip()
+                fc = float(ep.get("fc_mpa") or (calculer_resistance_mpa(f_kn, sec, type_essai=type_essai_ep, forme=forme_ep) if f_kn > 0 else 0.0))
                 rows_7j.append({
                     "Repère": ep.get("repere_eprouvette", "-"),
                     "Date Écrasement": ep.get("date_ecrasement", "-"),
