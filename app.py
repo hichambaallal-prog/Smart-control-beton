@@ -246,7 +246,7 @@ try:
   # fourni pour la page hors-ligne). L'app principale doit envoyer le même
   # en-tête que offline_betonnage.html, sinon ses propres insertions seraient
   # bloquées par cette même règle de sécurité.
-  CODE_ACCES_TERRAIN = st.secrets.get("CODE_ACCES_TERRAIN", "lpee2026")
+  CODE_ACCES_TERRAIN = st.secrets.get("CODE_ACCES_TERRAIN", "CHANGEZ_MOI_2026")
 
   # Création du client SANS argument supplémentaire (comme avant) : c'est le
   # passage d'un ClientOptions à create_client() qui faisait planter la
@@ -518,12 +518,10 @@ if (
 
 try:
   from views import (
-      essai_Plaque,
       historique_pvs,
       suivi_Betonnage,
       suivi_controle_beton,
       synthese_Beton,
-      synthese_plaque,
   )
 except ImportError as e:
   st.error(f"❌ Erreur lors de l'importation des vues : {e}")
@@ -551,9 +549,7 @@ with st.sidebar:
         "Suivi Contrôle Béton",
         "Historique Complet & PVs",
         "Suivi de Bétonnage",
-        "Essai à la Plaque",
         "Synthèse Béton",
-        "Synthèse Plaque",
     ]
   elif current_role == "restricted_betonnage":
     st.info("Rôle : **OPÉRATEUR BÉTONNAGE**")
@@ -565,8 +561,6 @@ with st.sidebar:
     available_pages = [
         "Accueil",
         "Gestion Utilisateurs",
-        "Essai à la Plaque",
-        "Synthèse Plaque",
         "Suivi de Bétonnage",
         "Suivi Contrôle Béton",
         "Historique Complet & PVs",
@@ -579,7 +573,6 @@ with st.sidebar:
         "Accueil",
         "Synthèse Béton",
         "Historique Complet & PVs",
-        "Synthèse Plaque",
     ]
   else:
     st.info(f"Rôle : **{current_role.upper()}**")
@@ -588,7 +581,6 @@ with st.sidebar:
         "Accueil",
         "Synthèse Béton",
         "Historique Complet & PVs",
-        "Synthèse Plaque",
     ]
 
   # --- MODULE SYNCHRONISATION HORS LIGNE ---
@@ -947,10 +939,6 @@ elif page == "Gestion Utilisateurs" and current_role == "admin":
 
   st.dataframe(data_users, use_container_width=True)
 
-elif page == "Essai à la Plaque":
-  render_view(essai_Plaque, supabase)
-elif page == "Synthèse Plaque":
-  render_view(synthese_plaque, supabase)
 elif page == "Suivi de Bétonnage":
   render_view(suivi_Betonnage, supabase)
 elif page == "Suivi Contrôle Béton":
