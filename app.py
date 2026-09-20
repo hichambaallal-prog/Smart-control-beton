@@ -418,6 +418,14 @@ if st.session_state["user"] is None:
     st.title("🔐 Accès Restreint - LPEE")
     st.caption("Veuillez saisir vos identifiants pour accéder à la plateforme.")
 
+    image_login_path = os.path.join(os.path.dirname(__file__), "page d'accueil.jpg")
+    if os.path.exists(image_login_path):
+      try:
+        img_login = Image.open(image_login_path).convert("RGB")
+        st.image(img_login, use_container_width=True)
+      except Exception as e:
+        st.error(f"Erreur lors de la lecture de l'image : {e}")
+
     if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
       st.info(
           "🎯 **Scan QR Code détecté !** Connectez-vous pour accéder"
