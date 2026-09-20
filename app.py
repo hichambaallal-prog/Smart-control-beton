@@ -425,6 +425,18 @@ if st.session_state["user"] is None:
         st.image(img_login, use_container_width=True)
       except Exception as e:
         st.error(f"Erreur lors de la lecture de l'image : {e}")
+    else:
+      st.warning(
+          f"⚠️ Image de connexion introuvable à ce chemin exact : `{image_login_path}`"
+      )
+      try:
+        fichiers_racine = [
+            f for f in os.listdir(os.path.dirname(__file__))
+            if f.lower().endswith((".jpg", ".jpeg", ".png"))
+        ]
+        st.caption(f"Fichiers image trouvés à la racine : {fichiers_racine}")
+      except Exception:
+        pass
 
     if st.session_state.get("pending_qr_rec") or st.session_state.get("pending_qr_bid"):
       st.info(
