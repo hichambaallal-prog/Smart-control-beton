@@ -1301,11 +1301,22 @@ def load_and_process_controle_data(supabase):
         columns={
             "affaissement": "affaissement_mm_b",
             "temperature": "temp_beton_C_b",
-            "prelevement": "ref_controle_b",
+            "num_reception": "ref_controle_b",
             "date_livraison": "date_coulee_b",
             "ouvrage": "ouvrage_b",
         }
     )
+    # Jointure directe via betonnage_id (clé étrangère fiable), au lieu de
+    # comparer des chaînes de texte (référence/date/ouvrage) qui pouvaient
+    # ne jamais correspondre exactement — c'est ce qui laissait Réf.
+    # Contrôle, Affaissement et Temp. Béton vides pour certaines lignes.
+    if "betonnage_id" in df_raw.columns and "id" in df_betonnage.columns:
+      cols_a_joindre = [c for c in ["id", "ref_controle_b", "affaissement_mm_b", "temp_beton_C_b"] if c in df_betonnage.columns]
+      df_raw = df_raw.merge(
+          df_betonnage[cols_a_joindre],
+          left_on="betonnage_id", right_on="id", how="left",
+          suffixes=("", "_dup"),
+      )
 
   def clean_echeance(val):
     val_str = str(val).lower().strip()
@@ -1347,6 +1358,16 @@ def load_and_process_controle_data(supabase):
     first_row = group_df.iloc[0]
     row_dict = {col: first_row[col] for col in existing_group_cols}
 
+    # Repli Réf. Contrôle : si vide sur l'éprouvette, on prend celle du
+    # bétonnage parent (jointe ci-dessus via betonnage_id).
+    ref_direct = str(row_dict.get("ref_controle", "") or "").strip()
+    if (not ref_direct or ref_direct.lower() in ["none", "nan", "-", ""]) and "ref_controle_b" in group_df.columns:
+      ref_b_idx = group_df["ref_controle_b"].dropna().first_valid_index()
+      if ref_b_idx is not None:
+        ref_b_val = str(group_df.loc[ref_b_idx, "ref_controle_b"] or "").strip()
+        if ref_b_val:
+          row_dict["ref_controle"] = ref_b_val
+
     aff_idx = group_df["affaissement_mm"].dropna().first_valid_index()
     temp_idx = group_df["temp_beton_C"].dropna().first_valid_index()
 
@@ -1359,35 +1380,16 @@ def load_and_process_controle_data(supabase):
         group_df.loc[temp_idx, "temp_beton_C"] if temp_idx is not None else None
     )
 
-    if (pd.isna(aff_val) or pd.isna(temp_val)) and not df_betonnage.empty:
-      ref = str(row_dict.get("ref_controle", "")).strip()
-      dt_str = str(row_dict.get("date_coulee", "")).strip()
-      ovr = str(row_dict.get("ouvrage", "")).strip()
-
-      matched_b = pd.DataFrame()
-      if ref and "ref_controle_b" in df_betonnage.columns:
-        matched_b = df_betonnage[
-            df_betonnage["ref_controle_b"].astype(str).str.strip() == ref
-        ]
-
-      if (
-          matched_b.empty
-          and dt_str
-          and ovr
-          and "date_coulee_b" in df_betonnage.columns
-          and "ouvrage_b" in df_betonnage.columns
-      ):
-        matched_b = df_betonnage[
-            (df_betonnage["date_coulee_b"].astype(str).str.strip() == dt_str)
-            & (df_betonnage["ouvrage_b"].astype(str).str.strip() == ovr)
-        ]
-
-      if not matched_b.empty:
-        b_row = matched_b.iloc[0]
-        if pd.isna(aff_val) and "affaissement_mm_b" in b_row:
-          aff_val = b_row["affaissement_mm_b"]
-        if pd.isna(temp_val) and "temp_beton_C_b" in b_row:
-          temp_val = b_row["temp_beton_C_b"]
+    # Repli Affaissement / Température : si absents sur l'éprouvette
+    # elle-même, on prend ceux du bétonnage parent (jointe ci-dessus).
+    if pd.isna(aff_val) and "affaissement_mm_b" in group_df.columns:
+      aff_b_idx = group_df["affaissement_mm_b"].dropna().first_valid_index()
+      if aff_b_idx is not None:
+        aff_val = group_df.loc[aff_b_idx, "affaissement_mm_b"]
+    if pd.isna(temp_val) and "temp_beton_C_b" in group_df.columns:
+      temp_b_idx = group_df["temp_beton_C_b"].dropna().first_valid_index()
+      if temp_b_idx is not None:
+        temp_val = group_df.loc[temp_b_idx, "temp_beton_C_b"]
 
     row_dict["affaissement_mm"] = extract_numeric(aff_val)
     row_dict["temp_beton_C"] = extract_numeric(temp_val)
