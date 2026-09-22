@@ -656,7 +656,7 @@ def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
             return str(candidate).strip()
 
     # Aucune référence valide disponible actuellement : on réutilise la
-    # valeur de repli déjà cacheée si elle existe (stabilité d'un rerun à
+    # valeur de repli déjà calculée si elle existe (stabilité d'un rerun à
     # l'autre), sinon on en génère une nouvelle.
     if st.session_state.get(session_key):
         return st.session_state[session_key]
@@ -947,7 +947,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
 
     if est_admin:
         st.caption(
-            "✏️ Mode administrateur : la **Force (kN)** is modifiable"
+            "✏️ Mode administrateur : la **Force (kN)** est modifiable"
             " ci-dessous — la Résistance (MPa) se recalcule automatiquement."
             " Les modifications sont enregistrées en même temps que la"
             " décision de validation, plus bas."
@@ -1850,7 +1850,7 @@ def show(supabase):
                         reperes_p.append(rep_val)
 
                 if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}_{nb_j}j"):
-                    try: supabase.table("suivi_betonnage").update({"num_reception": ref_controle_p}).eq("id", b_id).execute()
+                    try: supabase.table("suivi_betonnage").update({"ref_controle": ref_controle_p}).eq("id", b_id).execute()
                     except Exception: pass
 
                     succes_cnt = 0
@@ -2221,7 +2221,7 @@ def show(supabase):
                     else:
                         succes_lot = 0
                         ref_finale = df_actuel.iloc[0].get("🏷️ Référence de Contrôle")
-                        try: supabase.table("suivi_betonnage").update({"num_reception": ref_finale}).eq("id", betonnage_id).execute()
+                        try: supabase.table("suivi_betonnage").update({"ref_controle": ref_finale}).eq("id", betonnage_id).execute()
                         except Exception: pass
 
                         for _, row in df_actuel.iterrows():
