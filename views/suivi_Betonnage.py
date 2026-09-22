@@ -4,8 +4,48 @@ from datetime import datetime, date
 from audit_log import enregistrer_modification, afficher_historique_modifications
 import projets_config
 
+
+def configurer_acces_terrain(supabase_client):
+    """Ajoute le code attendu par la politique RLS de suivi_betonnage.
+
+    Le client est créé dans app.py. Selon la version de supabase-py, les
+    en-têtes HTTP sont exposés à des emplacements différents ; cette fonction
+    les met donc à jour de façon compatible avant chaque utilisation du module.
+    """
+    if supabase_client is None:
+        return False
+
+    code_acces = st.secrets.get("CODE_ACCES_TERRAIN", "lpee2026")
+    entete = {"x-code-acces-terrain": str(code_acces)}
+    cibles = []
+
+    postgrest = getattr(supabase_client, "postgrest", None)
+    if postgrest is not None:
+        cibles.extend([
+            getattr(postgrest, "session", None),
+            getattr(postgrest, "_client", None),
+            postgrest,
+        ])
+
+    configure = False
+    for cible in cibles:
+        headers = getattr(cible, "headers", None)
+        if headers is not None:
+            try:
+                headers.update(entete)
+                configure = True
+            except Exception:
+                pass
+    return configure
+
+
 def show(supabase):
     st.title("🏗️ Suivi et Contrôle Qualité Béton")
+
+    # La table suivi_betonnage est protégée par une politique RLS Supabase.
+    # La configuration est répétée ici pour couvrir les clients recréés après
+    # une reconnexion Streamlit ou une synchronisation hors ligne.
+    configurer_acces_terrain(supabase)
     
     # Récupération des informations de session
     user_info = st.session_state.get("user", {})
@@ -134,7 +174,15 @@ def show(supabase):
                     st.success("Enregistrement réussi !")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Erreur d'enregistrement : {e}")
+                    if "row-level security" in str(e).lower():
+                        st.error(
+                            "Enregistrement refusé par la sécurité Supabase. "
+                            "Vérifiez que CODE_ACCES_TERRAIN est configuré dans "
+                            "les secrets Streamlit avec la même valeur que la "
+                            "politique RLS de suivi_betonnage."
+                        )
+                    else:
+                        st.error(f"Erreur d'enregistrement : {e}")
 
     # ---------------------------------------------------------
     # 2. AFFICHAGE DE L'HISTORIQUE ET ESPACE DE MODIFICATION
