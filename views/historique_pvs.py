@@ -130,9 +130,7 @@ def nettoyer_nom_fichier(chaine):
   """Remplace les caractères interdits pour les noms de fichiers OS."""
   if not chaine:
     return "PV"
-  # Remplace les slashes, anti-slashes et caractères spéciaux par des tirets
   clean = re.sub(r'[\\/*?:"<>|]', "-", str(chaine).strip())
-  # Supprime les espaces multiples
   return re.sub(r"\s+", "_", clean)
 
 
@@ -152,9 +150,6 @@ def formater_date_nom_fichier(dt_str):
 # ==============================================================================
 @st.cache_data(show_spinner=False)
 def generer_pv_excel(export_data, infos_header):
-  """Génère le PV d'écrasement en Excel (.xlsx), avec exactement la même
-  mise en page, les mêmes sections et les mêmes données que le PDF
-  (generer_pv_pdf) — pour un usage interne/éditable, réservé à BAALLAL."""
   wb = openpyxl.Workbook()
   ws = wb.active
   ws.title = "PV"
@@ -162,11 +157,6 @@ def generer_pv_excel(export_data, infos_header):
   ws.page_setup.orientation = "portrait"
   ws.page_setup.paperSize = ws.PAPERSIZE_A4
   ws.page_margins = PageMargins(left=0.3, right=0.3, top=0.4, bottom=0.4)
-  # Mise à l'échelle automatique sur UNE SEULE page (largeur ET hauteur) :
-  # les largeurs de colonnes ci-dessous sont en "caractères" (unité Excel),
-  # une mesure différente des points utilisés côté PDF — les recopier
-  # telles quelles produisait un tableau trop large, débordant sur une 2e
-  # page. Le fit-to-page évite d'avoir à deviner la bonne largeur exacte.
   ws.sheet_properties.pageSetUpPr.fitToPage = True
   ws.page_setup.fitToWidth = 1
   ws.page_setup.fitToHeight = 1
@@ -174,7 +164,6 @@ def generer_pv_excel(export_data, infos_header):
   DARK_FILL = PatternFill("solid", fgColor="1F4E78")
   TABLE_FILL = PatternFill("solid", fgColor="D9E1F2")
   LABEL_FILL = PatternFill("solid", fgColor="F2F2F2")
-  WHITE_FONT_BOLD = Font(bold=True, color="FFFFFF", size=11)
   BLACK = "000000"
   THIN = Side(style="thin", color="808080")
   BORDER_ALL = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
@@ -198,12 +187,10 @@ def generer_pv_excel(export_data, infos_header):
   def merge(r1, c1, r2, c2):
     ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
 
-  # Largeurs de colonnes (mêmes proportions que le PDF)
   widths = {"A": 16, "B": 12, "C": 12, "D": 10, "E": 18, "F": 14, "G": 12, "H": 12}
   for col, w in widths.items():
     ws.column_dimensions[col].width = w
 
-  # ---- Row 1 : LPEE / CTR CSB | RE N° | Réf ----
   merge(1, 1, 1, 4)
   set_cell(1, 1, "LPEE / CTR CSB", bold=True, size=11, fill=DARK_FILL, color="FFFFFF")
   set_cell(1, 5, "RE N° :", bold=True)
@@ -217,7 +204,6 @@ def generer_pv_excel(export_data, infos_header):
   )
   set_cell(1, 8, ref_h1, bold=True, align="left")
 
-  # ---- Rows 2-3 : Laboratoire | DOSSIER / CLIENT ----
   merge(2, 1, 3, 4)
   set_cell(2, 1, "Laboratoire de Contrôle Externe", bold=True, fill=DARK_FILL, color="FFFFFF")
   set_cell(2, 5, "DOSSIER :", bold=True)
@@ -227,11 +213,9 @@ def generer_pv_excel(export_data, infos_header):
   merge(3, 6, 3, 8)
   set_cell(3, 6, clean_na(infos_header.get("client"), "TGCC"), bold=True)
 
-  # ---- Row 4 : Titre ----
   merge(4, 1, 4, 8)
   set_cell(4, 1, "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE", bold=True, size=13, fill=DARK_FILL, color="FFFFFF")
 
-  # ---- Row 5 : Compression / Traction ----
   est_fendage = any(
       "fendage" in str(item.get("type_essai", "")).strip().lower()
       or str(item.get("type_essai", "")).strip().lower().startswith("traction")
@@ -242,13 +226,11 @@ def generer_pv_excel(export_data, infos_header):
   merge(5, 5, 5, 8)
   set_cell(5, 5, f"[{'X' if est_fendage else ' '}] TRACTION PAR FENDAGE NF EN 12390-6 (2019)", bold=True)
 
-  # ---- Row 6 : Presse / Classe ----
   merge(6, 1, 6, 6)
   set_cell(6, 1, "Presse : Marque: Controls", bold=True, align="right")
   merge(6, 7, 6, 8)
   set_cell(6, 7, "Classe : A", bold=True)
 
-  # ---- Row 7 : Date / Lieu de prélèvement ----
   date_fab_header = clean_na(infos_header.get("date_coulee"), "-")
   set_cell(7, 1, "Date de\nprélèvement", bold=True, fill=LABEL_FILL, wrap=True)
   set_cell(7, 2, str(date_fab_header), bold=True)
@@ -258,7 +240,6 @@ def generer_pv_excel(export_data, infos_header):
   set_cell(7, 5, clean_na(infos_header.get("lieu_prelevement", infos_header.get("ouvrage")), "-"), bold=True)
   ws.row_dimensions[7].height = 30
 
-  # ---- Row 8 : Chantier / Type de béton ----
   set_cell(8, 1, "Chantier", bold=True, fill=LABEL_FILL)
   merge(8, 2, 8, 4)
   set_cell(8, 2, clean_na(
@@ -273,14 +254,12 @@ def generer_pv_excel(export_data, infos_header):
   set_cell(8, 7, str(clean_na(infos_header.get("classe_beton"), "C35/45")).upper(), bold=True)
   ws.row_dimensions[8].height = 34
 
-  # ---- Row 9 : Centrale / Dimensions ----
   merge(9, 1, 9, 2)
   set_cell(9, 1, clean_na(infos_header.get("centrale"), "Centrale à Béton"), bold=True, fill=LABEL_FILL)
   set_cell(9, 3, "- Dimensions", align="left")
   merge(9, 4, 9, 8)
   set_cell(9, 4, clean_na(infos_header.get("forme"), "Cylindrique 150x300"), bold=True)
 
-  # ---- Row 10 : Affaissement / Mode confection ----
   merge(10, 1, 10, 2)
   set_cell(10, 1, "Affaissement au cône d'abrams NF EN 12350-2", size=7, fill=LABEL_FILL, wrap=True)
   set_cell(10, 3, str(clean_na(infos_header.get("affaissement"), "-")), bold=True)
@@ -289,7 +268,6 @@ def generer_pv_excel(export_data, infos_header):
   set_cell(10, 5, "Par vibration NF EN 12390-2 (2019)", bold=True)
   ws.row_dimensions[10].height = 26
 
-  # ---- Row 11 : Température / Mode conservation ----
   merge(11, 1, 11, 2)
   set_cell(11, 1, "Température °C", bold=True, fill=LABEL_FILL)
   set_cell(11, 3, str(clean_na(infos_header.get("temperature"), "-")), bold=True)
@@ -298,7 +276,6 @@ def generer_pv_excel(export_data, infos_header):
   set_cell(11, 5, "au laboratoire par immersion dans l'eau NF EN 12390-2 (2019) à 20°C ± 2°C", bold=True, size=7.5, wrap=True)
   ws.row_dimensions[11].height = 26
 
-  # ---- Row 12 : Prélèvement effectué par / N° BL ----
   tech = clean_na(
       infos_header.get("technicien_prelevement")
       or infos_header.get("preleve_par")
@@ -312,7 +289,6 @@ def generer_pv_excel(export_data, infos_header):
   merge(12, 6, 12, 8)
   set_cell(12, 6, default_bl, bold=True)
 
-  # ---- Rows 13-14 : entête du tableau de résultats ----
   merge(13, 1, 14, 1)
   set_cell(13, 1, "Réf,", bold=True, fill=TABLE_FILL)
   merge(13, 2, 13, 3)
@@ -329,7 +305,6 @@ def generer_pv_excel(export_data, infos_header):
   set_cell(14, 7, "Traction", bold=True, fill=TABLE_FILL)
   set_cell(14, 8, "Moyenne", bold=True, fill=TABLE_FILL)
 
-  # ---- Lignes de résultats ----
   ligne_courante = 15
   groupes_lots = {}
   for item in export_data:
@@ -364,16 +339,10 @@ def generer_pv_excel(export_data, infos_header):
     groupes_lots.setdefault(cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val})["lignes"].append(ligne_courante)
     ligne_courante += 1
 
-  # Fusion des moyennes par groupe (échéance + date d'essai)
   a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
   for gdata in groupes_lots.values():
     lignes, age = sorted(gdata["lignes"]), gdata["age"]
     start_r, end_r = min(lignes), max(lignes)
-    # Une fusion n'est sûre que si les lignes du groupe sont réellement
-    # consécutives : sinon elle chevaucherait par erreur la zone d'un autre
-    # groupe déjà écrite/fusionnée juste avant (cause exacte de l'erreur
-    # "MergedCell... read-only" rencontrée après une correction post-
-    # validation, qui peut changer l'ordre des lignes).
     contigu = (end_r - start_r + 1) == len(lignes)
 
     if gdata["en_cours"]:
@@ -402,7 +371,6 @@ def generer_pv_excel(export_data, infos_header):
       if gdata["en_cours"]:
         est_en_cours_28j = True
 
-  # ---- Commentaire de conformité ----
   seuil = next(
       (s for k, s in [("C25/30", 25.0), ("C30/37", 30.0), ("C35/45", 35.0), ("C40/50", 40.0)]
        if k in str(clean_na(infos_header.get("classe_beton"), "C35/45")).upper()),
@@ -420,7 +388,6 @@ def generer_pv_excel(export_data, infos_header):
   merge(row_comment, 2, row_comment, 8)
   set_cell(row_comment, 2, comment_valeur, bold=True, align="left")
 
-  # ---- Visas ----
   row_visa_titre = row_comment + 1
   merge(row_visa_titre, 2, row_visa_titre, 4)
   set_cell(row_visa_titre, 2, "Visa Responsable d'essai", bold=True)
@@ -443,15 +410,6 @@ def generer_pv_excel(export_data, infos_header):
 
 
 def generer_pv_pdf(export_data, infos_header):
-  """Génère le PV d'écrasement en PDF, avec la même mise en page (mêmes
-  sections, mêmes libellés, même grille) que l'ancienne version Excel.
-
-  Mis en cache (st.cache_data) : sans ça, Streamlit régénère ce PDF à
-  CHAQUE rerun du script — y compris pour une simple frappe dans un champ
-  de recherche ailleurs sur la page — alors que le résultat est
-  strictement identique tant que le PV sélectionné (et ses données) ne
-  change pas. Le cache est automatiquement invalidé dès que les données
-  d'entrée changent réellement (nouveau PV, force corrigée, etc.)."""
   buf = io.BytesIO()
   left_m = right_m = 0.3 * inch
   top_m = bottom_m = 0.4 * inch
@@ -465,7 +423,7 @@ def generer_pv_pdf(export_data, infos_header):
   )
 
   page_width = A4[0] - left_m - right_m
-  base_widths = [16, 12, 12, 10, 18, 14, 12, 12]  # proportions A..H (comme Excel)
+  base_widths = [16, 12, 12, 10, 18, 14, 12, 12]
   total_units = sum(base_widths)
   col_widths = [page_width * (w / total_units) for w in base_widths]
 
@@ -476,10 +434,6 @@ def generer_pv_pdf(export_data, infos_header):
   BLACK = colors.black
 
   def P(text, size=7.5, bold=False, align="CENTER", color=BLACK):
-    """Cellule 'Paragraph' : contrairement à une simple chaîne de
-    caractères, elle passe à la ligne automatiquement si le texte est trop
-    long pour la largeur de la colonne (indispensable pour le Chantier,
-    l'affaissement, etc. dont le texte dépasse largement une ligne)."""
     align_map = {"CENTER": TA_CENTER, "LEFT": TA_LEFT, "RIGHT": TA_RIGHT}
     style = ParagraphStyle(
         name="cell",
@@ -503,7 +457,6 @@ def generer_pv_pdf(export_data, infos_header):
   data = []
   spans, bg, fonts, aligns, valigns = [], [], [], [], []
 
-  # ---- Row 0 : LPEE / CTR CSB | RE N° | Réf ----
   r = blank_row()
   r[0] = "LPEE / CTR CSB"
   r[4] = "RE N° :"
@@ -525,7 +478,6 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((7, row0, 7, row0, "Helvetica-Bold", 8.5, BLACK))
   aligns.append((7, row0, 7, row0, "LEFT"))
 
-  # ---- Rows 1-2 : Laboratoire de Contrôle Externe | DOSSIER / CLIENT ----
   r = blank_row()
   r[0] = "Laboratoire de Contrôle Externe"
   r[4] = "DOSSIER :"
@@ -548,7 +500,6 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((5, row1, 7, row1, "Helvetica", 8.5, BLACK))
   fonts.append((5, row2, 7, row2, "Helvetica-Bold", 8.5, BLACK))
 
-  # ---- Row 3 : Titre ----
   r = blank_row()
   r[0] = "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE"
   data.append(r)
@@ -557,7 +508,6 @@ def generer_pv_pdf(export_data, infos_header):
   bg.append((0, row3, 7, row3, DARK))
   fonts.append((0, row3, 7, row3, "Helvetica-Bold", 11, WHITE))
 
-  # ---- Row 4 : Compression / Traction ----
   est_fendage = any(
       "fendage" in str(item.get("type_essai", "")).strip().lower()
       or str(item.get("type_essai", "")).strip().lower().startswith("traction")
@@ -571,7 +521,6 @@ def generer_pv_pdf(export_data, infos_header):
   spans += [(0, row4, 3, row4), (4, row4, 7, row4)]
   fonts.append((0, row4, 7, row4, "Helvetica-Bold", 8.5, BLACK))
 
-  # ---- Row 5 : Presse / Classe ----
   r = blank_row()
   r[0] = "Presse : Marque: Controls"
   r[6] = "Classe : A"
@@ -581,7 +530,6 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((0, row5, 7, row5, "Helvetica-Bold", 8.5, BLACK))
   aligns.append((0, row5, 5, row5, "RIGHT"))
 
-  # ---- Row 6 : Date / Lieu de prélèvement ----
   date_fab_header = clean_na(infos_header.get("date_coulee"), "-")
   r = blank_row()
   r[0] = "Date de\nprélèvement"
@@ -603,7 +551,6 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((2, row6, 3, row6, "Helvetica-Bold", 8.5, BLACK))
   fonts.append((4, row6, 7, row6, "Helvetica", 8.5, BLACK))
 
-  # ---- Row 7 : Chantier / Type de béton ----
   r = blank_row()
   r[0] = "Chantier"
   r[1] = P(
@@ -626,7 +573,6 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((4, row7, 5, row7, "Helvetica-Bold", 8.5, BLACK))
   fonts.append((6, row7, 7, row7, "Helvetica-Bold", 8.5, BLACK))
 
-  # ---- Row 8 : Centrale / Dimensions ----
   r = blank_row()
   r[0] = clean_na(infos_header.get("centrale"), "Centrale à Béton")
   r[2] = "- Dimensions"
@@ -639,7 +585,6 @@ def generer_pv_pdf(export_data, infos_header):
   aligns.append((2, row8, 2, row8, "LEFT"))
   fonts.append((3, row8, 7, row8, "Helvetica-Bold", 8.5, BLACK))
 
-  # ---- Row 9 : Affaissement / Mode confection ----
   r = blank_row()
   r[0] = P("Affaissement au cône d'abrams NF EN 12350-2", size=7)
   r[2] = str(clean_na(infos_header.get("affaissement"), "-"))
@@ -654,7 +599,6 @@ def generer_pv_pdf(export_data, infos_header):
   aligns.append((3, row9, 3, row9, "LEFT"))
   fonts.append((4, row9, 7, row9, "Helvetica-Bold", 8.5, BLACK))
 
-  # ---- Row 10 : Température / Mode conservation ----
   r = blank_row()
   r[0] = "Température °C"
   r[2] = str(clean_na(infos_header.get("temperature"), "-"))
@@ -674,7 +618,6 @@ def generer_pv_pdf(export_data, infos_header):
   aligns.append((3, row10, 3, row10, "LEFT"))
   fonts.append((4, row10, 7, row10, "Helvetica-Bold", 7.5, BLACK))
 
-  # ---- Row 11 : Prélèvement effectué par / N° BL ----
   tech = clean_na(
       infos_header.get("technicien_prelevement")
       or infos_header.get("preleve_par")
@@ -693,7 +636,6 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((3, row11, 4, row11, "Helvetica-Bold", 8.5, BLACK))
   fonts.append((5, row11, 7, row11, "Helvetica-Bold", 8.5, BLACK))
 
-  # ---- Rows 12-13 : entête du tableau de résultats ----
   r = blank_row()
   r[0] = "Réf,"
   r[1] = "Date"
@@ -722,7 +664,6 @@ def generer_pv_pdf(export_data, infos_header):
   bg.append((0, row12, 7, row13, TABLE_BG))
   fonts.append((0, row12, 7, row13, "Helvetica-Bold", 8.5, BLACK))
 
-  # ---- Lignes de résultats (une par éprouvette) ----
   row_indices_body = []
   groupes_lots = {}
   for item in export_data:
@@ -773,7 +714,6 @@ def generer_pv_pdf(export_data, infos_header):
         cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
     )["lignes"].append(r_idx)
 
-  # Fusion des moyennes (comme les cellules H fusionnées côté Excel)
   a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
   for gdata in groupes_lots.values():
     lignes, age = sorted(gdata["lignes"]), gdata["age"]
@@ -808,7 +748,6 @@ def generer_pv_pdf(export_data, infos_header):
       if gdata["en_cours"]:
         est_en_cours_28j = True
 
-  # ---- Commentaire de conformité ----
   seuil = next(
       (
           s
@@ -844,7 +783,6 @@ def generer_pv_pdf(export_data, infos_header):
   aligns.append((0, row_comment, 0, row_comment, "LEFT"))
   aligns.append((1, row_comment, 7, row_comment, "LEFT"))
 
-  # ---- Visas ----
   r = blank_row()
   r[1] = "Visa Responsable d'essai"
   r[5] = "Visa Chef du laboratoire"
@@ -864,12 +802,11 @@ def generer_pv_pdf(export_data, infos_header):
   fonts.append((5, row_visa_nom, 7, row_visa_nom, "Helvetica-Bold", 9, BLACK))
   valigns += [(1, row_visa_nom, 3, row_visa_nom, "TOP"), (5, row_visa_nom, 7, row_visa_nom, "TOP")]
 
-  # ---- Construction de la table ----
   rows_auto_hauteur = {row6, row7, row9, row10, row11, row_comment}
   row_heights = []
   for i in range(len(data)):
     if i in rows_auto_hauteur:
-      row_heights.append(None)  # calculé automatiquement selon le texte
+      row_heights.append(None)
     elif i == row_visa_nom:
       row_heights.append(48)
     else:
@@ -900,12 +837,6 @@ def generer_pv_pdf(export_data, infos_header):
     style_cmds.append(("VALIGN", (c1, r1), (c2, r2), va))
   table_style = TableStyle(style_cmds)
 
-  # ---- Étirer le tableau pour qu'il couvre toute la page ----
-  # Avec des hauteurs de ligne fixes, un PV à peu d'éprouvettes laisse un
-  # grand vide sous le tableau à l'impression. On mesure d'abord la hauteur
-  # réellement nécessaire (table1), puis on agrandit proportionnellement
-  # TOUTES les lignes pour que le tableau final occupe toute la hauteur
-  # imprimable — quel que soit le nombre d'éprouvettes.
   page_height_dispo = A4[1] - top_m - bottom_m
 
   table1 = Table(data, colWidths=col_widths, rowHeights=row_heights)
@@ -913,17 +844,10 @@ def generer_pv_pdf(export_data, infos_header):
   _, hauteur_naturelle = table1.wrap(page_width, page_height_dispo * 10)
 
   if hauteur_naturelle > 0 and hauteur_naturelle < page_height_dispo:
-    # table1._rowHeights contient les hauteurs réellement calculées (y
-    # compris pour les lignes en hauteur automatique) après le wrap().
     hauteurs_reelles = list(table1._rowHeights)
-    # Petite marge de sécurité (les cellules fusionnées ne redistribuent
-    # pas toujours la hauteur de façon parfaitement linéaire).
     facteur = min((page_height_dispo * 0.97) / hauteur_naturelle, 3.5)
     row_heights_final = [h * facteur for h in hauteurs_reelles]
 
-    # Vérification a posteriori : si malgré tout le résultat dépasse la
-    # page (et déborderait sur une 2e page), on corrige le facteur une
-    # dernière fois avant de construire la version définitive.
     table_verif = Table(data, colWidths=col_widths, rowHeights=row_heights_final)
     table_verif.setStyle(table_style)
     _, hauteur_finale = table_verif.wrap(page_width, page_height_dispo * 10)
@@ -941,10 +865,7 @@ def generer_pv_pdf(export_data, infos_header):
   return buf.getvalue()
 
 
-
-
 def exporter_dataframe_excel(df, date_chaine):
-  """Export standard DataFrame vers Excel."""
   buf = io.BytesIO()
   with pd.ExcelWriter(buf, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name=f"Planning_{date_chaine}"[:31])
@@ -956,7 +877,6 @@ def exporter_dataframe_excel(df, date_chaine):
 # 3. HELPER SUPABASE
 # ==============================================================================
 def obtenir_historique_betonnage(supabase, betonnage_id):
-  """Récupère l'ensemble des essais pour un même bétonnage."""
   if not betonnage_id:
     return []
   try:
@@ -973,7 +893,6 @@ def obtenir_historique_betonnage(supabase, betonnage_id):
 
 
 def obtenir_infos_betonnage_parent(supabase, betonnage_id):
-  """Récupère la fiche parent de suivi_betonnage."""
   if not betonnage_id:
     return {}
   try:
@@ -989,11 +908,6 @@ def obtenir_infos_betonnage_parent(supabase, betonnage_id):
 
 
 def obtenir_infos_betonnage_parents_bulk(supabase, betonnage_ids):
-  """Charge en UNE seule requête les fiches parentes de plusieurs lots à la
-  fois, au lieu d'une requête réseau par lot. C'est la principale cause de
-  lenteur à l'ouverture de cette page : avec des dizaines de lots
-  distincts, la version précédente déclenchait autant d'allers-retours
-  réseau séquentiels rien que pour préparer l'affichage."""
   ids_valides = sorted({int(b) for b in betonnage_ids if pd.notnull(b)})
   if not ids_valides:
     return {}
@@ -1011,14 +925,6 @@ def obtenir_infos_betonnage_parents_bulk(supabase, betonnage_ids):
 
 
 def determiner_ref_controle(supabase, betonnage_id, info_betonnage, sample_ep):
-  """Calcule la référence de contrôle prioritaire.
-
-  Priorité TOUJOURS donnée à la valeur réelle et à jour de num_reception /
-  ref_controle, même si une valeur de repli a été mise en cache plus tôt
-  dans la session (avant que la référence ne soit renseignée/corrigée en
-  base) — st.session_state est partagé par toute l'application, donc une
-  valeur figée ici contaminerait aussi bien Suivi Contrôle Béton que
-  l'historique et les PV générés."""
   key = f"ref_controle_beton_{betonnage_id}"
 
   num_rec = (info_betonnage or {}).get("num_reception")
@@ -1133,15 +1039,8 @@ def show(supabase):
       except (ValueError, TypeError):
         a_force = False
 
-      # Seul le statut de CETTE ÉPROUVETTE (row) fait foi. La validation
-      # admin (Phase 3) écrit désormais le statut par groupe (bétonnage +
-      # échéance précise), directement sur chaque éprouvette du groupe —
-      # jamais sur le bétonnage parent dans son ensemble. Se fier au statut
-      # du parent créait une fuite : un lot dont une échéance (ex: 7 jours)
-      # avait été validée faisait apparaître à tort une AUTRE échéance du
-      # même lot (ex: 28 jours) comme validée elle aussi, alors qu'elle
-      # n'était jamais passée par sa propre validation.
-      statut_valide = est_valide_val(row.get("statut_pv"))
+      # CORRECTION : Le statut de validation est stocké sur la table parente (suivi_betonnage)
+      statut_valide = est_valide_val(parent.get("statut_pv"))
 
       return a_force and statut_valide
 
@@ -1162,10 +1061,8 @@ def show(supabase):
       groupes_lot_echeance.setdefault(cle_groupe, []).append(r)
 
     for (b_id, echeance_grp), rows_grp in groupes_lot_echeance.items():
-      # Le statut fait foi au niveau de CE groupe (lot + échéance), comme
-      # écrit par la validation admin — jamais au niveau du bétonnage
-      # entier, qui ne distingue pas les échéances.
-      statut_admin_valide = any(est_valide_val(r.get("statut_pv")) for r in rows_grp)
+      parent = unique_parents.get(b_id) or {}
+      statut_admin_valide = est_valide_val(parent.get("statut_pv"))
       if statut_admin_valide and b_id not in b_ids_dans_liste:
         a_au_moins_une_force = any(
             pd.notnull(r.get("force_kn")) and float(r.get("force_kn") or 0) > 0
@@ -1174,7 +1071,7 @@ def show(supabase):
         lots_manquants.append({
             "Lot ID": b_id,
             "Échéance": echeance_grp,
-            "Statut (admin)": rows_grp[0].get("statut_pv"),
+            "Statut (admin)": parent.get("statut_pv"),
             "Au moins 1 force > 0 ?": "Oui" if a_au_moins_une_force else "Non",
         })
 
@@ -1261,17 +1158,11 @@ def show(supabase):
         export_data_h = []
         for item in essais_h:
           sec = float(item.get("section") or 176.71)
-          # Sécurité : une section > 1000 est très probablement enregistrée
-          # en mm² par erreur (ex: 17671 au lieu de 176.71 cm² pour un
-          # cylindre 150x300) — sans cette correction, la résistance
-          # recalculée serait fausse d'un facteur ~100.
           if sec > 1000:
             sec = sec / 100.0
           f_kn = float(item.get("force_kn") or 0.0)
           type_essai_item = str(item.get("type_essai") or "Compression").strip()
           if "fendage" in type_essai_item.lower() or type_essai_item.lower().startswith("traction"):
-            # Traction par fendage (NF EN 12390-6) : ft = 2xFx1000 / (π×D×L),
-            # dimensions extraites de la forme (ex: "Cylindrique 150x300").
             m_dim = re.search(r"(\d+)\s*x\s*(\d+)", str(item.get("forme") or ""))
             diam_mm, long_mm = (float(m_dim.group(1)), float(m_dim.group(2))) if m_dim else (150.0, 300.0)
             fc_calc = round((2.0 * f_kn * 1000.0) / (3.14159265 * diam_mm * long_mm), 2) if f_kn > 0 else 0.0
@@ -1282,7 +1173,6 @@ def show(supabase):
           rep_s = str(item.get("repere_eprouvette", f"/{item['id']}")).strip()
           dt_essai_item = item.get("date_ecrasement", "-")
 
-          # Calcul dynamique de l'âge spécifique pour chaque ligne
           age_real = calculer_age_jours(
               date_coulee_h, dt_essai_item, item.get("age")
           )
@@ -1340,7 +1230,6 @@ def show(supabase):
             ),
         }
 
-        # Formatage dynamique du nom du fichier : N°Réception_DateFabrication.pdf
         nom_rec_clean = nettoyer_nom_fichier(ref_ctrl_h)
         date_fab_clean = formater_date_nom_fichier(date_coulee_h)
         nom_fichier_pv = f"PV_{nom_rec_clean}_{date_fab_clean}.pdf"
@@ -1366,7 +1255,6 @@ def show(supabase):
               key="btn_download_hist_excel",
           )
 
-    # Base de données globale
     st.markdown("---")
     st.markdown("##### 📊 Base de données globale")
 
