@@ -1,8 +1,10 @@
 import io
+import os
 import re
 import unicodedata
 from datetime import datetime, date, timedelta
 import openpyxl
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 import pandas as pd
@@ -12,6 +14,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
 import projets_config
 
@@ -143,6 +146,19 @@ def formater_date_nom_fichier(dt_str):
     return dt_obj.strftime("%d-%m-%Y")
   except Exception:
     return str(dt_str).replace("/", "-")
+
+
+def trouver_logo_lpee():
+  """Cherche le logo LPEE (à côté de app.py) et renvoie son chemin, ou None."""
+  noms = ["logo.png.jpg", "logo.png", "logo.jpg", "logo.jpeg"]
+  ici = os.path.dirname(os.path.abspath(__file__))
+  dossiers = [os.getcwd(), ici, os.path.dirname(ici)]
+  for dossier in dossiers:
+    for nom in noms:
+      chemin = os.path.join(dossier, nom)
+      if os.path.isfile(chemin):
+        return chemin
+  return None
 
 
 # ==============================================================================
@@ -401,6 +417,37 @@ def generer_pv_excel(export_data, infos_header):
   set_cell(row_visa_nom, 6, "H.BAALLAL", bold=True, align="center")
   ws.row_dimensions[row_visa_nom].height = 60
 
+  logo_path = trouver_logo_lpee()
+  if logo_path:
+    try:
+      decalage = 4
+      hauteurs = {
+          r: d.height for r, d in list(ws.row_dimensions.items()) if d.height
+      }
+      fusions = [rng.bounds for rng in list(ws.merged_cells.ranges)]
+      for rng in list(ws.merged_cells.ranges):
+        ws.merged_cells.remove(rng)
+      ws.move_range(f"A1:H{row_visa_nom}", rows=decalage)
+      for c1, r1, c2, r2 in fusions:
+        ws.merge_cells(
+            start_row=r1 + decalage, start_column=c1,
+            end_row=r2 + decalage, end_column=c2,
+        )
+      for r in list(ws.row_dimensions.keys()):
+        ws.row_dimensions[r].height = None
+      for r, h in hauteurs.items():
+        ws.row_dimensions[r + decalage].height = h
+      for r in range(1, decalage + 1):
+        ws.row_dimensions[r].height = 18
+      img = XLImage(logo_path)
+      ratio = img.width / img.height if img.height else 1
+      img.height = 88
+      img.width = int(88 * ratio)
+      ws.add_image(img, "A1")
+      row_visa_nom += decalage
+    except Exception:
+      pass  # le PV reste généré même si le logo pose problème
+
   ws.print_area = f"A1:H{row_visa_nom}"
 
   buf = io.BytesIO()
@@ -413,6 +460,33 @@ def generer_pv_pdf(export_data, infos_header):
   buf = io.BytesIO()
   left_m = right_m = 0.3 * inch
   top_m = bottom_m = 0.4 * inch
+
+  logo_path = trouver_logo_lpee()
+  logo_w = logo_h = 0
+  if logo_path:
+    try:
+      iw, ih = ImageReader(logo_path).getSize()
+      logo_h = 0.7 * inch
+      logo_w = logo_h * iw / ih
+      if logo_w > 2.6 * inch:
+        logo_w = 2.6 * inch
+        logo_h = logo_w * ih / iw
+      top_m = 0.4 * inch + logo_h + 6
+    except Exception:
+      logo_path = None
+      logo_w = logo_h = 0
+
+  def dessiner_logo(canvas, _doc):
+    if logo_path:
+      canvas.drawImage(
+          logo_path,
+          left_m,
+          A4[1] - 0.4 * inch - logo_h,
+          width=logo_w,
+          height=logo_h,
+          mask="auto",
+      )
+
   doc = SimpleDocTemplate(
       buf,
       pagesize=A4,
@@ -860,7 +934,7 @@ def generer_pv_pdf(export_data, infos_header):
   table = Table(data, colWidths=col_widths, rowHeights=row_heights_final)
   table.setStyle(table_style)
 
-  doc.build([table])
+  doc.build([table], onFirstPage=dessiner_logo, onLaterPages=dessiner_logo)
   buf.seek(0)
   return buf.getvalue()
 
