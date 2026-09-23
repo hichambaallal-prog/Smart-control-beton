@@ -424,25 +424,28 @@ def generer_pv_excel(export_data, infos_header):
       from openpyxl.drawing.xdr import XDRPositiveSize2D
       from openpyxl.utils.units import pixels_to_EMU
 
-      # Bloc "Laboratoire de Contrôle Externe" = A2:D3 : on l'agrandit un peu,
-      # le texte passe en bas et le logo est centré au-dessus.
-      ws.row_dimensions[2].height = 34
-      ws.row_dimensions[3].height = 34
+      # Bloc "Laboratoire de Contrôle Externe" = A2:D3 : logo à gauche,
+      # texte à droite du logo.
+      ws.row_dimensions[2].height = 30
+      ws.row_dimensions[3].height = 30
       ws["A2"].alignment = Alignment(
-          horizontal="center", vertical="bottom", wrap_text=True
+          horizontal="right", vertical="center", wrap_text=True, indent=2
       )
       larg_bloc_px = int(sum(widths[c] for c in "ABCD") * 7 + 5 * 4)
-      haut_bloc_px = int((34 + 34) * 96 / 72)
+      haut_bloc_px = int((30 + 30) * 96 / 72)
       img = XLImage(logo_path)
       ratio = img.width / img.height if img.height else 1
-      h_px = haut_bloc_px - 28
+      h_px = haut_bloc_px - 12
       w_px = int(h_px * ratio)
-      if w_px > larg_bloc_px * 0.8:
-        w_px = int(larg_bloc_px * 0.8)
+      if w_px > larg_bloc_px * 0.4:
+        w_px = int(larg_bloc_px * 0.4)
         h_px = int(w_px / ratio)
-      col_off = pixels_to_EMU(max((larg_bloc_px - w_px) // 2, 0))
       img.anchor = OneCellAnchor(
-          _from=AnchorMarker(col=0, row=1, colOff=col_off, rowOff=pixels_to_EMU(4)),
+          _from=AnchorMarker(
+              col=0, row=1,
+              colOff=pixels_to_EMU(6),
+              rowOff=pixels_to_EMU(max((haut_bloc_px - h_px) // 2, 0)),
+          ),
           ext=XDRPositiveSize2D(pixels_to_EMU(w_px), pixels_to_EMU(h_px)),
       )
       ws.add_image(img)
@@ -915,28 +918,29 @@ def generer_pv_pdf(export_data, infos_header):
       larg_bloc = sum(col_widths[:4])
       hauts = [h for h in row_heights_final[row1:row2 + 1] if h]
       haut_bloc = sum(hauts) if len(hauts) == 2 else 34
-      haut_texte = 11
       iw, ih = ImageReader(logo_path).getSize()
-      logo_h = max(haut_bloc - haut_texte - 8, 10)
+      logo_h = max(haut_bloc - 6, 10)
       logo_w = logo_h * iw / ih
-      if logo_w > larg_bloc * 0.8:
-        logo_w = larg_bloc * 0.8
+      if logo_w > larg_bloc * 0.4:
+        logo_w = larg_bloc * 0.4
         logo_h = logo_w * ih / iw
       img = RLImage(logo_path, width=logo_w, height=logo_h)
+      col_logo = logo_w + 10
       cellule = Table(
-          [[img], [P("Laboratoire de Contrôle Externe", size=8, bold=True, color=WHITE)]],
-          colWidths=[larg_bloc],
-          rowHeights=[logo_h + 2, haut_texte],
+          [[img, P("Laboratoire de Contrôle Externe", size=9, bold=True, color=WHITE)]],
+          colWidths=[col_logo, larg_bloc - col_logo],
+          rowHeights=[haut_bloc],
       )
       cellule.setStyle(TableStyle([
           ("BACKGROUND", (0, 0), (-1, -1), DARK),
-          ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+          ("ALIGN", (0, 0), (0, 0), "LEFT"),
+          ("ALIGN", (1, 0), (1, 0), "CENTER"),
           ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-          ("LEFTPADDING", (0, 0), (-1, -1), 0),
+          ("LEFTPADDING", (0, 0), (0, 0), 5),
+          ("LEFTPADDING", (1, 0), (1, 0), 0),
           ("RIGHTPADDING", (0, 0), (-1, -1), 0),
           ("TOPPADDING", (0, 0), (-1, -1), 0),
           ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-          ("BOX", (0, 0), (-1, -1), 0, DARK),
           ("GRID", (0, 0), (-1, -1), 0, DARK),
       ]))
       data[row1][0] = cellule
