@@ -420,31 +420,32 @@ def generer_pv_excel(export_data, infos_header):
   logo_path = trouver_logo_lpee()
   if logo_path:
     try:
-      decalage = 4
-      hauteurs = {
-          r: d.height for r, d in list(ws.row_dimensions.items()) if d.height
-      }
-      fusions = [rng.bounds for rng in list(ws.merged_cells.ranges)]
-      for rng in list(ws.merged_cells.ranges):
-        ws.merged_cells.remove(rng)
-      ws.move_range(f"A1:H{row_visa_nom}", rows=decalage)
-      for c1, r1, c2, r2 in fusions:
-        ws.merge_cells(
-            start_row=r1 + decalage, start_column=c1,
-            end_row=r2 + decalage, end_column=c2,
-        )
-      for r in list(ws.row_dimensions.keys()):
-        ws.row_dimensions[r].height = None
-      for r, h in hauteurs.items():
-        ws.row_dimensions[r + decalage].height = h
-      for r in range(1, decalage + 1):
-        ws.row_dimensions[r].height = 18
+      from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
+      from openpyxl.drawing.xdr import XDRPositiveSize2D
+      from openpyxl.utils.units import pixels_to_EMU
+
+      # Bloc "Laboratoire de Contrôle Externe" = A2:D3 : on l'agrandit un peu,
+      # le texte passe en bas et le logo est centré au-dessus.
+      ws.row_dimensions[2].height = 34
+      ws.row_dimensions[3].height = 34
+      ws["A2"].alignment = Alignment(
+          horizontal="center", vertical="bottom", wrap_text=True
+      )
+      larg_bloc_px = int(sum(widths[c] for c in "ABCD") * 7 + 5 * 4)
+      haut_bloc_px = int((34 + 34) * 96 / 72)
       img = XLImage(logo_path)
       ratio = img.width / img.height if img.height else 1
-      img.height = 88
-      img.width = int(88 * ratio)
-      ws.add_image(img, "A1")
-      row_visa_nom += decalage
+      h_px = haut_bloc_px - 28
+      w_px = int(h_px * ratio)
+      if w_px > larg_bloc_px * 0.8:
+        w_px = int(larg_bloc_px * 0.8)
+        h_px = int(w_px / ratio)
+      col_off = pixels_to_EMU(max((larg_bloc_px - w_px) // 2, 0))
+      img.anchor = OneCellAnchor(
+          _from=AnchorMarker(col=0, row=1, colOff=col_off, rowOff=pixels_to_EMU(4)),
+          ext=XDRPositiveSize2D(pixels_to_EMU(w_px), pixels_to_EMU(h_px)),
+      )
+      ws.add_image(img)
     except Exception:
       pass  # le PV reste généré même si le logo pose problème
 
@@ -460,32 +461,6 @@ def generer_pv_pdf(export_data, infos_header):
   buf = io.BytesIO()
   left_m = right_m = 0.3 * inch
   top_m = bottom_m = 0.4 * inch
-
-  logo_path = trouver_logo_lpee()
-  logo_w = logo_h = 0
-  if logo_path:
-    try:
-      iw, ih = ImageReader(logo_path).getSize()
-      logo_h = 0.7 * inch
-      logo_w = logo_h * iw / ih
-      if logo_w > 2.6 * inch:
-        logo_w = 2.6 * inch
-        logo_h = logo_w * ih / iw
-      top_m = 0.4 * inch + logo_h + 6
-    except Exception:
-      logo_path = None
-      logo_w = logo_h = 0
-
-  def dessiner_logo(canvas, _doc):
-    if logo_path:
-      canvas.drawImage(
-          logo_path,
-          left_m,
-          A4[1] - 0.4 * inch - logo_h,
-          width=logo_w,
-          height=logo_h,
-          mask="auto",
-      )
 
   doc = SimpleDocTemplate(
       buf,
@@ -931,10 +906,47 @@ def generer_pv_pdf(export_data, infos_header):
   else:
     row_heights_final = row_heights
 
+  # Logo LPEE centré dans le bloc "Laboratoire de Contrôle Externe"
+  logo_path = trouver_logo_lpee()
+  if logo_path:
+    try:
+      from reportlab.platypus import Image as RLImage
+
+      larg_bloc = sum(col_widths[:4])
+      hauts = [h for h in row_heights_final[row1:row2 + 1] if h]
+      haut_bloc = sum(hauts) if len(hauts) == 2 else 34
+      haut_texte = 11
+      iw, ih = ImageReader(logo_path).getSize()
+      logo_h = max(haut_bloc - haut_texte - 8, 10)
+      logo_w = logo_h * iw / ih
+      if logo_w > larg_bloc * 0.8:
+        logo_w = larg_bloc * 0.8
+        logo_h = logo_w * ih / iw
+      img = RLImage(logo_path, width=logo_w, height=logo_h)
+      cellule = Table(
+          [[img], [P("Laboratoire de Contrôle Externe", size=8, bold=True, color=WHITE)]],
+          colWidths=[larg_bloc],
+          rowHeights=[logo_h + 2, haut_texte],
+      )
+      cellule.setStyle(TableStyle([
+          ("BACKGROUND", (0, 0), (-1, -1), DARK),
+          ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+          ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+          ("LEFTPADDING", (0, 0), (-1, -1), 0),
+          ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+          ("TOPPADDING", (0, 0), (-1, -1), 0),
+          ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+          ("BOX", (0, 0), (-1, -1), 0, DARK),
+          ("GRID", (0, 0), (-1, -1), 0, DARK),
+      ]))
+      data[row1][0] = cellule
+    except Exception:
+      pass  # le PV reste généré même si le logo pose problème
+
   table = Table(data, colWidths=col_widths, rowHeights=row_heights_final)
   table.setStyle(table_style)
 
-  doc.build([table], onFirstPage=dessiner_logo, onLaterPages=dessiner_logo)
+  doc.build([table])
   buf.seek(0)
   return buf.getvalue()
 
