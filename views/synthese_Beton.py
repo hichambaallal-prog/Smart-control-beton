@@ -992,8 +992,9 @@ def generate_excel_synthesis_controle(df_data, titre_periode):
       horizontal="center", vertical="center", wrap_text=True
   )
 
-  ws.row_dimensions[1].height = 25
-  ws.row_dimensions[2].height = 25
+  ws.row_dimensions[1].height = 30
+  ws.row_dimensions[2].height = 30
+  ajouter_logo_lpee(ws, "A1", hauteur_px=72)
 
   ws.merge_cells(f"A4:{mid_col_letter}4")
   ws["A4"].value = "   CLIENT :   TGCC"
