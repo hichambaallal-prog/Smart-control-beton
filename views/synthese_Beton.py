@@ -1,10 +1,12 @@
 from datetime import date, datetime
 import io
+import os
 import re
 import matplotlib.pyplot as plt
 import numpy as np
 import openpyxl
 from openpyxl.chart import LineChart, Reference
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -42,6 +44,41 @@ def get_default_fck(df_display):
       if val is not None and val > 0:
         return float(val)
   return 35.0
+
+
+# =========================================================
+# LOGO LPEE (logo.png.jpg, situé au même niveau que app.py)
+# =========================================================
+
+LOGO_FILENAME = "logo.png.jpg"
+
+
+def _trouver_logo():
+  """Cherche le logo à côté de app.py (dossier courant ou dossiers parents)."""
+  dossiers = [os.getcwd()]
+  here = os.path.dirname(os.path.abspath(__file__))
+  dossiers += [here, os.path.dirname(here)]
+  for d in dossiers:
+    chemin = os.path.join(d, LOGO_FILENAME)
+    if os.path.isfile(chemin):
+      return chemin
+  return None
+
+
+def ajouter_logo_lpee(ws, cellule="A1", hauteur_px=72):
+  """Insère le logo LPEE dans la feuille Excel (sans planter s'il est absent)."""
+  chemin = _trouver_logo()
+  if not chemin:
+    return
+  try:
+    img = XLImage(chemin)
+    ratio = img.width / img.height if img.height else 1
+    img.height = hauteur_px
+    img.width = int(hauteur_px * ratio)
+    ws.add_image(img, cellule)
+  except Exception:
+    # Logo illisible ou Pillow manquant : on génère quand même le fichier
+    pass
 
 
 # =========================================================
@@ -580,8 +617,9 @@ def generate_excel_synthesis_betonnage(
   cell_title.alignment = Alignment(
       horizontal="center", vertical="center", wrap_text=True
   )
-  ws.row_dimensions[1].height = 25
-  ws.row_dimensions[2].height = 25
+  ws.row_dimensions[1].height = 30
+  ws.row_dimensions[2].height = 30
+  ajouter_logo_lpee(ws, "A1", hauteur_px=72)
 
   ws.merge_cells(f"A4:{mid_col_letter}4")
   ws["A4"].value = "   CLIENT :   TGCC"
