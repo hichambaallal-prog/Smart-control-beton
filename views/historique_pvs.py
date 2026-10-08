@@ -129,6 +129,24 @@ def calculer_age_jours(date_fab, date_ess, age_defaut=None):
   return 28
 
 
+def est_essai_fendage(item):
+  """True si l'éprouvette est un essai de traction par fendage."""
+  t = str((item or {}).get("type_essai", "")).strip().lower()
+  return "fendage" in t or t.startswith("traction")
+
+
+def trier_essais_pv(export_data, date_fab):
+  """Regroupe les lignes par âge puis par type d'essai (compression avant
+  traction), pour que chaque moyenne couvre des lignes contiguës."""
+  return sorted(
+      export_data,
+      key=lambda it: (
+          calculer_age_jours(date_fab, it.get("date_essai"), it.get("age")),
+          est_essai_fendage(it),
+      ),
+  )
+
+
 def nettoyer_nom_fichier(chaine):
   """Remplace les caractères interdits pour les noms de fichiers OS."""
   if not chaine:
@@ -232,13 +250,10 @@ def generer_pv_excel(export_data, infos_header):
   merge(4, 1, 4, 8)
   set_cell(4, 1, "ESSAIS MECANIQUES SUR BETON HYDRAULIQUE", bold=True, size=13, fill=DARK_FILL, color="FFFFFF")
 
-  est_fendage = any(
-      "fendage" in str(item.get("type_essai", "")).strip().lower()
-      or str(item.get("type_essai", "")).strip().lower().startswith("traction")
-      for item in export_data
-  )
+  est_fendage = any(est_essai_fendage(item) for item in export_data)
+  est_compression = (not export_data) or any(not est_essai_fendage(item) for item in export_data)
   merge(5, 1, 5, 4)
-  set_cell(5, 1, f"[{'X' if not est_fendage else ' '}] COMPRESSION NF EN 12390-3 (2019)", bold=True)
+  set_cell(5, 1, f"[{'X' if est_compression else ' '}] COMPRESSION NF EN 12390-3 (2019)", bold=True)
   merge(5, 5, 5, 8)
   set_cell(5, 5, f"[{'X' if est_fendage else ' '}] TRACTION PAR FENDAGE NF EN 12390-6 (2019)", bold=True)
 
@@ -323,7 +338,9 @@ def generer_pv_excel(export_data, infos_header):
 
   ligne_courante = 15
   groupes_lots = {}
+  export_data = trier_essais_pv(export_data, date_fab_header)
   for item in export_data:
+    fend = est_essai_fendage(item)
     f_kn = float(item.get("force_kn", 0.0) or 0.0)
     is_en_cours = str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
     dt_essai = item.get("date_essai")
@@ -343,16 +360,17 @@ def generer_pv_excel(export_data, infos_header):
     set_cell(ligne_courante, 2, str(date_fab_header))
     set_cell(ligne_courante, 3, date_essai_affichage)
     set_cell(ligne_courante, 4, str(age_val))
+    col_val, col_autre = (7, 6) if fend else (6, 7)
     if is_en_cours:
       set_cell(ligne_courante, 5, "En cours")
-      set_cell(ligne_courante, 6, "En cours")
+      set_cell(ligne_courante, col_val, "En cours")
     else:
       set_cell(ligne_courante, 5, f"{f_kn:.1f}")
-      set_cell(ligne_courante, 6, f"{float(item.get('fc_mpa', 0.0)):.1f}")
-    set_cell(ligne_courante, 7, "-")
+      set_cell(ligne_courante, col_val, f"{float(item.get('fc_mpa', 0.0) or 0.0):.1f}")
+    set_cell(ligne_courante, col_autre, "-")
 
-    cle = f"{age_val}_{dt_essai}"
-    groupes_lots.setdefault(cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val})["lignes"].append(ligne_courante)
+    cle = f"{age_val}_{dt_essai}_{'T' if fend else 'C'}"
+    groupes_lots.setdefault(cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val, "fend": fend})["lignes"].append(ligne_courante)
     ligne_courante += 1
 
   a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
@@ -367,12 +385,12 @@ def generer_pv_excel(export_data, infos_header):
       vals = []
       for li in lignes:
         try:
-          vals.append(float(ws.cell(row=li, column=6).value))
+          vals.append(float(ws.cell(row=li, column=7 if gdata["fend"] else 6).value))
         except (ValueError, TypeError):
           pass
       moy = round(sum(vals) / len(vals), 1) if vals else 0.0
       valeur_moy = f"{moy:.1f}"
-      if int(age) >= 28:
+      if int(age) >= 28 and not gdata["fend"]:
         moyenne_28j_val = moy
 
     if contigu and start_r != end_r:
@@ -382,7 +400,7 @@ def generer_pv_excel(export_data, infos_header):
       for li in lignes:
         set_cell(li, 8, valeur_moy, bold=True)
 
-    if int(age) >= 28:
+    if int(age) >= 28 and not gdata["fend"]:
       a_des_28j = True
       if gdata["en_cours"]:
         est_en_cours_28j = True
@@ -560,13 +578,10 @@ def generer_pv_pdf(export_data, infos_header):
   bg.append((0, row3, 7, row3, DARK))
   fonts.append((0, row3, 7, row3, "Helvetica-Bold", 11, WHITE))
 
-  est_fendage = any(
-      "fendage" in str(item.get("type_essai", "")).strip().lower()
-      or str(item.get("type_essai", "")).strip().lower().startswith("traction")
-      for item in export_data
-  )
+  est_fendage = any(est_essai_fendage(item) for item in export_data)
+  est_compression = (not export_data) or any(not est_essai_fendage(item) for item in export_data)
   r = blank_row()
-  r[0] = f"[{'X' if not est_fendage else ' '}] COMPRESSION NF EN 12390-3 (2019)"
+  r[0] = f"[{'X' if est_compression else ' '}] COMPRESSION NF EN 12390-3 (2019)"
   r[4] = f"[{'X' if est_fendage else ' '}] TRACTION PAR FENDAGE NF EN 12390-6 (2019)"
   data.append(r)
   row4 = len(data) - 1
@@ -718,7 +733,9 @@ def generer_pv_pdf(export_data, infos_header):
 
   row_indices_body = []
   groupes_lots = {}
+  export_data = trier_essais_pv(export_data, date_fab_header)
   for item in export_data:
+    fend = est_essai_fendage(item)
     f_kn = float(item.get("force_kn", 0.0) or 0.0)
     is_en_cours = (
         str(item.get("statut", "")).lower() == "en cours" or f_kn == 0.0
@@ -749,21 +766,22 @@ def generer_pv_pdf(export_data, infos_header):
     r[1] = str(date_fab_header)
     r[2] = date_essai_affichage
     r[3] = str(age_val)
+    i_val, i_autre = (6, 5) if fend else (5, 6)
     if is_en_cours:
       r[4] = "En cours"
-      r[5] = "En cours"
+      r[i_val] = "En cours"
     else:
       r[4] = f"{f_kn:.1f}"
-      r[5] = f"{float(item.get('fc_mpa', 0.0)):.1f}"
-    r[6] = "-"
+      r[i_val] = f"{float(item.get('fc_mpa', 0.0) or 0.0):.1f}"
+    r[i_autre] = "-"
     data.append(r)
     r_idx = len(data) - 1
     row_indices_body.append(r_idx)
     fonts.append((0, r_idx, 7, r_idx, "Helvetica", 8.5, BLACK))
 
-    cle = f"{age_val}_{dt_essai}"
+    cle = f"{age_val}_{dt_essai}_{'T' if fend else 'C'}"
     groupes_lots.setdefault(
-        cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val}
+        cle, {"lignes": [], "en_cours": is_en_cours, "age": age_val, "fend": fend}
     )["lignes"].append(r_idx)
 
   a_des_28j, moyenne_28j_val, est_en_cours_28j = False, None, False
@@ -778,12 +796,12 @@ def generer_pv_pdf(export_data, infos_header):
       vals = []
       for li in lignes:
         try:
-          vals.append(float(data[li][5]))
+          vals.append(float(data[li][6 if gdata["fend"] else 5]))
         except (ValueError, TypeError):
           pass
       moy = round(sum(vals) / len(vals), 1) if vals else 0.0
       valeur_moy = f"{moy:.1f}"
-      if int(age) >= 28:
+      if int(age) >= 28 and not gdata["fend"]:
         moyenne_28j_val = moy
 
     if contigu and start_r != end_r:
@@ -795,7 +813,7 @@ def generer_pv_pdf(export_data, infos_header):
         data[li][7] = valeur_moy
         fonts.append((7, li, 7, li, "Helvetica-Bold", 8.5, BLACK))
 
-    if int(age) >= 28:
+    if int(age) >= 28 and not gdata["fend"]:
       a_des_28j = True
       if gdata["en_cours"]:
         est_en_cours_28j = True
