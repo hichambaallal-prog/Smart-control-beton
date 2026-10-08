@@ -1121,16 +1121,16 @@ def show(supabase):
 
     def verifier_pv_valide_et_signe(row):
       b_id = row.get("betonnage_id")
-      parent = unique_parents.get(b_id) or {}
-
       f_kn = row.get("force_kn")
       try:
         a_force = pd.notnull(f_kn) and float(f_kn) > 0
       except (ValueError, TypeError):
         a_force = False
 
-      # CORRECTION : Le statut de validation est stocké sur la table parente (suivi_betonnage)
-      statut_valide = est_valide_val(parent.get("statut_pv"))
+      # La validation est portée PAR LOT (bétonnage + échéance), donc sur
+      # chaque éprouvette, et non plus sur la fiche parente : un lot validé
+      # à 7 jours ne valide pas automatiquement les éprouvettes à 28 jours.
+      statut_valide = est_valide_val(row.get("statut_pv"))
 
       return a_force and statut_valide
 
@@ -1139,8 +1139,13 @@ def show(supabase):
 
     st.markdown("##### 📥 Re-télécharger un Procès-Verbal")
 
-    b_ids_dans_liste = (
-        set(df_valides["betonnage_id"].dropna().unique())
+    cles_dans_liste = (
+        set(
+            zip(
+                df_valides["betonnage_id"],
+                df_valides["echeance"].map(lambda e: str(e).strip()),
+            )
+        )
         if not df_valides.empty
         else set()
     )
@@ -1151,9 +1156,12 @@ def show(supabase):
       groupes_lot_echeance.setdefault(cle_groupe, []).append(r)
 
     for (b_id, echeance_grp), rows_grp in groupes_lot_echeance.items():
-      parent = unique_parents.get(b_id) or {}
-      statut_admin_valide = est_valide_val(parent.get("statut_pv"))
-      if statut_admin_valide and b_id not in b_ids_dans_liste:
+      statut_lot = next(
+          (r.get("statut_pv") for r in rows_grp if est_valide_val(r.get("statut_pv"))),
+          None,
+      )
+      statut_admin_valide = est_valide_val(statut_lot)
+      if statut_admin_valide and (b_id, echeance_grp) not in cles_dans_liste:
         a_au_moins_une_force = any(
             pd.notnull(r.get("force_kn")) and float(r.get("force_kn") or 0) > 0
             for r in rows_grp
@@ -1161,7 +1169,7 @@ def show(supabase):
         lots_manquants.append({
             "Lot ID": b_id,
             "Échéance": echeance_grp,
-            "Statut (admin)": parent.get("statut_pv"),
+            "Statut (admin)": statut_lot,
             "Au moins 1 force > 0 ?": "Oui" if a_au_moins_une_force else "Non",
         })
 
@@ -1241,6 +1249,8 @@ def show(supabase):
         b_id_h = sample_h.get("betonnage_id")
 
         info_b_h = unique_parents.get(b_id_h) or {}
+        # Le PV téléchargé couvre tout l'historique du bétonnage (7 j + 28 j) ;
+        # seules les échéances validées sont proposées à la sélection.
         essais_h = obtenir_historique_betonnage(supabase, b_id_h) or lot_hist
 
         date_coulee_h = info_b_h.get("date_coulee") or sample_h.get("date_coulee")
@@ -1309,7 +1319,8 @@ def show(supabase):
                 or sample_h.get("centrale")
             ),
             "observations": (
-                info_b_h.get("observations_admin")
+                sample_h.get("observations_admin")
+                or info_b_h.get("observations_admin")
                 or sample_h.get("observations")
             ),
             "technicien_prelevement": (
