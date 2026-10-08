@@ -1007,7 +1007,15 @@ def afficher_module_validation_admin(supabase, est_admin=False):
 
     ep_28j = [ep for ep in ep_sel_list if extraire_nb_jours(ep.get("echeance")) == 28]
     if ep_28j:
-        ep_7j = [ep for ep in ep_sel_list if extraire_nb_jours(ep.get("echeance")) == 7]
+        # Les lots sont séparés par échéance : on va chercher les éprouvettes
+        # à 7 jours du même bétonnage dans les autres lots.
+        ep_7j = [
+            ep
+            for (b_id_l, _ech_l), liste_l in lots_dict.items()
+            if b_id_l == b_id_sel
+            for ep in liste_l
+            if extraire_nb_jours(ep.get("echeance")) == 7
+        ]
         ref_ctrl_sel = determiner_ref_controle(supabase, b_id_sel, info_b_sel, ep_sel_list[0])
         st.warning(
             f"🔔 **Rappel avant validation à 28 jours** — Résultats à 7 jours"
@@ -1880,7 +1888,7 @@ def show(supabase):
                 cols_rep = st.columns(min(int(nb_eprouvettes_p), 6))
                 for i in range(int(nb_eprouvettes_p)):
                     with cols_rep[i % 6]:
-                        rep_val = st.text_input(f"Repère #{eprouvettes_deja_prog + i + 1}", value=f"/{eprouvettes_deja_prog + i + 1}", key=f"prog_rep_{b_id}_{nb_j}j_{i}")
+                        rep_val = st.text_input(f"Repère #{eprouvettes_deja_prog + i + 1}", value=f"/{eprouvettes_deja_prog + i + 1}", key=f"prog_rep_{b_id}_{nb_j}j_{eprouvettes_deja_prog}_{i}")
                         reperes_p.append(rep_val)
 
                 if st.button("📌 Enregistrer la Programmation", type="primary", use_container_width=True, key=f"btn_save_prog_{b_id}_{nb_j}j"):
