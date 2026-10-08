@@ -1270,6 +1270,14 @@ def show(supabase):
         # Le PV téléchargé couvre tout l'historique du bétonnage (7 j + 28 j) ;
         # seules les échéances validées sont proposées à la sélection.
         essais_h = obtenir_historique_betonnage(supabase, b_id_h) or lot_hist
+        # Un résultat écrasé (force > 0) n'entre dans le PV que si SON lot
+        # (échéance) a été validé : un PV validé à 7 jours ne doit pas
+        # publier des résultats à 28 jours non encore validés.
+        essais_h = [
+            it for it in essais_h
+            if float(it.get("force_kn") or 0.0) == 0.0
+            or est_valide_val(it.get("statut_pv"))
+        ]
 
         date_coulee_h = info_b_h.get("date_coulee") or sample_h.get("date_coulee")
 
