@@ -702,6 +702,29 @@ def _format_ep_row(ep, date_ref=None):
 # =========================================================
 # MODULE NOUVEAU : PHASE 3 - VALIDATION ADMIN (PVs)
 # =========================================================
+def _norm_echeance(e):
+    """Normalise une échéance ('28 jours', '28 J'...) en '28 jours' pour regrouper par lot."""
+    n = extraire_nb_jours(e, default=None)
+    return f"{n} jours" if n is not None else str(e or "-").strip()
+
+
+def _etat_validation_lot(eprouvettes):
+    """Retourne les champs de validation d'un lot (éprouvettes d'une même échéance).
+    Un lot n'est « Validé » que si TOUTES ses éprouvettes écrasées portent un statut validé."""
+    def _ok(st_):
+        s_ = unicodedata.normalize("NFKD", str(st_ or "").strip().lower()).encode("ascii", "ignore").decode("ascii")
+        return bool(s_) and not any(m in s_ for m in ["rejet", "invalide", "non valide"]) and "valide" in s_
+    if not eprouvettes:
+        return {}
+    ref = eprouvettes[0]
+    if all(_ok(e.get("statut_pv")) for e in eprouvettes):
+        return {k: ref.get(k) for k in ["statut_pv", "visa_resp", "visa_chef", "date_validation", "observations_admin"]}
+    rejet = next((e for e in eprouvettes if e.get("statut_pv") and not _ok(e.get("statut_pv"))), None)
+    if rejet:
+        return {k: rejet.get(k) for k in ["statut_pv", "visa_resp", "visa_chef", "date_validation", "observations_admin"]}
+    return {"statut_pv": None}
+
+
 def afficher_module_validation_admin(supabase, est_admin=False):
     """Affiche le module d'approbation administrative et de signature des PVs."""
     st.subheader("🛡️ 3. Validation & Consultation des PVs")
@@ -727,13 +750,12 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         st.warning("ℹ️ Aucun essai écrasé n'est actuellement en attente de validation.")
         return
 
-    # Regroupement par lot (betonnage_id)
+    # Regroupement par LOT = (betonnage_id, échéance) : chaque échéance (7 j, 28 j...)
+    # d'un même bétonnage possède son propre PV et sa propre validation.
     lots_dict = {}
     for ep in essais_realises:
-        b_id = ep.get("betonnage_id")
-        if b_id not in lots_dict:
-            lots_dict[b_id] = []
-        lots_dict[b_id].append(ep)
+        cle_lot_pv = (ep.get("betonnage_id"), _norm_echeance(ep.get("echeance")))
+        lots_dict.setdefault(cle_lot_pv, []).append(ep)
 
     def _est_pv_deja_valide(statut):
         if not statut:
@@ -749,17 +771,21 @@ def afficher_module_validation_admin(supabase, est_admin=False):
 
     options_valid = []
     lots_deja_valides = []
-    parents_dict_admin = obtenir_infos_betonnage_parents_bulk(supabase, list(lots_dict.keys()))
-    for b_id, list_ep in lots_dict.items():
-        info_b = parents_dict_admin.get(b_id, {})
-        statut_lot = info_b.get("statut_pv", "⏳ En attente de validation")
+    parents_dict_admin = obtenir_infos_betonnage_parents_bulk(supabase, [k[0] for k in lots_dict.keys()])
+    for (b_id, ech_lot), list_ep in lots_dict.items():
+        info_parent = parents_dict_admin.get(b_id, {})
+        # La validation est portée PAR LOT (éprouvettes de même échéance), pas par le bétonnage.
+        champs_pv = _etat_validation_lot(list_ep)
+        info_b = {**(info_parent or {}), **champs_pv}
+        statut_lot = info_b.get("statut_pv") or "⏳ En attente de validation"
         ref_ctrl = determiner_ref_controle(supabase, b_id, info_b, list_ep[0])
         bl_num = extraire_num_bl(list_ep[0], info_b or {})
-        label = f"Réf: {ref_ctrl} | BL: {bl_num} | Ouvrage: {list_ep[0].get('ouvrage', '-')} | Statut: {statut_lot}"
+        label = f"Réf: {ref_ctrl} | Échéance: {ech_lot} | BL: {bl_num} | Ouvrage: {list_ep[0].get('ouvrage', '-')} | Statut: {statut_lot}"
+        entree = (label, (b_id, ech_lot), list_ep, info_b)
         if _est_pv_deja_valide(statut_lot):
-            lots_deja_valides.append((label, b_id, list_ep, info_b))
+            lots_deja_valides.append(entree)
         else:
-            options_valid.append((label, b_id, list_ep, info_b))
+            options_valid.append(entree)
 
     if est_admin and lots_deja_valides:
         with st.expander("🔓 Corriger un PV déjà validé (charge de rupture) — BAALLAL uniquement"):
@@ -777,7 +803,8 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                 key="select_pv_deja_valide",
             )
             idx_dv = labels_deja_valides.index(choix_label_dv)
-            _, b_id_dv, ep_dv_list, info_b_dv = lots_deja_valides[idx_dv]
+            _, cle_lot_dv, ep_dv_list, info_b_dv = lots_deja_valides[idx_dv]
+            b_id_dv = f"{cle_lot_dv[0]}_{cle_lot_dv[1].replace(' ', '')}"
 
             df_key_dv = f"correction_pv_valide_{b_id_dv}"
             if df_key_dv not in st.session_state or st.session_state.get(f"{df_key_dv}_len") != len(ep_dv_list):
@@ -885,21 +912,24 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         st.success("✅ Tous les PV en attente ont été traités — aucun PV ne reste à valider pour le moment.")
         return
 
-    choix_label, b_id_sel, ep_sel_list, info_b_sel = st.selectbox(
+    choix_label, cle_lot_sel, ep_sel_list, info_b_sel = st.selectbox(
         "📦 Choisir le PV / Lot à réviser :",
         options=options_valid,
         format_func=lambda x: x[0],
         key="select_pv_admin"
     )
 
+    b_id_sel, echeance_sel = cle_lot_sel
+    cle_lot_txt = f"{b_id_sel}_{echeance_sel.replace(' ', '')}"
     st.markdown("---")
+    st.caption(f"📦 Validation du lot **{echeance_sel}** — chaque échéance a son propre PV et sa propre validation.")
     c1, c2, c3 = st.columns(3)
     c1.metric("Nombre d'éprouvettes écrasées", len(ep_sel_list))
     c2.metric("Date de coulée", extraire_date_coulee(info_b_sel))
     c3.metric("Statut Actuel du PV", info_b_sel.get("statut_pv", "⏳ En attente"))
 
     # Préparation des données pour affichage / édition tableau
-    df_key = f"admin_edit_pv_{b_id_sel}"
+    df_key = f"admin_edit_pv_{cle_lot_txt}"
     if df_key not in st.session_state or st.session_state.get(f"{df_key}_len") != len(ep_sel_list):
         rows_val = []
         for ep in ep_sel_list:
@@ -1018,15 +1048,15 @@ def afficher_module_validation_admin(supabase, est_admin=False):
         with st.form("form_valider_pv"):
             st.markdown("##### ✍️ Décision & Signatures Officielles")
             col_sig1, col_sig2 = st.columns(2)
-            resp_essai = col_sig1.text_input("Visa Responsable d'essai", value=info_b_sel.get("visa_resp", "O.IKKEN"))
-            chef_labo = col_sig2.text_input("Visa Chef du laboratoire", value=info_b_sel.get("visa_chef", "H.BAALLAL"))
+            resp_essai = col_sig1.text_input("Visa Responsable d'essai", value=info_b_sel.get("visa_resp") or "O.IKKEN")
+            chef_labo = col_sig2.text_input("Visa Chef du laboratoire", value=info_b_sel.get("visa_chef") or "H.BAALLAL")
 
             statut_decision = st.radio(
                 "Décision d'approbation :",
                 ["✅ Valider et Signer le PV", "⚠️ Remettre en Révision / Rejeter"],
                 horizontal=True
             )
-            comm_admin = st.text_area("Observations / Instructions complémentaires", value=info_b_sel.get("observations_admin", "Conforme aux spécifications NF EN 12390."))
+            comm_admin = st.text_area("Observations / Instructions complémentaires", value=info_b_sel.get("observations_admin") or "Conforme aux spécifications NF EN 12390.")
 
             submit_val = st.form_submit_button("💾 Enregistrer la décision de validation", type="primary", use_container_width=True)
 
@@ -1046,11 +1076,15 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                     "date_validation": str(date.today())
                 }
                 try:
-                    supabase.table("suivi_betonnage").update(update_payload).eq("id", b_id_sel).execute()
+                    # Validation PAR LOT : on écrit sur les éprouvettes de ce lot
+                    # (même bétonnage + même échéance), pas sur la fiche parente.
+                    ids_lot_valid = [int(e["id"]) for e in ep_sel_list]
+                    supabase.table("suivi_controle_beton").update(update_payload).in_("id", ids_lot_valid).execute()
                     enregistrer_modification(
                         supabase,
-                        table_concernee="suivi_betonnage",
-                        enregistrement_id=b_id_sel,
+                        table_concernee="suivi_controle_beton",
+                        enregistrement_id=ids_lot_valid[0],
+                        commentaire=f"Validation du lot {echeance_sel} (bétonnage #{b_id_sel}) — {len(ids_lot_valid)} éprouvette(s)",
                         action="VALIDATION",
                         anciennes_valeurs=anciennes_val_pv,
                         nouvelles_valeurs={
@@ -1096,7 +1130,7 @@ def afficher_module_validation_admin(supabase, est_admin=False):
                     st.error(f"❌ Erreur lors de la mise à jour du statut : {e}")
 
     if est_admin:
-        afficher_historique_modifications(supabase, "suivi_betonnage", b_id_sel)
+        afficher_historique_modifications(supabase, "suivi_controle_beton", ep_sel_list[0]["id"])
 
 
 # =========================================================
