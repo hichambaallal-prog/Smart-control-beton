@@ -2139,8 +2139,12 @@ def show(supabase):
                     with col_q3:
                         st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
                         if st.button("💾 Enregistrer cette éprouvette", type="primary", use_container_width=True, key=f"btn_save_rapide_{eprouvette_ciblee['id']}"):
-                            sec_q = float(eprouvette_ciblee.get("section") or 176.71)
-                            fc_q = round((force_rapide * 10.0) / sec_q, 1) if sec_q > 0 and force_rapide > 0 else 0.0
+                            sec_q = section_normalisee(eprouvette_ciblee.get("section"))
+                            fc_q = calculer_resistance_mpa(
+                                force_rapide, sec_q,
+                                type_essai=str(eprouvette_ciblee.get("type_essai") or "Compression").strip(),
+                                forme=str(eprouvette_ciblee.get("forme") or "Cylindrique 150x300").strip(),
+                            ) if force_rapide > 0 else 0.0
                             try:
                                 anciennes_q = {
                                     "force_kn": float(eprouvette_ciblee.get("force_kn") or 0.0),
